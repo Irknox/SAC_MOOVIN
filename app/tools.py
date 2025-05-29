@@ -1,8 +1,13 @@
 from langchain.tools import tool
 
-@tool(description="Repite el texto recibido como input")
-def echo_tool(input_text: str) -> str:
-    return f"ECHO: {input_text}"
+
+@tool(description="Obtiene el estado de un paquete dado su ID")
+def get_package_status(package_id: str) -> str:
+    """
+    Simula la obtención del estado de un paquete.
+    En un caso real, aquí se haría una llamada a una API externa.
+    """
+    return f"Estado del paquete {package_id}: En tránsito"
 
 # Lista de tools
-TOOLS = [echo_tool]
+TOOLS = [ get_package_status]
