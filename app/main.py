@@ -5,14 +5,15 @@ from langchain.agents import create_react_agent, AgentExecutor
 from langgraph.graph import StateGraph
 from langchain.prompts import PromptTemplate
 from langchain.agents import create_openai_functions_agent, AgentExecutor
-
+from langchain.memory import ConversationBufferMemory
 from dotenv import load_dotenv
 import os
 from app.tools import TOOLS
 from fastapi.middleware.cors import CORSMiddleware
 import aiomysql
 from contextlib import asynccontextmanager
-from langchain.memory import ConversationBufferMemory
+from datetime import datetime, timedelta
+load_dotenv()
 
 # ----------------- Configuración de MySQL ------------------
 MYSQL_HOST = os.environ.get('Db_HOST')
@@ -61,13 +62,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-load_dotenv()
-OPENAI_API_KEY = os.environ.get("OPEN_AI_API")
-
-
-
 # ----------------- Configuración del LLM y Agente ------------------
-
+OPENAI_API_KEY = os.environ.get("OPEN_AI_API")
 llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-4o")
 tools = TOOLS
 
@@ -80,14 +76,11 @@ if prompt_content.startswith('prompt='):
 
 #Crear el PromptTemplate
 prompt = PromptTemplate.from_template(prompt_content)
-print("Contenido del PromptTemplate:\n", prompt.template)
-print("Variables esperadas:", prompt.input_variables)
 
-# Crear el agente ReAct con tools y prompt
-memory = ConversationBufferMemory(return_messages=True)
+# Crear el agente de OpenAI con tools y prompt
+memory = ConversationBufferMemory(return_messages=True,input_key="input")
 agent = create_openai_functions_agent(llm=llm, tools=tools, prompt=prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, memory=memory, memory_key="chat_history", verbose=True)
-
 
 
 # ----------------- Funciones para chat_history ------------------
@@ -95,10 +88,10 @@ async def get_history(session_id, limit=15):
     async with mysql_pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute("""
-                SELECT user_message, agent_response 
-                FROM chat_history 
-                WHERE session_id = %s 
-                ORDER BY timestamp DESC 
+                SELECT user_message, agent_response, timestamp
+                FROM chat_history
+                WHERE session_id = %s
+                ORDER BY timestamp DESC
                 LIMIT %s
             """, (session_id, limit))
             results = await cur.fetchall()
@@ -116,15 +109,28 @@ async def save_message(session_id, user_message, agent_response):
 
 async def populate_memory_from_history(memory, session_id):
     history = await get_history(session_id)
-    # history es una lista de dicts: [{'user_message': ..., 'agent_response': ...}, ...]
-    memory.clear()  # Limpia la memoria antes de poblarla
+    memory.clear()
+    recent_activity = False
+    now = datetime.utcnow()
+    print(f"[DEBUG] now (UTC): {now}")
+
     for msg in history:
-        memory.chat_memory.add_user_message(msg['user_message'])
-        memory.chat_memory.add_ai_message(msg['agent_response'])
-
-
-
-
+        timestamp = msg.get('timestamp')
+        if timestamp:
+            if isinstance(timestamp, str):
+                try:
+                    timestamp = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+                except Exception as e:
+                    print(f"[ERROR] Error convirtiendo timestamp: {e}")
+            if now - timestamp <= timedelta(minutes=15):
+                recent_activity = True
+        memory.chat_memory.add_user_message(f"[{timestamp}] {msg['user_message']}")
+        memory.chat_memory.add_ai_message(f"[{timestamp}] {msg['agent_response']}")
+    if recent_activity:
+        memory.chat_memory.add_user_message("Nota del sistema: La conversación es reciente, no es necesario saludar.")
+    else:
+        memory.chat_memory.add_user_message("Nota del sistema: La conversación es antigua, por favor saluda al usuario antes de continuar.")
+    return recent_activity
 
 # ----------------- Estado del agente ------------------
 
@@ -137,12 +143,9 @@ graph_builder = StateGraph(AgentState)
 async def chat_node(state: AgentState):
     session_id = state.session_id
     user_input = state.user_input
-
-    # Pobla la memoria con el historial de la sesión
-    await populate_memory_from_history(agent_executor.memory, session_id)
-    print("Prompt final cargado:\n", prompt_content)
-    # Usar el agente para obtener la respuesta (el agente puede usar tools)
-    result = await agent_executor.ainvoke({"input": user_input})
+    recent_activity=await populate_memory_from_history(agent_executor.memory, session_id)
+    print(f"Valor de recent activity: {recent_activity}")
+    result = await agent_executor.ainvoke({"input": user_input, "recent_activity": recent_activity})
     response = result["output"] if "output" in result else str(result)
 
     # Guardar en chat_history
@@ -155,16 +158,11 @@ graph_builder.set_finish_point("chat_node")
 compiled_graph = graph_builder.compile()
 
 
-
-
-
-
 # ----------------- Clases para las entradas de los Endpoints ------------------
 
 class UserInput(BaseModel):
     message: str
     session_id: str
-
 
 
 # ----------------- Endpoints ------------------
