@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+import requests
 from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_react_agent, AgentExecutor
@@ -137,40 +138,110 @@ async def populate_memory_from_history(memory, session_id):
 class AgentState(BaseModel):
     user_input: str
     session_id: str
+    user_phone: str
+    message_id: str
+    message_original: str
+    response: str = "" 
 
 graph_builder = StateGraph(AgentState)
 
+
+# ------------------ Nodos ------------------
 async def chat_node(state: AgentState):
     session_id = state.session_id
     user_input = state.user_input
+    
     recent_activity=await populate_memory_from_history(agent_executor.memory, session_id)
-    print(f"Valor de recent activity: {recent_activity}")
+    
     result = await agent_executor.ainvoke({"input": user_input, "recent_activity": recent_activity})
     response = result["output"] if "output" in result else str(result)
-
-    # Guardar en chat_history
+    
     await save_message(session_id, user_input, response)
-    return {"user_input": "", "session_id": session_id}
+    return AgentState(
+        user_input="",
+        session_id=session_id,
+        user_phone=state.user_phone,
+        message_id=state.message_id,
+        message_original=state.message_original,
+        response=response  # <-- agrega este campo a AgentState
+    )
 
+async def enviar_mensaje_node(state):
+    # Envía el mensaje usando los datos del estado
+    await enviar_mensaje(
+        numero=state.user_phone,
+        texto=state.response,
+        mensaje_id_original=state.message_id,
+        mensaje_original=state.message_original
+    )
+    return state  # Puedes retornar el estado o solo los campos que necesites
+
+# Añadir los nodos al grafo
 graph_builder.add_node("chat_node", chat_node)
+graph_builder.add_node("enviar_mensaje_node", enviar_mensaje_node)
 graph_builder.set_entry_point("chat_node")
-graph_builder.set_finish_point("chat_node")
+graph_builder.add_edge("chat_node", "enviar_mensaje_node")
+graph_builder.set_finish_point("enviar_mensaje_node")
 compiled_graph = graph_builder.compile()
 
 
-# ----------------- Clases para las entradas de los Endpoints ------------------
+#------------------ Funcion para enviar msj ------------------
+async def enviar_mensaje(numero, texto, mensaje_id_original, mensaje_original):
+    Whatsapp_URL = os.environ.get("Whatsapp_URL")
+    Whatsapp_API_KEY = os.environ.get("Whatsapp_API_KEY")
 
+    url = f"{Whatsapp_URL}/message/sendText/SAC-Moovin"
+
+    payload = {
+        "number": numero.replace("@s.whatsapp.net", ""), 
+        "text": texto,
+        "delay": 100,
+        "linkPreview": False,
+        "mentionsEveryOne": False,
+        "mentioned": [numero],
+        "quoted": {
+            "key": {"id": mensaje_id_original},
+            "message": {"conversation": mensaje_original}
+        }
+    }
+
+    headers = {
+        "apikey": Whatsapp_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        print("📤 Mensaje enviado:", response.text)
+    except Exception as e:
+        print("❌ Error al enviar mensaje:", e)
+
+# ----------------- Clases para las entradas de los Endpoints ------------------
 class UserInput(BaseModel):
     message: str
     session_id: str
-
-
 # ----------------- Endpoints ------------------
+@app.post("/ask", summary="Recibe mensajes desde WhatsApp", description="Recibe, procesa y responde usando LangChain y WhatsApp API.")
+async def receive_message(payload: dict):
+    try:
+        message = payload["data"]["message"]["conversation"]
+        session_id = payload["data"]["instanceId"]
+        user_phone = payload["data"]["key"]["remoteJid"]
+        message_id = payload["data"]["key"]["id"]
 
-@app.post("/ask")
-async def ask(user_input: UserInput):
-    initial_state = AgentState(user_input=user_input.message, session_id=user_input.session_id)
-    await compiled_graph.ainvoke(initial_state)
-    history = await get_history(user_input.session_id, limit=1)
-    last_response = history[-1]["agent_response"] if history else "Lo siento, algo salió mal."
-    return {"model_response": last_response}
+        initial_state = AgentState(
+            user_input=message,
+            session_id=session_id,
+            user_phone=user_phone,
+            message_id=message_id,
+            message_original=message
+        )
+
+        # Compilacion del grafo
+        await compiled_graph.ainvoke(initial_state)
+        return {"status": "ok"}
+
+    except Exception as e:
+        print(f"[ERROR] Fallo procesando el payload: {e}")
+        return {"error": "Payload inválido o incompleto."}
+
