@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-import requests
 from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_react_agent, AgentExecutor
@@ -11,47 +10,31 @@ from dotenv import load_dotenv
 import os
 from app.tools import TOOLS
 from fastapi.middleware.cors import CORSMiddleware
-import aiomysql
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+import re
+import phonenumbers
+from app.database_handler import get_history, save_message,get_user_env
+from app.config import create_mysql_pool, create_tools_pool
+
+
+
 load_dotenv()
-
-# ----------------- Configuración de MySQL ------------------
-MYSQL_HOST = os.environ.get('Db_HOST')
-MYSQL_USER = os.environ.get('Db_USER')
-MYSQL_PASSWORD = os.environ.get('Db_PASSWORD')
-MYSQL_DB = os.environ.get('Db_NAME')
-MYSQL_PORT = int(os.environ.get('Db_PORT', 3306))
-
+# ----------------- Configuración de la aplicación FastAPI ------------------
 mysql_pool = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global mysql_pool
-    mysql_pool = await aiomysql.create_pool(
-        host=MYSQL_HOST,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        db=MYSQL_DB,
-        port=MYSQL_PORT,
-        autocommit=True
-    )
-    async with mysql_pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute("""
-                CREATE TABLE IF NOT EXISTS chat_history (
-                    id INT NOT NULL AUTO_INCREMENT,
-                    session_id VARCHAR(255) NOT NULL,
-                    user_message TEXT NOT NULL,
-                    agent_response TEXT NOT NULL,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (id), 
-                    KEY session_id (session_id)
-                )
-            """)
+    mysql_pool = await create_mysql_pool()
+    global tools_pool
+    tools_pool = await create_tools_pool()
     yield
     mysql_pool.close()
     await mysql_pool.wait_closed()
+    tools_pool.close()
+    await tools_pool.wait_closed()
+    
 
 app = FastAPI(lifespan=lifespan)
 
@@ -85,31 +68,8 @@ agent_executor = AgentExecutor(agent=agent, tools=tools, memory=memory, memory_k
 
 
 # ----------------- Funciones para chat_history ------------------
-async def get_history(session_id, limit=15):
-    async with mysql_pool.acquire() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as cur:
-            await cur.execute("""
-                SELECT user_message, agent_response, timestamp
-                FROM chat_history
-                WHERE session_id = %s
-                ORDER BY timestamp DESC
-                LIMIT %s
-            """, (session_id, limit))
-            results = await cur.fetchall()
-            results = list(results)
-            results.reverse()
-            return results
-
-async def save_message(session_id, user_message, agent_response):
-    async with mysql_pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute("""
-                INSERT INTO chat_history (session_id, user_message, agent_response) 
-                VALUES (%s, %s, %s)
-            """, (session_id, user_message, agent_response))
-
 async def populate_memory_from_history(memory, session_id):
-    history = await get_history(session_id)
+    history = await get_history(mysql_pool, session_id)
     memory.clear()
     recent_activity = False
     now = datetime.utcnow()
@@ -141,67 +101,53 @@ class AgentState(BaseModel):
     user_phone: str
     message_id: str
     message_original: str
-    response: str = "" 
-
-graph_builder = StateGraph(AgentState)
-
+    response: str = ""
+    user_env: dict = {}
+    user_env: str = ""
 
 # ------------------ Nodos ------------------
-async def chat_node(state: AgentState):
+#Agente
+async def agent_node(state: AgentState):
     session_id = state.session_id
     user_input = state.user_input
     
     recent_activity=await populate_memory_from_history(agent_executor.memory, session_id)
     
-    result = await agent_executor.ainvoke({"input": user_input, "recent_activity": recent_activity})
+    result = await agent_executor.ainvoke({
+        "input": user_input,
+        "recent_activity": recent_activity,
+        "user_env": state.user_env
+    })
     response = result["output"] if "output" in result else str(result)
     
-    await save_message(session_id, user_input, response)
+    await save_message(mysql_pool, session_id, user_input, response)
     return AgentState(
         user_input="",
         session_id=session_id,
         user_phone=state.user_phone,
         message_id=state.message_id,
         message_original=state.message_original,
-        response=response  # <-- agrega este campo a AgentState
+        response=response,
+        user_env=state.user_env
     )
 
+# Enviar mensaje a WhatsApp
 async def enviar_mensaje_node(state):
-    # Envía el mensaje usando los datos del estado
-    await enviar_mensaje(
-        numero=state.user_phone,
-        texto=state.response,
-        mensaje_id_original=state.message_id,
-        mensaje_original=state.message_original
-    )
-    return state  # Puedes retornar el estado o solo los campos que necesites
-
-# Añadir los nodos al grafo
-graph_builder.add_node("chat_node", chat_node)
-graph_builder.add_node("enviar_mensaje_node", enviar_mensaje_node)
-graph_builder.set_entry_point("chat_node")
-graph_builder.add_edge("chat_node", "enviar_mensaje_node")
-graph_builder.set_finish_point("enviar_mensaje_node")
-compiled_graph = graph_builder.compile()
-
-
-#------------------ Funcion para enviar msj ------------------
-async def enviar_mensaje(numero, texto, mensaje_id_original, mensaje_original):
     Whatsapp_URL = os.environ.get("Whatsapp_URL")
     Whatsapp_API_KEY = os.environ.get("Whatsapp_API_KEY")
 
     url = f"{Whatsapp_URL}/message/sendText/SAC-Moovin"
 
     payload = {
-        "number": numero.replace("@s.whatsapp.net", ""), 
-        "text": texto,
+        "number": state.user_phone.replace("@s.whatsapp.net", ""), 
+        "text": state.response,
         "delay": 100,
         "linkPreview": False,
         "mentionsEveryOne": False,
-        "mentioned": [numero],
+        "mentioned": [state.user_phone],
         "quoted": {
-            "key": {"id": mensaje_id_original},
-            "message": {"conversation": mensaje_original}
+            "key": {"id": state.message_id},
+            "message": {"conversation": state.message_original}
         }
     }
 
@@ -211,10 +157,42 @@ async def enviar_mensaje(numero, texto, mensaje_id_original, mensaje_original):
     }
 
     try:
+        import requests
         response = requests.post(url, json=payload, headers=headers)
         print("📤 Mensaje enviado:", response.text)
     except Exception as e:
         print("❌ Error al enviar mensaje:", e)
+    return state
+
+# Crear el entorno del usuario
+async def user_environment_node(state: AgentState):
+    user_phone = state.user_phone
+    user_phone = re.sub(r"[^\d+]", "", user_phone) 
+    try:
+        if not user_phone.startswith("+"):
+            user_phone = "+" + user_phone
+            parsed = phonenumbers.parse(user_phone, None)
+        else:
+            parsed = phonenumbers.parse(user_phone, None)
+        user_phone = str(parsed.national_number)
+    except Exception as e:
+        user_phone = re.sub(r"\D", "", user_phone)
+    user_environment= await get_user_env(tools_pool, 85813601)
+    state.user_env = user_environment
+    return state
+
+# Añadir los nodos al grafo
+graph_builder = StateGraph(AgentState)
+graph_builder.add_node("user_environment_node", user_environment_node)
+graph_builder.add_node("agent_node", agent_node)
+graph_builder.add_node("enviar_mensaje_node", enviar_mensaje_node)
+
+graph_builder.add_edge("user_environment_node", "agent_node")
+graph_builder.add_edge("agent_node", "enviar_mensaje_node")
+
+graph_builder.set_entry_point("user_environment_node")
+graph_builder.set_finish_point("enviar_mensaje_node")
+compiled_graph = graph_builder.compile()
 
 # ----------------- Clases para las entradas de los Endpoints ------------------
 class UserInput(BaseModel):
@@ -224,7 +202,17 @@ class UserInput(BaseModel):
 @app.post("/ask", summary="Recibe mensajes desde WhatsApp", description="Recibe, procesa y responde usando LangChain y WhatsApp API.")
 async def receive_message(payload: dict):
     try:
-        message = payload["data"]["message"]["conversation"]
+        message_data = payload["data"]["message"]
+        if "conversation" in message_data:
+            message = message_data["conversation"]
+        elif "locationMessage" in message_data:
+            lat = message_data["locationMessage"]["degreesLatitude"]
+            lng = message_data["locationMessage"]["degreesLongitude"]
+            message = f"[Ubicación recibida] Lat: {lat}, Lng: {lng}"
+            # Aquí puedes guardar lat/lng en el estado si lo necesitas
+        else:
+            message = "[Mensaje no soportado]"
+
         session_id = payload["data"]["instanceId"]
         user_phone = payload["data"]["key"]["remoteJid"]
         message_id = payload["data"]["key"]["id"]
@@ -237,7 +225,6 @@ async def receive_message(payload: dict):
             message_original=message
         )
 
-        # Compilacion del grafo
         await compiled_graph.ainvoke(initial_state)
         return {"status": "ok"}
 

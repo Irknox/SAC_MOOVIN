@@ -7,7 +7,7 @@ import locale
 from datetime import datetime
 import openai
 import json
-from mcp.router import run_mcp
+from mcp.AI_router import run_mcp
 from pydantic import BaseModel, Field
 
 openai.api_key = os.environ.get("OPEN_AI_API")
@@ -26,25 +26,49 @@ MYSQL_PORT = int(os.environ.get('Main_Db_Port'))
 
 #--------------------Funciones auxiliares--------------------#
 async def get_id_package(enterprise_code):
-    pool = await aiomysql.create_pool(
+    """
+    Intenta primero buscar idPackage usando el valor como un ID (int),
+    si falla, entonces busca por enterpriseCode (str).
+    """
+    print(f"[get_id_package] Buscando idPackage para: {enterprise_code}")
+
+    async with aiomysql.create_pool(
         host=MYSQL_HOST,
         user=MYSQL_USER,
         password=MYSQL_PASSWORD,
         db=MYSQL_DB,
         port=MYSQL_PORT,
         autocommit=True
-    )
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute("""
-                SELECT idPackage 
-                FROM package 
-                WHERE enterpriseCode = %s
-            """, (enterprise_code,))
-            result = await cur.fetchone()
-    pool.close()
-    await pool.wait_closed()
-    return result[0] if result else None
+    ) as pool:
+
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                try:
+                    package_id = int(enterprise_code)
+                    await cur.execute("""
+                        SELECT idPackage 
+                        FROM package 
+                        WHERE idPackage = %s
+                        LIMIT 1
+                    """, (package_id,))
+                    result = await cur.fetchone()
+                    if result:
+                        return result[0]
+                except ValueError:
+                    print(f"[get_id_package] No es un ID válido, intentando por enterpriseCode")
+
+                await cur.execute("""
+                    SELECT idPackage 
+                    FROM package 
+                    WHERE enterpriseCode = %s
+                    LIMIT 1
+                """, (enterprise_code,))
+                result = await cur.fetchone()
+                if result:
+                    print(f"[get_id_package] Encontrado por enterpriseCode: {result[0]}")
+                else:
+                    print("[get_id_package] No encontrado en ninguna forma")
+                return result[0] if result else None
 
 def format_fecha(date_server):
     fecha_dt = datetime.strptime(str(date_server), "%Y-%m-%d %H:%M:%S")
@@ -173,7 +197,6 @@ def get_package_timeline(enterprise_code: str) -> str:
                 "message": f"No se encontró ningún paquete con enterpriseCode {enterprise_code}.",
                 "estados": []
             }
-        # Incluimos idPackageStatus y fkIdUserAction en la consulta
         pool = await aiomysql.create_pool(
             host=MYSQL_HOST,
             user=MYSQL_USER,
@@ -206,7 +229,6 @@ def get_package_timeline(enterprise_code: str) -> str:
                     "descripcion": status_desc,
                     "fecha": format_fecha(date_server)
                 }
-                # Si el estado es uno de los que requieren saber quién hizo el cambio
                 if fkIdPackageStatus in estados_cambio:
                     if int(fkIdUserAction) == 40220:
                         realizado_por = "cliente"
@@ -231,19 +253,12 @@ def get_package_timeline(enterprise_code: str) -> str:
     return trace_result
 
 
-class MCPActionInput(BaseModel):
     action: str = Field(..., description="Acción a ejecutar, por ejemplo: 'create_ticket', 'get_human'")
     data: dict = Field(default_factory=dict, description="Datos adicionales necesarios para la acción")
     
-@tool(description="Ejecuta acciones en el MCP. Usalo para crear tickets, notificar humanos", args_schema=MCPActionInput)
-def run_mcp_action(action: dict) -> str:
-    """
-    Ejecuta una acción en el MCP y devuelve el resultado.
-    """
-    input_data = {
-        "action": action,
-    }
-    return run_mcp(input_data)
+@tool(description="Agente AI que ejecuta acciones en el MCP. Usalo para crear tickets, notificar humanos, debe ser un string con la informacion del usuario para el ticket")
+def run_mcp_action(instruccion: str) -> str:
+    return run_mcp(instruccion)
 
 # Lista de tools
 TOOLS = [get_package_timeline, get_package_status, get_SLA, run_mcp_action]
