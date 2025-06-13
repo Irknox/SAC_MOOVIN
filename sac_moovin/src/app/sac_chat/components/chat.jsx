@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from 'react';
-import { sendMessage } from '../interaction_service'; 
+import { useState,useEffect } from 'react';
+import { sendMessage } from '../interaction_service';
 
 const styles = {
   chatContainer: {
@@ -24,12 +24,12 @@ const styles = {
   userMessage: {
     textAlign: 'right',
     margin: '5px 0',
-    color: 'white',
+    color: '#014c72',
   },
   botMessage: {
     textAlign: 'left',
     margin: '5px 0',
-    color: 'orange',
+    color: '#ee4d3e',
   },
   inputContainer: {
     display: 'flex',
@@ -48,6 +48,16 @@ const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
+
+  useEffect(() => {
+    let session_id = localStorage.getItem('sac_moovin_session_id');
+    if (!session_id) {
+      session_id = crypto.randomUUID();
+      localStorage.setItem('sac_moovin_session_id', session_id);
+    }
+    setSessionId(session_id);
+  }, []);
 
   const handleSendMessage = async () => {
     if (inputText.trim() !== '') {
@@ -56,10 +66,7 @@ const Chat = () => {
       setInputText('');
       setLoading(true);
       try {
-        console.log('Sending message to server:', userMessage.text);
-        const botResponse = await sendMessage(userMessage.text);
-        console.log('Received response from server:', botResponse);
-        
+        const botResponse = await sendMessage(userMessage.text, sessionId);
         setMessages(prev => [...prev, { sender: 'bot', text: botResponse }]);
       } catch (error) {
         setMessages(prev => [...prev, { sender: 'bot', text: 'Error al obtener respuesta del servidor.' }]);
@@ -77,7 +84,7 @@ const Chat = () => {
       <div style={styles.messageList}>
         {messages.map((msg, index) => (
           <div key={index} style={msg.sender === 'user' ? styles.userMessage : styles.botMessage}>
-            <strong>{msg.sender === 'user' ? 'Tú' : 'Bot'}:</strong> {msg.text}
+            <strong>{msg.sender === 'user' ? 'Tú' : 'Asistente'}:</strong> {msg.text}
           </div>
         ))}
         {loading && (
