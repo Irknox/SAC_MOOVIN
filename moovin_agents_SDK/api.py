@@ -15,6 +15,8 @@ from agents import (
     ToolCallOutputItem, InputGuardrailTripwireTriggered
 )
 import json
+from dotenv import load_dotenv
+load_dotenv()
 
 class AgentEvent(BaseModel):
     id: str
