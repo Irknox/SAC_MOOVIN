@@ -3,6 +3,10 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
+import json
+from pydantic import BaseModel
+import re
+import phonenumbers
 
 # ----------------- Configuración de MySQL ------------------
 load_dotenv()
@@ -134,7 +138,7 @@ async def get_delivery_address(pool, enterprise_code):
                     return "No se encontró la dirección de entrega."
                 return delivery_address
 
-async def get_package_timeline(pool, package_id):
+async def get_package_historic(pool, package_id):
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute("""
@@ -185,7 +189,7 @@ async def get_package_timeline(pool, package_id):
             return timeline
 
 async def is_final_warehouse(pool, package_id):
-    timeline = await get_package_timeline(pool, package_id)
+    timeline = await get_package_historic(pool, package_id)
     return any(
         (row.get('idDelegate') is not None and int(row.get('idDelegate') or row.get('id_delegate') or 0) != 0)
         or (str(row.get('status')).upper() == "COORDINATE")
@@ -216,31 +220,51 @@ async def rural_routes_schedule(canton, distrito):
         await pool.wait_closed()
 
 #--------------------Funciones de chat_history--------------------#
-async def get_history(pool, session_id, limit=15):
+async def get_last_state(pool, user_id):
+    """
+    Obtiene el último registro de la tabla sac_agent_memory para el user_id dado.
+    Devuelve un dict con los campos completos del último state.
+    """
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute("""
-                SELECT user_message, agent_response, timestamp
-                FROM chat_history
-                WHERE session_id = %s
-                ORDER BY timestamp DESC
-                LIMIT %s
-            """, (session_id, limit))
-            results = await cur.fetchall()
-            results = list(results)
-            results.reverse()
-            return results
+                SELECT id, user_id, mensaje_entrante, mensaje_saliente, contexto, fecha
+                FROM sac_agent_memory
+                WHERE user_id = %s
+                ORDER BY fecha DESC
+                LIMIT 1
+            """, (user_id,))
+            result = await cur.fetchone()
+            return result
 
-async def save_message(pool, session_id, user_message, agent_response):
+
+async def save_message(pool, user_id, mensaje_entrante, mensaje_saliente, contexto):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
+            # Serializar el contexto usando Pydantic si es un modelo, o json.dumps de fallback
+            if isinstance(contexto, BaseModel):
+                contexto_json = contexto.model_dump_json()
+            else:
+                contexto_json = json.dumps(contexto)
+
             await cur.execute("""
-                INSERT INTO chat_history (session_id, user_message, agent_response) 
-                VALUES (%s, %s, %s)
-            """, (session_id, user_message, agent_response))
+                INSERT INTO sac_agent_memory (user_id, mensaje_entrante, mensaje_saliente, contexto)
+                VALUES (%s, %s, %s, %s)
+            """, (user_id, mensaje_entrante, mensaje_saliente, contexto_json))
             
 #---------------------Env del Usuario que contacta--------------------#
 async def get_user_env(pool, phone):
+    phone = re.sub(r"\\D", "", phone)
+    try:
+        if not phone.startswith("+"):
+            phone = "+" + phone
+            parsed = phonenumbers.parse(phone, None)
+        else:
+            parsed = phonenumbers.parse(phone, None)
+        phone = str(parsed.national_number)
+    except Exception as e:
+        phone = re.sub(r"\\D", "", phone)
+
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute("""
@@ -251,11 +275,14 @@ async def get_user_env(pool, phone):
                 LIMIT 3
             """, (phone,))
             paquetes = await cur.fetchall()
+
             if not paquetes:
-                return "No se encontraron paquetes para este usuario."
+                return {"mensaje": "No se encontraron paquetes para este usuario."}
+
             nombres = ["Último paquete", "Penúltimo paquete", "Antepenúltimo paquete"]
             resultados = []
             nombre_usuario = paquetes[0]['fullName'] if paquetes[0].get('fullName') else "Usuario"
+
             for idx, paquete in enumerate(paquetes):
                 id_package = paquete['idPackage']
                 enterprise_code = paquete.get('enterpriseCode', 'N/A')
@@ -270,17 +297,23 @@ async def get_user_env(pool, phone):
                 estado = await cur.fetchone()
                 if estado:
                     fecha_formateada = format_fecha(estado['dateServer'])
-                    resultados.append(
-                        f"{nombres[idx]}: Tracking: {id_package} / {enterprise_code} | Último estado: {estado['description']} | Fecha: {fecha_formateada}"
-                    )
+                    resultados.append({
+                        "paquete": nombres[idx],
+                        "tracking": f"{id_package} / {enterprise_code}",
+                        "estado": estado['description'],
+                        "fecha": fecha_formateada
+                    })
                 else:
-                    resultados.append(
-                        f"{nombres[idx]}: Tracking: {id_package} / {enterprise_code} | Sin estados registrados."
-                    )
-            respuesta = f"Nombre de la persona que contacta por Whatsapp: {nombre_usuario}\n" + "\n".join(resultados)
-            print(f"[DEBUG] get_user_env respuesta: {respuesta}")
-            return respuesta
-        
+                    resultados.append({
+                        "paquete": nombres[idx],
+                        "tracking": f"{id_package} / {enterprise_code}",
+                        "estado": "Sin estados registrados."
+                    })
+
+            return {
+                "nombre_usuario": nombre_usuario,
+                "paquetes": resultados
+            }
 #---------------------get_SLA--------------------#
 async def get_delivery_date(pool, enterprise_code: str) -> dict:
     package = await get_id_package(pool, enterprise_code)
@@ -290,7 +323,7 @@ async def get_delivery_date(pool, enterprise_code: str) -> dict:
             "SLA_found": False,
             "SLA": "Paquete no encontrado"
         }
-    timeline = await get_package_timeline(pool, package)
+    timeline = await get_package_historic(pool, package)
     if timeline and str(timeline[-1].get("status", "")).upper() in {"DELIVERED", "DELIVEREDCOMPLETE"}:
         return {
             "Tracking": package,

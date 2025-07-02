@@ -8,7 +8,6 @@ from langchain.agents import create_openai_functions_agent, AgentExecutor
 from langchain.memory import ConversationBufferMemory
 from dotenv import load_dotenv
 import os
-from app.tools import TOOLS
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -16,19 +15,46 @@ import re
 import phonenumbers
 from app.database_handler import get_history, save_message,get_user_env
 from app.config import create_mysql_pool, create_tools_pool
+from app.tools import (
+    make_get_package_context_tool,
+    make_get_SLA_tool,
+    run_mcp_action
+)
 
 
 
 load_dotenv()
+
+# ----------------- Configuración del LLM y Agente ------------------
+OPENAI_API_KEY = os.environ.get("OPEN_AI_API")
+llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-4o")
+
+#Obtener prompt
+with open(os.path.join(os.path.dirname(__file__), "prompt.txt"), "r", encoding="utf-8") as f:
+    prompt_content = f.read()
+
+if prompt_content.startswith('prompt='):
+    prompt_content = prompt_content.split('=', 1)[1].strip().strip('"').strip("'")
+
+#Crear el PromptTemplate
+prompt = PromptTemplate.from_template(prompt_content)
+
 # ----------------- Configuración de la aplicación FastAPI ------------------
 mysql_pool = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global mysql_pool
+    global mysql_pool, tools_pool, TOOLS, agent, agent_executor
     mysql_pool = await create_mysql_pool()
-    global tools_pool
     tools_pool = await create_tools_pool()
+    TOOLS = [
+        make_get_package_context_tool(tools_pool),
+        make_get_SLA_tool(tools_pool),
+        run_mcp_action
+    ]
+    memory = ConversationBufferMemory(return_messages=True, input_key="input")
+    agent = create_openai_functions_agent(llm=llm, tools=TOOLS, prompt=prompt)
+    agent_executor = AgentExecutor(agent=agent, tools=TOOLS, memory=memory, memory_key="chat_history", verbose=True)
     yield
     mysql_pool.close()
     await mysql_pool.wait_closed()
@@ -45,26 +71,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ----------------- Configuración del LLM y Agente ------------------
-OPENAI_API_KEY = os.environ.get("OPEN_AI_API")
-llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-4o")
-tools = TOOLS
-
-#Obtener prompt
-with open(os.path.join(os.path.dirname(__file__), "prompt.txt"), "r", encoding="utf-8") as f:
-    prompt_content = f.read()
-
-if prompt_content.startswith('prompt='):
-    prompt_content = prompt_content.split('=', 1)[1].strip().strip('"').strip("'")
-
-#Crear el PromptTemplate
-prompt = PromptTemplate.from_template(prompt_content)
-
-# Crear el agente de OpenAI con tools y prompt
-memory = ConversationBufferMemory(return_messages=True,input_key="input")
-agent = create_openai_functions_agent(llm=llm, tools=tools, prompt=prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, memory=memory, memory_key="chat_history", verbose=True)
 
 
 # ----------------- Funciones para chat_history ------------------
@@ -177,10 +183,12 @@ async def user_environment_node(state: AgentState):
         user_phone = str(parsed.national_number)
     except Exception as e:
         user_phone = re.sub(r"\D", "", user_phone)
-    user_environment= await get_user_env(tools_pool, 85813601)
+    user_environment= await get_user_env(tools_pool, user_phone)
     state.user_env = user_environment
     return state
 
+
+##----------------Grafo-----------------##
 # Añadir los nodos al grafo
 graph_builder = StateGraph(AgentState)
 graph_builder.add_node("user_environment_node", user_environment_node)
@@ -209,7 +217,6 @@ async def receive_message(payload: dict):
             lat = message_data["locationMessage"]["degreesLatitude"]
             lng = message_data["locationMessage"]["degreesLongitude"]
             message = f"[Ubicación recibida] Lat: {lat}, Lng: {lng}"
-            # Aquí puedes guardar lat/lng en el estado si lo necesitas
         else:
             message = "[Mensaje no soportado]"
 
