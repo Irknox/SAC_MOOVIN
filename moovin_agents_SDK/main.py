@@ -14,6 +14,8 @@ from agents import (
 )
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from tools import make_get_package_timeline_tool, make_get_SLA_tool,get_likely_package_timelines
+from dotenv import load_dotenv
+load_dotenv()
 
 # =========================
 # CONTEXT
