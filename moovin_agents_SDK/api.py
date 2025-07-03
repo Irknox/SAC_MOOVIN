@@ -12,9 +12,17 @@ from tools import make_get_package_timeline_tool, make_get_SLA_tool
 from main import build_agents, MoovinAgentContext
 from agents import (
     Runner, MessageOutputItem, HandoffOutputItem, ToolCallItem,
-    ToolCallOutputItem, InputGuardrailTripwireTriggered
+    ToolCallOutputItem, InputGuardrailTripwireTriggered,RunContextWrapper
 )
 import json
+from datetime import datetime, timedelta
+import traceback
+
+import tiktoken
+
+
+
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -86,11 +94,20 @@ store = InMemoryStore()
 def _get_agent_by_name(app: FastAPI, name: str):
     return app.state.agents.get(name, app.state.agents["General Agent"])
 
+def count_tokens(text, model="gpt-4o"):
+    enc = tiktoken.encoding_for_model(model)
+    return len(enc.encode(text))
+
 @app.post("/ask")
 async def whatsapp_webhook(request: Request):
     payload = await request.json()
     try:
-        message_data = payload["data"]["message"]
+        data_item = payload["data"]
+        message_data = data_item["message"]
+        user_name = data_item.get("pushName", "Desconocido")
+        user_id = data_item["key"]["remoteJid"]
+        message_id = data_item["key"]["id"]
+
         if "conversation" in message_data:
             user_message = message_data["conversation"]
         elif "locationMessage" in message_data:
@@ -99,13 +116,31 @@ async def whatsapp_webhook(request: Request):
             user_message = f"[Ubicación recibida] Lat: {lat}, Lng: {lng}"
         else:
             user_message = "[Mensaje no soportado]"
+            
+        state = store.get(user_id)
+        if state:
+            agent_name = state.get("current_agent", "General Agent")
+        else:
+            agent_name = "General Agent"
 
-        user_id = payload["data"]["key"]["remoteJid"]
-        message_id = payload["data"]["key"]["id"]
+        print(
+            f"📥 Recibido mensaje de: {user_name} ({user_id}) | "
+            f"Atendido por Agente: {agent_name} | "
+            f"Mensaje del usuario: {user_message}"
+        )    
+            
 
         is_new = store.get(user_id) is None
+        print(f"🔍 Estado de la conversación: {'Nuevo' if is_new else 'Existente'}")
         if is_new:
             last_state_record = await get_last_state(request.app.state.mysql_pool, user_id)
+            if last_state_record and last_state_record.get("fecha"):
+                last_time = last_state_record["fecha"]
+                if isinstance(last_time, str):
+                    last_time = datetime.strptime(last_time, "%Y-%m-%d %H:%M:%S")
+                if datetime.utcnow() - last_time > timedelta(minutes=10):
+                    print("🕒 Último contexto es muy viejo, creando nuevo contexto...")
+                    last_state_record = None
             if last_state_record and last_state_record.get("contexto"):
                 try:
                     raw_context = last_state_record["contexto"]
@@ -127,7 +162,6 @@ async def whatsapp_webhook(request: Request):
                     ctx.user_id = user_id
                     user_env_data = await get_user_env(request.app.state.tools_pool, user_id)
                     ctx.user_env = user_env_data
-
                     state = {
                         "context": ctx,
                         "input_items": [],
@@ -138,7 +172,6 @@ async def whatsapp_webhook(request: Request):
                 ctx.user_id = user_id
                 user_env_data = await get_user_env(request.app.state.tools_pool, user_id)
                 ctx.user_env = user_env_data
-
                 state = {
                     "context": ctx,
                     "input_items": [],
@@ -147,11 +180,11 @@ async def whatsapp_webhook(request: Request):
             store.save(user_id, state)
         else:
             state = store.get(user_id)
-           
+
         current_agent = _get_agent_by_name(request.app, state["current_agent"])
         state["input_items"].append({"role": "user", "content": user_message})
+
         result = await Runner.run(current_agent, state["input_items"], context=state["context"])
-        print("🔄 Resultado de la ejecución del agente:", result)
         response_text = "🤖 No hay respuesta disponible."
         for item in result.new_items:
             try:
@@ -172,11 +205,9 @@ async def whatsapp_webhook(request: Request):
         state["input_items"] = result.to_input_list()
         state["current_agent"] = current_agent.name
         store.save(user_id, state)
-        state_to_save = state.copy() 
-
+        state_to_save = state.copy()
         if hasattr(state_to_save["context"], "model_dump"):
             state_to_save["context"] = state_to_save["context"].model_dump()
-
         context_json = json.dumps(state_to_save)
         await save_message(
             request.app.state.mysql_pool,
@@ -205,12 +236,34 @@ async def whatsapp_webhook(request: Request):
         }
 
         r = requests.post(url, json=payload, headers=headers)
-        print("📤 Enviado a WhatsApp:", r.text)
+        
+        prompt_text = current_agent.instructions(
+        RunContextWrapper(state["context"]), current_agent
+        ) if callable(current_agent.instructions) else str(current_agent.instructions)
+
+        
+        all_text = ""
+        for item in state["input_items"]:
+            if isinstance(item, dict) and "content" in item:
+                all_text += str(item["content"]) + "\n"
+        all_text += response_text
+
+        # Suma el prompt
+        all_text_with_prompt = prompt_text + "\n" + all_text
+
+        # Cuenta los tokens
+        tokens_used = count_tokens(all_text_with_prompt)
+        #print("📝 Texto que genero gasto en tokens (incluye prompt):", all_text_with_prompt)
+        print(f"🔢 Tokens usados en la interacción (incluyendo prompt): {tokens_used}") 
+        
+        
+        print("📤 Enviado a WhatsApp:", response_text)
 
         return {"status": "ok", "response": response_text}
 
     except Exception as e:
         print("❌ Error procesando mensaje de WhatsApp:", e)
+        traceback.print_exc()
         return {"error": str(e)}
 
 
