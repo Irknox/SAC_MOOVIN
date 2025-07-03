@@ -116,7 +116,7 @@ def build_agents(tools_pool):
         name="Package Analysis Agent",
         model="gpt-4o",
         instructions=package_analysis_instructions,
-        tools=[make_get_package_timeline_tool(tools_pool),get_likely_package_timelines],
+        tools=[make_get_package_timeline_tool(tools_pool),get_likely_package_timelines,make_get_SLA_tool(tools_pool)],
         input_guardrails=[],
     )
 
@@ -124,7 +124,7 @@ def build_agents(tools_pool):
         name="Ticketing Agent",
         model="gpt-4o",
         instructions=ticketing_agent_instructions,
-        tools=[make_get_SLA_tool(tools_pool)],
+        tools=[],
         input_guardrails=[],
     )
 
