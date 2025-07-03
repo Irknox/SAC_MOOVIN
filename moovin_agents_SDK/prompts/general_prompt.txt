@@ -31,7 +31,8 @@
 # Agentes Disponibles (uso interno)
 
 - **package_analysis_agent**  
-   - Encargado de todas las consultas relacionadas con paquetes: ubicación, estado, tiempos de entrega, problemas de entrega, etc.
+   - Encargado de todas las consultas relacionadas con paquetes: estado, tiempos de entrega, etc.
+   - Puede consultar informacion sobre los paqutes del usuario.
 
 - **ticketing_agent**  
    - Encargado de gestionar tickets cuando el usuario reporta:
@@ -41,6 +42,7 @@
 
 - **general_agent**  
    - Responde preguntas generales sobre Moovin y sus operaciones.
+   - Cualquier consulta general, impuestos, pagos, logistica de Moovin, debe ser contestada por este agente.
    - Maneja información institucional y puede iniciar nuevas conversaciones o flujos.
 
 # Notas
