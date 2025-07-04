@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any, Literal
 from uuid import uuid4
 import os
 import requests
-from database_handler import get_last_state,save_message,get_user_env
+from database_handler import get_last_state,save_message,get_user_env,get_agent_history
 from config import create_mysql_pool, create_tools_pool
 from tools import make_get_package_timeline_tool, make_get_SLA_tool
 from main import build_agents, MoovinAgentContext
@@ -216,6 +216,8 @@ async def whatsapp_webhook(request: Request):
             response_text,
             context_json
         )
+        
+        print(f"User ID: {user_id}")
 
         url = f"{os.environ.get('Whatsapp_URL')}/message/sendText/SAC-Moovin"
         payload = {
@@ -248,10 +250,7 @@ async def whatsapp_webhook(request: Request):
                 all_text += str(item["content"]) + "\n"
         all_text += response_text
 
-        # Suma el prompt
         all_text_with_prompt = prompt_text + "\n" + all_text
-
-        # Cuenta los tokens
         tokens_used = count_tokens(all_text_with_prompt)
         #print("📝 Texto que genero gasto en tokens (incluye prompt):", all_text_with_prompt)
         print(f"🔢 Tokens usados en la interacción (incluyendo prompt): {tokens_used}") 
@@ -266,7 +265,14 @@ async def whatsapp_webhook(request: Request):
         traceback.print_exc()
         return {"error": str(e)}
 
-
+@app.post("/ManagerUI")
+async def manager_ui(request: Request):
+    try:
+        agent_history = await get_agent_history(request.app.state.mysql_pool)
+        return {"history": agent_history}
+    except Exception as e:
+        print("❌ Error en ManagerUI:", e)
+        return {"error": str(e)}
 
 # @app.post("/chat", response_model=ChatResponse)
 # async def chat(req: ChatRequest):

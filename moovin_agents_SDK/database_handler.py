@@ -220,6 +220,22 @@ async def rural_routes_schedule(canton, distrito):
         await pool.wait_closed()
 
 #--------------------Funciones de chat_history--------------------#
+async def get_agent_history(pool):
+    """
+    Obtiene el historial completo de la tabla sac_agent_memory,
+    ordenado por user_id y fecha.
+    Devuelve una lista de dicts.
+    """
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("""
+                SELECT *
+                FROM sac_agent_memory
+                ORDER BY user_id ASC, fecha DESC
+            """)
+            result = await cur.fetchall()
+            return result
+
 async def get_last_state(pool, user_id):
     """
     Obtiene el último registro de la tabla sac_agent_memory para el user_id dado.
