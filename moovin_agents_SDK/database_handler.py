@@ -141,6 +141,7 @@ async def get_delivery_address(pool, enterprise_code):
 async def get_package_historic(pool, package_id):
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
+            # Obtener el historial del paquete
             await cur.execute("""
                 SELECT 
                     IFNULL(PSD.value, '') AS value,
@@ -186,7 +187,18 @@ async def get_package_historic(pool, package_id):
                     else:
                         evento["realizado_por"] = "moovin"
                 timeline.append(evento)
-            return timeline
+
+            # Obtener el telefono del dueño del paquete
+            await cur.execute("""
+                SELECT phone_digits FROM package WHERE idPackage = %s LIMIT 1
+            """, (package_id,))
+            phone_row = await cur.fetchone()
+            phone = phone_row["phone_digits"] if phone_row and phone_row.get("phone_digits") else None
+
+            return {
+                "timeline": timeline,
+                "telefono_dueño": phone
+            }
 
 async def is_final_warehouse(pool, package_id):
     timeline = await get_package_historic(pool, package_id)
@@ -231,7 +243,7 @@ async def get_agent_history(pool):
             await cur.execute("""
                 SELECT *
                 FROM sac_agent_memory
-                ORDER BY user_id ASC, fecha DESC
+                ORDER BY user_id DESC, fecha DESC
             """)
             result = await cur.fetchall()
             return result
@@ -257,7 +269,6 @@ async def get_last_state(pool, user_id):
 async def save_message(pool, user_id, mensaje_entrante, mensaje_saliente, contexto):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            # Serializar el contexto usando Pydantic si es un modelo, o json.dumps de fallback
             if isinstance(contexto, BaseModel):
                 contexto_json = contexto.model_dump_json()
             else:
@@ -270,7 +281,7 @@ async def save_message(pool, user_id, mensaje_entrante, mensaje_saliente, contex
             
 #---------------------Env del Usuario que contacta--------------------#
 async def get_user_env(pool, phone):
-    phone = re.sub(r"\\D", "", phone)
+    phone = re.sub(r"\D", "", phone)
     try:
         if not phone.startswith("+"):
             phone = "+" + phone
@@ -279,12 +290,12 @@ async def get_user_env(pool, phone):
             parsed = phonenumbers.parse(phone, None)
         phone = str(parsed.national_number)
     except Exception as e:
-        phone = re.sub(r"\\D", "", phone)
+        phone = re.sub(r"\D", "", phone)
 
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute("""
-                SELECT idPackage, enterpriseCode, fkIdUser, fullName
+                SELECT idPackage, enterpriseCode, fkIdUser, fullName, email
                 FROM package
                 WHERE phone_digits = %s
                 ORDER BY insertDate DESC
@@ -293,11 +304,15 @@ async def get_user_env(pool, phone):
             paquetes = await cur.fetchall()
 
             if not paquetes:
-                return {"mensaje": "No se encontraron paquetes para este usuario."}
+                return {
+                        "Telefono del Usuario": phone, 
+                        "mensaje": "No se encontraron paquetes para este usuario."
+                        }
 
             nombres = ["Último paquete", "Penúltimo paquete", "Antepenúltimo paquete"]
             resultados = []
             nombre_usuario = paquetes[0]['fullName'] if paquetes[0].get('fullName') else "Usuario"
+            email_usuario = paquetes[0]['email'] if paquetes[0].get('email') else "Sin correo registrado"
 
             for idx, paquete in enumerate(paquetes):
                 id_package = paquete['idPackage']
@@ -328,7 +343,10 @@ async def get_user_env(pool, phone):
 
             return {
                 "nombre_usuario": nombre_usuario,
-                "paquetes": resultados
+                "telefono_usuario": phone,
+                "email": email_usuario,
+                "paquetes": resultados,
+                
             }
 #---------------------get_SLA--------------------#
 async def get_delivery_date(pool, enterprise_code: str) -> dict:

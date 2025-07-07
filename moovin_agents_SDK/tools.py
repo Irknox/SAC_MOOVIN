@@ -60,15 +60,34 @@ def make_get_SLA_tool(pool):
 def make_get_package_timeline_tool(pool):
     @function_tool(
         name_override="get_package_timeline",
-        description_override="Obtiene el historico del paquete del usuario a partir su Tracking o numero de segumiento."
+        description_override="Obtiene el historico del paquete del usuario a partir de su Tracking o número de seguimiento y su número de teléfono."
     )
-    async def get_package_timeline(enterprise_code: str) -> dict:
-        print(f"🔍 Obteniendo historico del paquete {enterprise_code}...")
-        return await get_package_historic(pool, enterprise_code)
+    async def get_package_timeline(package_id: str, phone: str) -> dict:
+        """
+        Devuelve el historial del paquete solo si el número de teléfono coincide con el del dueño.
+        """
+        print(f"🔍 Obteniendo timeline del paquete {package_id} para el teléfono {phone}...")
+
+        try:
+            historic = await get_package_historic(pool, package_id)
+        except Exception as e:
+            print(f"🔴 [ERROR] Fallo al obtener el histórico del paquete {package_id}: {e}")
+            return {"error": "Hubo un problema al obtener el historial del paquete."}
+
+        phone_dueño = historic.get("telefono_dueño")
+        if not phone_dueño:
+            print(f"🔴 [ERROR] No se encontró el teléfono del dueño del paquete en los datos: {historic}")
+            return {"error": "No se encontró el teléfono del dueño del paquete."}
+
+        if phone_dueño.strip().lower() != phone.strip().lower():
+            print(f"🟠 [WARNING] Teléfono no coincide. Proporcionado: {phone}, Dueño: {phone_dueño}")
+            return {"error": "El teléfono proporcionado no coincide con el dueño del paquete."}
+        return {
+            "timeline": historic.get("timeline"),
+            "Numero de Telefono": phone_dueño
+        }
 
     return get_package_timeline
-
-
 
 
 @function_tool(

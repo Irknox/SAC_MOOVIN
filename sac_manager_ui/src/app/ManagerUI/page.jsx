@@ -28,8 +28,7 @@ export default function ManagerUIPage() {
           gridRow: "1 / span 2",
           gridColumn: "1",
           height: "100%",
-          borderRight: "3px solid white",
-          
+          borderRight: "3px solid rgb(183, 12, 12)",
         }}
       >
         <ConversationsTab
@@ -42,7 +41,7 @@ export default function ManagerUIPage() {
           gridRow: "1",
           gridColumn: "2",
           padding: 20,
-          borderBottom: "1px solid #ccc",
+          borderBottom: "1px solid rgb(183, 12, 12)",
           backgroundColor: "#060025",
         }}
       >
@@ -58,6 +57,8 @@ export default function ManagerUIPage() {
             height: "100%",
             width: "100%",
             display: "flex",
+            backgroundColor: "#00255a",
+            flexDirection: "column",
             padding: 20,
           }}
         />

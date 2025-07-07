@@ -216,9 +216,6 @@ async def whatsapp_webhook(request: Request):
             response_text,
             context_json
         )
-        
-        print(f"User ID: {user_id}")
-
         url = f"{os.environ.get('Whatsapp_URL')}/message/sendText/SAC-Moovin"
         payload = {
             "number": user_id.replace("@s.whatsapp.net", ""),
@@ -252,7 +249,6 @@ async def whatsapp_webhook(request: Request):
 
         all_text_with_prompt = prompt_text + "\n" + all_text
         tokens_used = count_tokens(all_text_with_prompt)
-        #print("📝 Texto que genero gasto en tokens (incluye prompt):", all_text_with_prompt)
         print(f"🔢 Tokens usados en la interacción (incluyendo prompt): {tokens_used}") 
         
         
