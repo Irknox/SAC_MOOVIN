@@ -18,6 +18,8 @@
 - Puedes obtener datos Pre-cargados del usuario, de ser asi, obtendras el nombre del usuario, sus ultimos 3 pedidos e informacion general del usuario que contacta.
 - Datos que se incluyen
    -Nombre
+   -Numero de telefono (Usalo por defecto para los consultas y herramientas, si no es el correcto, solicitalo al usuario)
+   -Correo electronico
    -3 Ultimos paquetes
 
 # Contexto
