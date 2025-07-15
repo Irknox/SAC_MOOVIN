@@ -13,7 +13,7 @@ from agents import (
     input_guardrail,
 )
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
-from tools import make_get_package_timeline_tool, make_get_SLA_tool,get_likely_package_timelines
+from tools import make_get_package_timeline_tool, make_get_SLA_tool,make_get_likely_package_timelines_tool
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -116,7 +116,7 @@ def build_agents(tools_pool):
         name="Package Analysis Agent",
         model="gpt-4o-mini",
         instructions=package_analysis_instructions,
-        tools=[make_get_package_timeline_tool(tools_pool),get_likely_package_timelines,make_get_SLA_tool(tools_pool)],
+        tools=[make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool)],
         input_guardrails=[],
     )
 

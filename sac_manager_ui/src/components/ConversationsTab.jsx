@@ -1,4 +1,4 @@
-import { fetchAgentHistory } from "../services/ManagerUI_service";
+import { fetchHistoryPreview } from "../services/ManagerUI_service";
 import React, { useState, useEffect } from "react";
 
 const ConversationsTab = ({ onSelectUser, selectedUserId }) => {
@@ -6,17 +6,36 @@ const ConversationsTab = ({ onSelectUser, selectedUserId }) => {
   const [lastMessages, setLastMessages] = useState([]);
 
   useEffect(() => {
-    fetchAgentHistory().then((history) => {
-      setHistory(history);
-
+    fetchHistoryPreview().then((history) => {
       const grouped = {};
-      history.forEach((entry) => {
-        grouped[entry.user_id] = entry;
-      });
-      setLastMessages(Object.values(grouped));
+      const lastMessages = [];
+
+      history
+        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+        .forEach((entry) => {
+          try {
+            const raw = entry.contexto;
+            const parsedOnce = JSON.parse(raw);
+            entry.contexto =
+              typeof parsedOnce === "string"
+                ? JSON.parse(parsedOnce)
+                : parsedOnce;
+          } catch (e) {
+            console.warn("❌ Error al parsear contexto en entry", entry.id, e);
+            entry.contexto = {};
+          }
+
+          if (!grouped[entry.user_id]) {
+            grouped[entry.user_id] = entry;
+            lastMessages.push(entry);
+          }
+        });
+
+      setHistory(history);
+      setLastMessages(lastMessages);
     });
   }, []);
-
+  //
   return (
     <>
       <div
@@ -24,29 +43,53 @@ const ConversationsTab = ({ onSelectUser, selectedUserId }) => {
         style={{
           height: "100%",
           width: "100%",
-          backgroundColor: "#060025",
+          backgroundColor: "#000b24ff",
         }}
       >
-        <h2 style={{ textAlign: "center",height:"25px",alignContent:"center" }}>Chats</h2>
-        <div style={{ listStyle: "none", padding: 0 }}>
+        <h2
+          style={{
+            textAlign: "center",
+            height: "35px",
+            alignContent: "center",
+            fontWeight: "bold",
+            fontSize: "large",
+            backgroundColor: "#000b24ff",
+            borderBottom: "3px solid #ac302c",
+          }}
+        >
+          Chats
+        </h2>
+        <div style={{ listStyle: "none" }}>
           {lastMessages.map((entry) => (
             <li
               key={entry.user_id}
               style={{
-                padding: "10px",
+                padding: "2px",
                 cursor: "pointer",
                 background:
-                  selectedUserId === entry.user_id ? "#000014" : "#060025",
-                borderBottom: "1px solid rgb(0, 0, 0)",
+                  selectedUserId === entry.user_id ? "#010716ff" : "#000b24ff",
+                borderBottom: "2px solid #0b39804f",
+                height: "5.25rem",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-evenly",
+                paddingLeft: "8px",
               }}
               onClick={() => onSelectUser(entry.user_id)}
             >
-              <strong>{entry.user_id}</strong>
-              <div style={{ fontSize: 12 }}>
+              <strong style={{ fontSize: 14}}>
+                {entry.contexto.context.user_env.username || entry.user_id}
+              </strong>
+              <div
+                style={{ fontSize: 11, display: "flex", alignSelf: "center" }}
+              >
                 {entry.mensaje_entrante || entry.mensaje_saliente}
               </div>
-              <div style={{ fontSize: 10 }}>
-                {new Date(new Date(entry.fecha).getTime() - 6 * 60 * 60 * 1000).toLocaleString()}
+              <div style={{ fontSize: 9, textAlign: "right" }}>
+                Recibido:{" "}
+                {new Date(
+                  new Date(entry.fecha).getTime() - 6 * 60 * 60 * 1000
+                ).toLocaleString()}
               </div>
             </li>
           ))}

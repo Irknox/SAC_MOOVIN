@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any, Literal
 from uuid import uuid4
 import os
 import requests
-from database_handler import get_last_state,save_message,get_user_env,get_agent_history
+from database_handler import get_last_state,save_message,get_user_env,get_agent_history,get_users_last_messages,get_last_messages_by_user
 from config import create_mysql_pool, create_tools_pool
 from tools import make_get_package_timeline_tool, make_get_SLA_tool
 from main import build_agents, MoovinAgentContext
@@ -149,7 +149,7 @@ async def whatsapp_webhook(request: Request):
                         restored_state = json.loads(restored_state)
                     restored_context_dict = restored_state["context"]
                     restored_context = MoovinAgentContext(**restored_context_dict)
-                    user_env_data = await get_user_env(request.app.state.tools_pool, user_id)
+                    user_env_data = await get_user_env(request.app.state.tools_pool, user_id,whatsapp_username=user_name)
                     restored_context.user_env = user_env_data
                     state = {
                         "context": restored_context,
@@ -160,7 +160,7 @@ async def whatsapp_webhook(request: Request):
                     print("⚠️ Error restaurando contexto desde BD, se crea uno nuevo:", e)
                     ctx = request.app.state.create_initial_context()
                     ctx.user_id = user_id
-                    user_env_data = await get_user_env(request.app.state.tools_pool, user_id)
+                    user_env_data = await get_user_env(request.app.state.tools_pool, user_id,whatsapp_username=user_name)
                     ctx.user_env = user_env_data
                     state = {
                         "context": ctx,
@@ -170,7 +170,7 @@ async def whatsapp_webhook(request: Request):
             else:
                 ctx = request.app.state.create_initial_context()
                 ctx.user_id = user_id
-                user_env_data = await get_user_env(request.app.state.tools_pool, user_id)
+                user_env_data = await get_user_env(request.app.state.tools_pool, user_id,whatsapp_username=user_name)
                 ctx.user_env = user_env_data
                 state = {
                     "context": ctx,
@@ -264,8 +264,20 @@ async def whatsapp_webhook(request: Request):
 @app.post("/ManagerUI")
 async def manager_ui(request: Request):
     try:
-        agent_history = await get_agent_history(request.app.state.mysql_pool)
-        return {"history": agent_history}
+        payload = await request.json()
+        print(f'payload obtenido {payload}' )
+        if payload.get('request') == 'UsersLastMessages':
+            agent_history = await get_users_last_messages(request.app.state.mysql_pool)
+            return {"history": agent_history}
+        elif payload.get('request') == 'UserHistory':
+            request_body = payload.get('request_body')
+            user_id=request_body.get('user')
+            range=request_body.get('range')
+            last_message_id=request_body.get('last_id')
+            agent_history = await get_last_messages_by_user(request.app.state.mysql_pool, user_id, limit=range,last_id=last_message_id)
+            return {"history": agent_history}
+        else:
+            return {"error": "Invalid request type."}
     except Exception as e:
         print("❌ Error en ManagerUI:", e)
         return {"error": str(e)}

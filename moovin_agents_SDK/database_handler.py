@@ -139,9 +139,9 @@ async def get_delivery_address(pool, enterprise_code):
                 return delivery_address
 
 async def get_package_historic(pool, package_id):
+    print(f"🔍 Buscando historico de paquete para {package_id}...")
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
-            # Obtener el historial del paquete
             await cur.execute("""
                 SELECT 
                     IFNULL(PSD.value, '') AS value,
@@ -170,9 +170,9 @@ async def get_package_historic(pool, package_id):
                 LEFT JOIN delegate d ON d.id_delegate = PSD.id_delegate
                 LEFT JOIN delegates_warehouses dw ON dw.id_delegate = d.id_delegate AND dw.id_warehouse = PSD.id_warehouse
                 WHERE PSD.idPackage = %s
+                ORDER BY PSD.dateUser DESC
             """, (package_id,))
             rows = await cur.fetchall()
-
             estados_cambio = {"CANCEL", "RETURN", "DELETEPACKAGE", "CHANGECONTACTPOINT", "CANCELREQUEST"}
             timeline = []
             for row in rows:
@@ -188,7 +188,6 @@ async def get_package_historic(pool, package_id):
                         evento["realizado_por"] = "moovin"
                 timeline.append(evento)
 
-            # Obtener el telefono del dueño del paquete
             await cur.execute("""
                 SELECT phone_digits FROM package WHERE idPackage = %s LIMIT 1
             """, (package_id,))
@@ -247,23 +246,107 @@ async def get_agent_history(pool):
             """)
             result = await cur.fetchall()
             return result
-
-async def get_last_state(pool, user_id):
+        
+async def get_users_last_messages(pool):
     """
-    Obtiene el último registro de la tabla sac_agent_memory para el user_id dado.
-    Devuelve un dict con los campos completos del último state.
+    Obtiene el último mensaje de cada usuario en la tabla sac_agent_memory,
+    basado en la fecha más reciente. Devuelve una lista de dicts.
     """
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
+            # Paso 1: obtener los IDs de los últimos registros de cada usuario
             await cur.execute("""
-                SELECT id, user_id, mensaje_entrante, mensaje_saliente, contexto, fecha
+                SELECT MAX(id) as id
+                FROM sac_agent_memory
+                GROUP BY user_id
+                LIMIT 50
+            """)
+            ids = await cur.fetchall()
+
+            if not ids:
+                return []
+
+            # Paso 2: obtener los registros completos para esos IDs
+            id_list = tuple(row["id"] for row in ids)
+            in_clause = ",".join(["%s"] * len(id_list))
+
+            await cur.execute(f"""
+                SELECT * FROM sac_agent_memory
+                WHERE id IN ({in_clause})
+                ORDER BY fecha DESC
+            """, id_list)
+            return await cur.fetchall()
+
+
+async def get_last_messages_by_user(pool, user_id: str, limit: int, last_id: int = None):
+    """
+    Devuelve los últimos `limit` mensajes de un usuario específico.
+    Si se proporciona `last_id`, solo devuelve mensajes con `id` < `last_id`.
+    Utiliza subconsulta por IDs para evitar problemas de memoria (buffer).
+    """
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            # Paso 1: obtener los IDs de los mensajes filtrados
+            if last_id:
+                await cur.execute("""
+                    SELECT id
+                    FROM sac_agent_memory
+                    WHERE user_id = %s AND id < %s
+                    ORDER BY fecha DESC
+                    LIMIT %s
+                """, (user_id, last_id, limit))
+            else:
+                await cur.execute("""
+                    SELECT id
+                    FROM sac_agent_memory
+                    WHERE user_id = %s
+                    ORDER BY fecha DESC
+                    LIMIT %s
+                """, (user_id, limit))
+
+            rows = await cur.fetchall()
+            if not rows:
+                return []
+
+            # Paso 2: obtener los registros completos por ID
+            id_list = tuple(row["id"] for row in rows)
+            in_clause = ",".join(["%s"] * len(id_list))
+
+            await cur.execute(f"""
+                SELECT *
+                FROM sac_agent_memory
+                WHERE id IN ({in_clause})
+            """, id_list)
+
+            results = await cur.fetchall()
+
+            # Reordenar por fecha DESC para garantizar consistencia
+            results.sort(key=lambda x: x["fecha"], reverse=True)
+
+            return results
+
+
+
+
+
+
+async def get_last_state(pool, user_id):
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("""
+                SELECT id
                 FROM sac_agent_memory
                 WHERE user_id = %s
                 ORDER BY fecha DESC
                 LIMIT 1
             """, (user_id,))
-            result = await cur.fetchone()
-            return result
+            row = await cur.fetchone()
+            if not row:
+                return None
+            await cur.execute("""
+                SELECT * FROM sac_agent_memory WHERE id = %s
+            """, (row['id'],))
+            return await cur.fetchone()
 
 
 async def save_message(pool, user_id, mensaje_entrante, mensaje_saliente, contexto):
@@ -280,7 +363,7 @@ async def save_message(pool, user_id, mensaje_entrante, mensaje_saliente, contex
             """, (user_id, mensaje_entrante, mensaje_saliente, contexto_json))
             
 #---------------------Env del Usuario que contacta--------------------#
-async def get_user_env(pool, phone):
+async def get_user_env(pool, phone, whatsapp_username):
     phone = re.sub(r"\D", "", phone)
     try:
         if not phone.startswith("+"):
@@ -305,8 +388,9 @@ async def get_user_env(pool, phone):
 
             if not paquetes:
                 return {
-                        "Telefono del Usuario": phone, 
-                        "mensaje": "No se encontraron paquetes para este usuario."
+                        "username": whatsapp_username,
+                        "phone": phone, 
+                        "paquetes": "No se encontraron paquetes para este usuario."
                         }
 
             nombres = ["Último paquete", "Penúltimo paquete", "Antepenúltimo paquete"]
@@ -342,8 +426,8 @@ async def get_user_env(pool, phone):
                     })
 
             return {
-                "nombre_usuario": nombre_usuario,
-                "telefono_usuario": phone,
+                "username": nombre_usuario,
+                "phone": phone,
                 "email": email_usuario,
                 "paquetes": resultados,
                 
