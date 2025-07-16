@@ -2,23 +2,17 @@
 import React, { useState, useEffect } from "react";
 import ConversationsTab from "../../components/ConversationsTab";
 import Chat from "../../components/Chat";
-import { fetchAgentHistory } from "../../services/ManagerUI_service";
 
 export default function ManagerUIPage() {
-  const [history, setHistory] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
-
-  useEffect(() => {
-    fetchAgentHistory().then(setHistory);
-  }, []);
 
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateRows: "60px 1fr",
-        gridTemplateColumns: "300px 1fr",
-        height: "1000px",
+        gridTemplateRows: "70px 1fr",
+        gridTemplateColumns: "20% 1fr",
+        height: "100vh",
         width: "100vw",
         minHeight: 0,
       }}
@@ -28,7 +22,7 @@ export default function ManagerUIPage() {
           gridRow: "1 / span 2",
           gridColumn: "1",
           height: "100%",
-          borderRight: "3px solid rgb(183, 12, 12)",
+          borderRight: "2px solid #ac302c",
         }}
       >
         <ConversationsTab
@@ -40,30 +34,83 @@ export default function ManagerUIPage() {
         style={{
           gridRow: "1",
           gridColumn: "2",
-          padding: 20,
-          borderBottom: "1px solid rgb(183, 12, 12)",
-          backgroundColor: "#060025",
+          backgroundColor: "#000b24f9",
+          display: "flex",
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          height: "85%",
+          alignSelf: "start",
+          borderRight: "2px solid #ac302c",
+          borderBottom: "2px solid #ac302c",
+          position: "static",
+          zIndex: 20,
         }}
       >
-        <h2>SAC-Manager</h2>
+        <div
+          style={{
+            height: "100%",
+            display: "flex",
+            justifyItems: "center",
+            alignItems: "center",
+          }}
+        >
+          <img
+            src="SAC-manager-Title.png"
+            alt="Logo Moovin"
+            style={{
+              height: "60%",
+              paddingLeft: 15,
+            }}
+          />
+        </div>
+
+        <div
+          style={{
+            height: "75%",
+            backgroundColor: "white",
+            borderRadius: "5px",
+            margin: "0.75rem",
+          }}
+        >
+          <img
+            src="moovin_logo.png"
+            alt="Logo Moovin"
+            style={{ height: "100%", padding: 8 }}
+          />
+        </div>
       </div>
+
       {selectedUserId ? (
         <Chat
-          history={history}
           userId={selectedUserId}
           style={{
-            gridRow: "2",
+            gridRow: "1 /span 2",
             gridColumn: "2",
             height: "100%",
             width: "100%",
             display: "flex",
-            backgroundColor: "#00255a",
+            backgroundColor: "#ffffffff",
             flexDirection: "column",
-            padding: 20,
+            padding: 40,
           }}
         />
       ) : (
-        <div style={{ gridRow: "2", gridColumn: "2", flex: 1, padding: 20 }}>
+        <div
+          style={{
+            gridRow: "2",
+            backgroundColor: "#ebe4eb",
+            gridColumn: "2",
+            flex: 1,
+            padding: 20,
+            justifyContent: "center",
+            alignItems: "center",
+            display: "flex",
+            color: "#00255a",
+            fontSize: "larger",
+            fontWeight: "bold",
+          }}
+        >
           <h3>Selecciona una conversación</h3>
         </div>
       )}

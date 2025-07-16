@@ -13,6 +13,20 @@ def get_embedding(text: str, model: str = "text-embedding-3-small") -> list:
     response = client.embeddings.create(input=text, model=model)
     return response.data[0].embedding
 
+def convert_timeline_to_text(timeline_data: list) -> str:
+    """
+    Convierte una lista de estados del paquete (timeline) en un string legible y resumido,
+    adecuado para generar embeddings o visualizar.
+    """
+    lines = []
+    for entry in timeline_data:
+        fecha = entry.get("dateUser", "Fecha desconocida")
+        estado = entry.get("status", "Estado desconocido")
+        responsable = entry.get("fullName", "Desconocido")
+        lines.append(f"{fecha} - {estado} (por {responsable})")
+
+    return "\n".join(lines)
+
 def retrieve_similar_timelines(embedding: list, top_k: int = 5) -> list:
     conn = psycopg2.connect(os.environ["SUPABASE_URL"])
     cur = conn.cursor()
@@ -90,25 +104,36 @@ def make_get_package_timeline_tool(pool):
     return get_package_timeline
 
 
-@function_tool(
+# Factory function for get_likely_package_timelines tool
+def make_get_likely_package_timelines_tool(pool):
+    @function_tool(
     name_override="get_likely_package_timelines",
-    description_override="Obtiene timelines parecidos al del usuario, usala para obtener contexto unicamente."
-)
-async def get_likely_package_timelines(package_id: str) -> str:
-    print(f"🔍 Buscando timelines similares para el paquete {package_id}...")
-    package=get_id_package(package_id)
-    timeline = await get_package_historic( package)
-
-    embedding = get_embedding(timeline)
-
-    similar_timelines = retrieve_similar_timelines(embedding, top_k=5)
-
-    metadata = {"package_id": package}
-    insert_timeline_to_vectorstore(timeline, embedding, metadata)
-
-    response = (
-        f"Timeline del paquete {package_id} del usuario:\n{timeline}\n\n"
-        f"Timelines similares encontrados:\n- " + "\n- ".join(similar_timelines)
+    description_override="Obtiene timelines parecidos al del usuario apartir del tracking o numero de seguimiento, usala para obtener contexto unicamente." 
     )
+    async def get_likely_package_timelines(package_id: str) -> str:
+        print(f"🔍 Buscando timelines similares para el paquete {package_id}...")
+        package= await get_id_package(pool, enterprise_code=package_id)
+        raw_data = await get_package_historic(pool, package)
+        timeline_str = convert_timeline_to_text(raw_data["timeline"])
+        embedding = get_embedding(timeline_str)
+        similar_timelines = retrieve_similar_timelines(embedding, top_k=5)
 
-    return response
+        timeline_array=raw_data["timeline"]        
+        last_state = timeline_array[len(timeline_array) - 1]
+        last_status = last_state["status"]
+        date=last_state["dateUser"]
+        metadata = {
+            "package_id": package,
+            "last_status":last_status,
+            "date_last_update":date
+            }
+        insert_timeline_to_vectorstore(timeline_str, embedding, metadata)
+
+        response = (
+            f"Timeline del paquete {package_id}"
+            f"Timelines similares encontrados:\n- " + "\n- ".join(similar_timelines)
+        )
+
+        return response
+
+    return get_likely_package_timelines
