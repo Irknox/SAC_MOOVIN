@@ -43,28 +43,33 @@ class GuardrailCheck(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    mysql_pool = await create_mysql_pool()
-    tools_pool = await create_tools_pool()
+    try:
+        mysql_pool = await create_mysql_pool()
+        tools_pool = await create_tools_pool()
 
-    general_agent, package_analysis_agent, ticketing_agent, create_initial_context = build_agents(tools_pool)
+        general_agent, package_analysis_agent,  create_initial_context = await build_agents(tools_pool)
 
-    agents = {
-        general_agent.name: general_agent,
-        package_analysis_agent.name: package_analysis_agent,
-        ticketing_agent.name: ticketing_agent,
-    }
+        agents = {
+            general_agent.name: general_agent,
+            package_analysis_agent.name: package_analysis_agent,
+        }  
 
-    app.state.mysql_pool = mysql_pool
-    app.state.tools_pool = tools_pool
-    app.state.agents = agents
-    app.state.create_initial_context = create_initial_context
+        app.state.mysql_pool = mysql_pool
+        app.state.tools_pool = tools_pool
+        app.state.agents = agents
+        app.state.create_initial_context = create_initial_context
 
-    yield
+        yield
 
-    mysql_pool.close()
-    await mysql_pool.wait_closed()
-    tools_pool.close()
-    await tools_pool.wait_closed()
+        mysql_pool.close()
+        await mysql_pool.wait_closed()
+        tools_pool.close()
+        await tools_pool.wait_closed()
+    
+    except Exception as e:
+        print("🔥 Error al iniciar FastAPI:", e)
+        raise e
+        
 
 app = FastAPI(lifespan=lifespan)
 

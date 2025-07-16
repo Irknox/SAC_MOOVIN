@@ -11,7 +11,7 @@ export default function ManagerUIPage() {
       style={{
         display: "grid",
         gridTemplateRows: "70px 1fr",
-        gridTemplateColumns: "300px 1fr",
+        gridTemplateColumns: "20% 1fr",
         height: "100vh",
         width: "100vw",
         minHeight: 0,
@@ -22,7 +22,7 @@ export default function ManagerUIPage() {
           gridRow: "1 / span 2",
           gridColumn: "1",
           height: "100%",
-          borderRight: "2px solid white",
+          borderRight: "2px solid #ac302c",
         }}
       >
         <ConversationsTab
@@ -41,11 +41,8 @@ export default function ManagerUIPage() {
           alignItems: "center",
           height: "85%",
           alignSelf: "start",
-          margin: "0 0.25rem 0 0.15rem",
-          borderRight:'2px solid #ac302c',
-          borderLeft:'2px solid #ac302c',
-          borderBottom:'2px solid #ac302c',
-          borderRadius: "0 0 4px 4px",
+          borderRight: "2px solid #ac302c",
+          borderBottom: "2px solid #ac302c",
           position: "static",
           zIndex: 20,
         }}
@@ -56,7 +53,6 @@ export default function ManagerUIPage() {
             display: "flex",
             justifyItems: "center",
             alignItems: "center",
-            
           }}
         >
           <img
@@ -64,12 +60,19 @@ export default function ManagerUIPage() {
             alt="Logo Moovin"
             style={{
               height: "60%",
-              paddingLeft:15
+              paddingLeft: 15,
             }}
           />
         </div>
 
-        <div style={{ height: "75%", backgroundColor:'white', borderRadius:'5px',margin:'0.75rem' }}>
+        <div
+          style={{
+            height: "75%",
+            backgroundColor: "white",
+            borderRadius: "5px",
+            margin: "0.75rem",
+          }}
+        >
           <img
             src="moovin_logo.png"
             alt="Logo Moovin"
