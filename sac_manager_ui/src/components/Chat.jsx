@@ -83,11 +83,13 @@ const Chat = ({ userId, style }) => {
     >
       {user_history.map((entry, idx) => (
         <div key={idx} className="flex flex-col gap-2">
-          
           {/* Mensaje del Usuario */}
           {entry.mensaje_entrante && (
             <div className="flex items-start gap-2.5">
-              <div className="flex flex-col w-full max-w-[320px] leading-1.5 p-4 rounded-e-xl rounded-es-xl" style={{backgroundColor:"#ac302c"}}>
+              <div
+                className="flex flex-col w-full max-w-[320px] leading-1.5 p-4 rounded-e-xl rounded-es-xl"
+                style={{ backgroundColor: "#ac302c" }}
+              >
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-gray-900 dark:text-white">
                     Usuario
@@ -109,7 +111,7 @@ const Chat = ({ userId, style }) => {
             <div className="flex items-start justify-end gap-3 cursor-pointer">
               <div
                 className="flex flex-col w-full max-w-[320px] leading-1.5 p-4 rounded-s-xl rounded-ee-xl mr-6"
-                style={{backgroundColor:'#013544'}}
+                style={{ backgroundColor: "#013544" }}
                 onClick={() => handleAgentClick(entry, idx)}
               >
                 <div className="flex items-center justify-between ">
@@ -137,6 +139,7 @@ const Chat = ({ userId, style }) => {
           entry={selectedEntry}
           show={showModal}
           onClose={() => setShowModal(false)}
+          style={{ display: "flex", alignSelf: "center", justifyContent: "center" }}
         />
       )}
     </div>

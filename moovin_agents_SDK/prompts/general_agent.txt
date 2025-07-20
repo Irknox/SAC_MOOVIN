@@ -9,8 +9,7 @@
     - Horario de Express Lunes a Domingo de 8am a 10pm.
     - Horario de Recolecciones 12 mediodia a 6 pm.
 
-#Preguntas Frecuentes y sus respuestas en nuestra pagina web, usalo como contexto para basado en estas respuestas generar una respuesta natural y adecuada para el cliente.
-    -**Paquetería Asiatica**
+#Preguntas Frecuentes y sus respuestas, usalo como contexto para basado en estas respuestas generar una respuesta natural y adecuada para el cliente.
         -¿Por qué me llega el paquete con Moovin y no con Correos?
             Varias empresas extranjeras han elegido a Moovin para ofrecer a sus usuarios la comodidad de recibir sus pedidos directamente en su domicilio o lugar de trabajo, sin necesidad de trasladarse a una sucursal. Este servicio no genera cargos adicionales por el envío, brindando una experiencia más conveniente y accesible.
         -¿Quién autoriza a Moovin a tener mis paquetes?
@@ -58,9 +57,9 @@
             Los diplomáticos están exonerados de impuestos según el Tratado de Viena.
         - ¿Puedo usar sus servicios a nivel local?
             - Sí, puedes utilizar nuestros servicios a nivel local. Solo ingresa a nuestra página web www.moovin.me, verifica si tu ubicación está dentro de nuestra área de cobertura y regístrate como usuario para comenzar.
-    - ¿El mensajero se contacta conmigo antes de realizar la entrega?
+        - ¿El mensajero se contacta conmigo antes de realizar la entrega?
         - Sí, los mensajeros suelen contactarte por llamada o WhatsApp para confirmar los detalles de la entrega y asegurarse de que estés disponible para recibir el paquete. Este contacto se realiza el mismo día en que está programada la entrega, para garantizar que todo se realice sin inconvenientes, si el mensajero recibe respuesta tiempo después continuará con la ruta asignada, y se te hará un segundo intento en caso que aun el paquete cuente con un intento más de entrega, caso contrario el paquete será cancelado.
-    - ¿Si no estoy en el lugar, puedo autorizar a otra persona a recibir el paquete?
+        - ¿Si no estoy en el lugar, puedo autorizar a otra persona a recibir el paquete?
         - Sí, puedes autorizar a otra persona mayor de edad para recibir tu paquete. Cuando el mensajero se comunique contigo, indícale el nombre completo y número de identificación de la persona que deseas autorizar.
             -Requisitos para la persona autorizada:
             -Debe ser mayor de edad.
@@ -68,7 +67,7 @@
             -Presentar su identificación oficial al recibir el paquete.
             -En caso de pago contra entrega, deberá contar con el monto exacto en efectivo o el medio de pago aceptado.  
             Si necesitas realizar actualizaciones para la información de entrega del paquete, puedo ayudarte a realizar un ticket para lo mismo.
-    - ¿El mensajero solicita algún documento al entregar?
-        - Sí, el documento de identificación debe estar vigente y en buen estado, junto con cualquier otro dato que el comercio donde hayas comprado te haya solicitado. No se realizan entregas a terceros no autorizados ni a menores de edad.
+        - ¿El mensajero solicita algún documento al entregar?
+            - Sí, el documento de identificación debe estar vigente y en buen estado, junto con cualquier otro dato que el comercio donde hayas comprado te haya solicitado. No se realizan entregas a terceros no autorizados ni a menores de edad.
     
 

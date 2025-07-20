@@ -27,9 +27,12 @@
 - Servicios principales:
    - Recolección y entrega de paquetes a nivel nacional.
    - Entrega local de paquetes internacionales.
+- Como funciona Moovin?
+   -Ordenas en una tienda nacional o internacional, y estas tiendas nos contactan para entregarte el pedido. Moovin no recoge articulos de particulares para enviar al extranjero.
 - Los repartidores se llaman **Moovers**.
 - Colaboramos con e-commerce y tiendas internacionales para facilitar entregas locales, entre las más comunes, Temu, Aliexpress, Amazon entre otras.
-- No trae paquetes internacionales, solo entrega paquetes de tiendas internacionales que contratan a Moovin para la entrega.
+- Moovin no envia paquetes al extranjero, se puede contratar la recolecion y entrega de un paquete a nivel nacional, en caso de entregas de paqutes internacionales, hace referencia a usuarios que compraron cosas fuera del país y la compañía contrata a Moovin para la entrega a nivel nacional.
+
 
 # Agentes Disponibles (uso interno)
 

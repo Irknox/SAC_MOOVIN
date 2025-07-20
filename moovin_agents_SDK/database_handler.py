@@ -139,7 +139,6 @@ async def get_delivery_address(pool, enterprise_code):
                 return delivery_address
 
 async def get_package_historic(pool, package_id):
-    print(f"🔍 Buscando historico de paquete para {package_id}...")
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute("""
@@ -189,14 +188,15 @@ async def get_package_historic(pool, package_id):
                 timeline.append(evento)
 
             await cur.execute("""
-                SELECT phone_digits FROM package WHERE idPackage = %s LIMIT 1
+                SELECT phone_digits, fullName FROM package WHERE idPackage = %s LIMIT 1
             """, (package_id,))
             phone_row = await cur.fetchone()
             phone = phone_row["phone_digits"] if phone_row and phone_row.get("phone_digits") else None
-
+            userName = phone_row["fullName"] if phone_row and phone_row.get("fullName") else None
             return {
                 "timeline": timeline,
-                "telefono_dueño": phone
+                "telefono_dueño": phone,
+                "nombre_dueño_paquete": userName
             }
 
 async def is_final_warehouse(pool, package_id):
@@ -324,10 +324,6 @@ async def get_last_messages_by_user(pool, user_id: str, limit: int, last_id: int
             results.sort(key=lambda x: x["fecha"], reverse=True)
 
             return results
-
-
-
-
 
 
 async def get_last_state(pool, user_id):

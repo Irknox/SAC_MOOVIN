@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 import traceback
 
 import tiktoken
+import asyncio
 
 
 
@@ -47,16 +48,19 @@ async def lifespan(app: FastAPI):
         mysql_pool = await create_mysql_pool()
         tools_pool = await create_tools_pool()
 
-        general_agent, package_analysis_agent,  create_initial_context = await build_agents(tools_pool)
-
-        agents = {
-            general_agent.name: general_agent,
-            package_analysis_agent.name: package_analysis_agent,
-        }  
-
+        general_agent, package_analysis_agent, create_initial_context = await build_agents(tools_pool)
+        print("🚀 Agentes construidos y listos para usar.")
+        for agent in [general_agent, package_analysis_agent]:
+            for mcp_server in getattr(agent, "mcp_servers", []):
+                await mcp_server.connect()
+            print("Mcps Conectados")    
+        
         app.state.mysql_pool = mysql_pool
         app.state.tools_pool = tools_pool
-        app.state.agents = agents
+        app.state.agents = {
+            general_agent.name: general_agent,
+            package_analysis_agent.name: package_analysis_agent,
+        }
         app.state.create_initial_context = create_initial_context
 
         yield
@@ -65,7 +69,6 @@ async def lifespan(app: FastAPI):
         await mysql_pool.wait_closed()
         tools_pool.close()
         await tools_pool.wait_closed()
-    
     except Exception as e:
         print("🔥 Error al iniciar FastAPI:", e)
         raise e

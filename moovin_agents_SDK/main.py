@@ -15,10 +15,7 @@ from agents import (
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from tools import make_get_package_timeline_tool, make_get_SLA_tool,make_get_likely_package_timelines_tool
 from dotenv import load_dotenv
-from mcp_handler import init_mcp_servers
-
-import asyncio
-
+from mcp_server import get_stdio_server
 
 load_dotenv()
 
@@ -75,8 +72,6 @@ async def basic_guardrail(
     return GuardrailFunctionOutput(output_info=final, tripwire_triggered=False)
 
 
-
-
 # =========================
 # MCPs
 # =========================
@@ -105,7 +100,6 @@ async def build_agents(tools_pool):
             f"Datos precargados para este usuario: {env_info}\n"
             f"{GENERAL_AGENT_PROMPT}\n"
         )
-
     def package_analysis_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
         env_info = ""
         if ctx.context.user_env:
@@ -116,14 +110,15 @@ async def build_agents(tools_pool):
             f"Datos precargados para este usuario: {env_info}\n"
             f"{PACKAGE_ANALYST_PROMPT}\n"
         )
-
-
+    
+    stdio_server = get_stdio_server() 
+    
     package_analysis_agent = Agent[MoovinAgentContext](
         name="Package Analysis Agent",
         model="gpt-4o-mini",
         instructions=package_analysis_instructions,
         tools=[make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool)],
-        mcp_servers={}, 
+        mcp_servers=[stdio_server],
         input_guardrails=[],
     )
 

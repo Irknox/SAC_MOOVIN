@@ -57,10 +57,11 @@ const AgentResponseModal = ({ entry, onClose, msg_selected }) => {
     }
   };
 
-
   return (
     <div className="fixed inset-0 bg-gray/10 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 max-w-7xl w-full p-6 rounded-lg max-h-[90vh] h-[85vh] shadow-xl relative overflow-hidden flex flex-col justify-center items-center">
+      <div
+        className="bg-white dark:bg-gray-800 max-w-[90vw] w-[80vw] rounded-lg max-h-[90vh] h-[90vh] p-6 shadow-xl relative overflow-hidden flex flex-col justify-center items-center"
+      >
         <h2 className="text-xl font-semibold mb-4">Detalles del Proceso</h2>
         <button
           className="absolute top-4 right-6 text-gray-500 hover:text-red-600"
@@ -69,21 +70,26 @@ const AgentResponseModal = ({ entry, onClose, msg_selected }) => {
           ✕
         </button>
 
-        <div className="grid grid-cols-[25%_50%_24%] grid-rows-[15%_60%_19%] h-full p-5 w-full">
+        <div
+          className="grid grid-cols-[25%_50%_24%] grid-rows-[20%_40%_20%] h-full w-full"
+        >
           <div className="col-start-1 col-end-2 row-start-1 row-end-2 flex-col text-center">
             <h2 className="font-semibold text-lg">Agente que respondió</h2>
             <p className="text-sm">{agent}</p>
           </div>
 
-          <div className="col-start-1 col-end-4 row-start-2 row-end-3 flex-col">
+          <div
+            className="col-start-1 col-end-4 row-start-2 row-end-3 flex-col"
+          >
             <h2 className="font-semibold text-center text-lg">
               Acciones del Agente
             </h2>
             <AgentTimeline actions={agentRun} getToolOutput={getToolOutput} />
-
           </div>
 
-          <div className="col-start-1 col-end-2 row-start-3 row-end-4 flex-col">
+          <div
+            className="col-start-1 col-end-2 row-start-3 row-end-4 flex-col"
+          >
             <h3 className="font-semibold text-center p-3">
               Contexto del Usuario
             </h3>
