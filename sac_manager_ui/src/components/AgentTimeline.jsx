@@ -17,7 +17,9 @@ const AgentTimeline = ({ actions, getToolOutput }) => {
         label = `Handoff: ${action.name.replace("transfer_to_", "")}`;
       } else {
         label = `Tool: ${action.name}`;
-        const result = getToolOutput(action.call_id);        
+          
+        const result = getToolOutput(action.call_id);   
+        console.log("Herramienta usada:", action.name, "salida de la herramienta", result);     
         extra = result && (
           <div className="relative">
             <div

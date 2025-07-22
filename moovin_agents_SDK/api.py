@@ -22,8 +22,6 @@ import tiktoken
 import asyncio
 
 
-
-
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -49,11 +47,7 @@ async def lifespan(app: FastAPI):
         tools_pool = await create_tools_pool()
 
         general_agent, package_analysis_agent, create_initial_context = await build_agents(tools_pool)
-        print("🚀 Agentes construidos y listos para usar.")
-        for agent in [general_agent, package_analysis_agent]:
-            for mcp_server in getattr(agent, "mcp_servers", []):
-                await mcp_server.connect()
-            print("Mcps Conectados")    
+       
         
         app.state.mysql_pool = mysql_pool
         app.state.tools_pool = tools_pool

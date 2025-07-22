@@ -15,7 +15,7 @@ from agents import (
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from tools import make_get_package_timeline_tool, make_get_SLA_tool,make_get_likely_package_timelines_tool
 from dotenv import load_dotenv
-from mcp_server import get_stdio_server
+from mcp_tools import Make_request_to_pickup_tool
 
 load_dotenv()
 
@@ -111,14 +111,20 @@ async def build_agents(tools_pool):
             f"{PACKAGE_ANALYST_PROMPT}\n"
         )
     
-    stdio_server = get_stdio_server() 
+    
+    McpAgent = Agent[MoovinAgentContext](
+        name="MCP Agent",
+        model="gpt-4o-mini",
+        instructions='Fase de pruebas',
+        tools=[Make_request_to_pickup_tool],
+        input_guardrails=[],
+    )
     
     package_analysis_agent = Agent[MoovinAgentContext](
         name="Package Analysis Agent",
         model="gpt-4o-mini",
         instructions=package_analysis_instructions,
         tools=[make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool)],
-        mcp_servers=[stdio_server],
         input_guardrails=[],
     )
 
