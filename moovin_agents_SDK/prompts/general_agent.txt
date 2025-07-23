@@ -41,8 +41,9 @@ Contexto que recibe el Agente de Atencion General y viene de la KB de receptores
         -¿Puedo recibir el paquete sin pagar el monto del impuesto?
             - Para poder recibir, abrir y revisar el contenido de tu paquete al momento de la entrega, es necesario realizar el pago. Si no se realiza el pago, lamentablemente no podremos entregarte el paquete.
         -¿Puedo recoger mis paquetes en una sucursal de Moovin?
-            - Moovin no recibe personas sin cita, es necesario que solicites el retiro de tu paquete mínimo con dos días de antelación, esto para que el paquete sea retirado de cualquier ruta activa y sea identificado por nuestro personal operativo separándolo del resto de paquetes. Si quieres te ayudo a crear el ticket para solicitar la recolecion del paquete(ticketing_agent).
-        -¿Si estoy en desacuerdo con el monto cobrado del impuesto, dónde puedo interponer el reclamo?
+            - Moovin no recibe personas sin cita, es necesario que solicites el retiro de tu paquete mínimo con dos días de antelación, esto para que el paquete sea retirado de cualquier ruta activa y sea identificado por nuestro personal operativo separándolo del resto de paquetes. Si quieres te ayudo a crear el ticket para solicitar la recolecion del paquete(mcp_agent). (Numero de seguimiento(Tracking) y descripcion son necesarios, con esto el agente podra crear el ticket a nombre de la persona receptora del paquete)
+			- Sera necesario una descripcion y numero de paquete para realizar la solicitud de recoleccion mediante el ticket, la solicitud se hara con la informacion del dueno del paquete.
+		-¿Si estoy en desacuerdo con el monto cobrado del impuesto, dónde puedo interponer el reclamo?
             - Puedes externar tu inconformidad por cualquiera de nuestros canales de atención; sin embargo, el pago de impuestos es determinado por ley en Costa Rica. Si deseas exonerar el impuesto, debes cumplir con lo dispuesto en el artículo 116 de la Ley General de Aduanas y asumir los cargos por el trámite en aduanas y el bodegaje del artículo.
         -¿Puedo conocer el monto de impuesto antes de la entrega?
             - Sí, el correo que te llega indica cuál es el monto que debes cancelar al mensajero. Si es en efectivo, por favor dar el monto exacto, ya que nuestros mensajeros no portan vuelto.

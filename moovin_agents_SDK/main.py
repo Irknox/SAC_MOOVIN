@@ -88,7 +88,9 @@ async def build_agents(tools_pool):
     with open(os.path.join(os.path.dirname(__file__), "prompts", "package_analyst.txt"), "r", encoding="utf-8") as f:
         PACKAGE_ANALYST_PROMPT = f.read()
     with open(os.path.join(os.path.dirname(__file__), "prompts", "general_agent.txt"), "r", encoding="utf-8") as f:
-        GENERAL_AGENT_PROMPT = f.read()   
+        GENERAL_AGENT_PROMPT = f.read()
+    with open(os.path.join(os.path.dirname(__file__), "prompts", "mcp_agent.txt"), "r", encoding="utf-8") as f:
+        MCP_AGENT_PROMPT = f.read()  
         
     def general_agent_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
         env_info = ""
@@ -100,6 +102,7 @@ async def build_agents(tools_pool):
             f"Datos precargados para este usuario: {env_info}\n"
             f"{GENERAL_AGENT_PROMPT}\n"
         )
+        
     def package_analysis_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
         env_info = ""
         if ctx.context.user_env:
@@ -110,13 +113,23 @@ async def build_agents(tools_pool):
             f"Datos precargados para este usuario: {env_info}\n"
             f"{PACKAGE_ANALYST_PROMPT}\n"
         )
+        
+    def mcp_agent_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
+        env_info = ""
+        if ctx.context.user_env:
+            env_info = f"\nUser data:\n{ctx.context.user_env}"
+        return (
+            f"{RECOMMENDED_PROMPT_PREFIX}\n"
+            f"{GENERAL_PROMPT}\n"
+            f"Datos precargados para este usuario: {env_info}\n"
+            f"{MCP_AGENT_PROMPT}\n"
+        )
     
-    
-    McpAgent = Agent[MoovinAgentContext](
+    mcp_agent = Agent[MoovinAgentContext](
         name="MCP Agent",
         model="gpt-4o-mini",
-        instructions='Fase de pruebas',
-        tools=[Make_request_to_pickup_tool],
+        instructions=mcp_agent_instructions,
+        tools=[Make_request_to_pickup_tool(tools_pool)],
         input_guardrails=[],
     )
     
@@ -124,6 +137,7 @@ async def build_agents(tools_pool):
         name="Package Analysis Agent",
         model="gpt-4o-mini",
         instructions=package_analysis_instructions,
+        handoffs=[mcp_agent],
         tools=[make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool)],
         input_guardrails=[],
     )
@@ -132,11 +146,13 @@ async def build_agents(tools_pool):
         name="General Agent",
         model="gpt-4o-mini",
         instructions=general_agent_instructions,
-        handoffs=[package_analysis_agent],
+        handoffs=[package_analysis_agent,mcp_agent],
         input_guardrails=[],
     )
 
     # Return handoffs
     package_analysis_agent.handoffs.append(general_agent)
+    mcp_agent.handoffs.append(general_agent)
+    mcp_agent.handoffs.append(package_analysis_agent)
 
-    return general_agent, package_analysis_agent,create_initial_context
+    return general_agent, package_analysis_agent, mcp_agent, create_initial_context
