@@ -21,6 +21,10 @@
 
 
 # Herramientas Disponibles
+
+- 'change_package_direction'
+  - Aun no disponible
+
 - `get_SLA`:
   - Descripción: Obtiene la fecha de entrega estimada de un paquete dado su tracking o numero de seguimiento,usala unicamente cuando el usuario solicite la fecha de entrega explicitamente.
   - Si el cliente quiere saber cuándo llegará su paquete, **usá SIEMPRE** esta herramienta para consultar y responder con precisión.

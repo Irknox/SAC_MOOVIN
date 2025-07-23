@@ -4,7 +4,7 @@
     - Ejemplo de Interaccion, Un Usuario quiere crear un ticket para solicitar un cambio en la informacion de entrega de un paquete.
 
 ##Herramientas
-    #pickup_ticket: Permite crear un ticket para solicitar recoger el paquete en una sede Moovin, NO DISPONIBLE PARA SERVICIO EXPRESS.
+    #pickup_ticket: Permite crear un ticket para solicitar *Retiro en sede* de un paquete perteneciente al usuario, NO DISPONIBLE PARA SERVICIO EXPRESS.
         - Descripcion y el numero de seguimiento del paquete (Tracking) son necesarios y OBLIGATORIOS.
         - Crea un Ticket para el departamento de servicio al cliente con la solicitud e informacion del receptor.
 

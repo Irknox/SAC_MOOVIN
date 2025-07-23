@@ -7,7 +7,7 @@ from mcp_handler import create_pickup_ticket
 def Make_request_to_pickup_tool(pool):
     @function_tool(
         name_override="pickup_ticket",
-        description_override="Crea un ticket de recogida para un paquete a partir de su Tracking o numero de seguimiento. Si el paquete existe y no ha sido entregado, solicita numero de seguimiento y descripcion del motivo del ticket."
+        description_override="Crea un ticket de solicitud para retiro en sede de un paquete a partir de su Tracking o numero de seguimiento. Si el paquete existe y no ha sido entregado, solicita numero de seguimiento y descripcion del motivo del ticket."
     )
     async def pickup_ticket(
         package: str,
