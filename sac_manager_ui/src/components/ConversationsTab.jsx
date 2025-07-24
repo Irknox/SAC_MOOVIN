@@ -6,35 +6,42 @@ const ConversationsTab = ({ onSelectUser, selectedUserId }) => {
   const [lastMessages, setLastMessages] = useState([]);
 
   useEffect(() => {
-    fetchHistoryPreview().then((history) => {
-      const grouped = {};
-      const lastMessages = [];
+  let isMounted = true;
+  const fetchAndSet = async () => {
+    const history = await fetchHistoryPreview();
+    if (!isMounted) return;
+    const grouped = {};
+    const lastMessages = [];
+    history
+      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+      .forEach((entry) => {
+        try {
+          const raw = entry.contexto;
+          const parsedOnce = JSON.parse(raw);
+          entry.contexto =
+            typeof parsedOnce === "string"
+              ? JSON.parse(parsedOnce)
+              : parsedOnce;
+        } catch (e) {
+          entry.contexto = {};
+        }
+        if (!grouped[entry.user_id]) {
+          grouped[entry.user_id] = entry;
+          lastMessages.push(entry);
+        }
+      });
+    setHistory(history);
+    setLastMessages(lastMessages);
+  };
 
-      history
-        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
-        .forEach((entry) => {
-          try {
-            const raw = entry.contexto;
-            const parsedOnce = JSON.parse(raw);
-            entry.contexto =
-              typeof parsedOnce === "string"
-                ? JSON.parse(parsedOnce)
-                : parsedOnce;
-          } catch (e) {
-            console.warn("❌ Error al parsear contexto en entry", entry.id, e);
-            entry.contexto = {};
-          }
+  fetchAndSet();
+  const interval = setInterval(fetchAndSet, 3000);
 
-          if (!grouped[entry.user_id]) {
-            grouped[entry.user_id] = entry;
-            lastMessages.push(entry);
-          }
-        });
-
-      setHistory(history);
-      setLastMessages(lastMessages);
-    });
-  }, []);
+  return () => {
+    isMounted = false;
+    clearInterval(interval);
+  };
+}, []);
   //
   return (
     <>

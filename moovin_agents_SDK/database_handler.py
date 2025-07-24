@@ -188,15 +188,17 @@ async def get_package_historic(pool, package_id):
                 timeline.append(evento)
 
             await cur.execute("""
-                SELECT phone_digits, fullName FROM package WHERE idPackage = %s LIMIT 1
+                SELECT phone_digits, fullName,email FROM package WHERE idPackage = %s LIMIT 1
             """, (package_id,))
             phone_row = await cur.fetchone()
             phone = phone_row["phone_digits"] if phone_row and phone_row.get("phone_digits") else None
             userName = phone_row["fullName"] if phone_row and phone_row.get("fullName") else None
+            userEmail = phone_row["email"] if phone_row and phone_row.get("email") else None
             return {
                 "timeline": timeline,
                 "telefono_dueño": phone,
-                "nombre_dueño_paquete": userName
+                "nombre_dueño_paquete": userName,
+                "email_dueño_paquete": userEmail
             }
 
 async def is_final_warehouse(pool, package_id):
@@ -208,6 +210,7 @@ async def is_final_warehouse(pool, package_id):
     )
 
 async def rural_routes_schedule(canton, distrito):
+    
     pool = await aiomysql.create_pool(
         host=DB_HOST,
         user=DB_USER,
@@ -230,205 +233,6 @@ async def rural_routes_schedule(canton, distrito):
         pool.close()
         await pool.wait_closed()
 
-#--------------------Funciones de chat_history--------------------#
-async def get_agent_history(pool):
-    """
-    Obtiene el historial completo de la tabla sac_agent_memory,
-    ordenado por user_id y fecha.
-    Devuelve una lista de dicts.
-    """
-    async with pool.acquire() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as cur:
-            await cur.execute("""
-                SELECT *
-                FROM sac_agent_memory
-                ORDER BY user_id DESC, fecha DESC
-            """)
-            result = await cur.fetchall()
-            return result
-        
-async def get_users_last_messages(pool):
-    """
-    Obtiene el último mensaje de cada usuario en la tabla sac_agent_memory,
-    basado en la fecha más reciente. Devuelve una lista de dicts.
-    """
-    async with pool.acquire() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as cur:
-            # Paso 1: obtener los IDs de los últimos registros de cada usuario
-            await cur.execute("""
-                SELECT MAX(id) as id
-                FROM sac_agent_memory
-                GROUP BY user_id
-                LIMIT 50
-            """)
-            ids = await cur.fetchall()
-
-            if not ids:
-                return []
-
-            # Paso 2: obtener los registros completos para esos IDs
-            id_list = tuple(row["id"] for row in ids)
-            in_clause = ",".join(["%s"] * len(id_list))
-
-            await cur.execute(f"""
-                SELECT * FROM sac_agent_memory
-                WHERE id IN ({in_clause})
-                ORDER BY fecha DESC
-            """, id_list)
-            return await cur.fetchall()
-
-
-async def get_last_messages_by_user(pool, user_id: str, limit: int, last_id: int = None):
-    """
-    Devuelve los últimos `limit` mensajes de un usuario específico.
-    Si se proporciona `last_id`, solo devuelve mensajes con `id` < `last_id`.
-    Utiliza subconsulta por IDs para evitar problemas de memoria (buffer).
-    """
-    async with pool.acquire() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as cur:
-            # Paso 1: obtener los IDs de los mensajes filtrados
-            if last_id:
-                await cur.execute("""
-                    SELECT id
-                    FROM sac_agent_memory
-                    WHERE user_id = %s AND id < %s
-                    ORDER BY fecha DESC
-                    LIMIT %s
-                """, (user_id, last_id, limit))
-            else:
-                await cur.execute("""
-                    SELECT id
-                    FROM sac_agent_memory
-                    WHERE user_id = %s
-                    ORDER BY fecha DESC
-                    LIMIT %s
-                """, (user_id, limit))
-
-            rows = await cur.fetchall()
-            if not rows:
-                return []
-
-            # Paso 2: obtener los registros completos por ID
-            id_list = tuple(row["id"] for row in rows)
-            in_clause = ",".join(["%s"] * len(id_list))
-
-            await cur.execute(f"""
-                SELECT *
-                FROM sac_agent_memory
-                WHERE id IN ({in_clause})
-            """, id_list)
-
-            results = await cur.fetchall()
-
-            # Reordenar por fecha DESC para garantizar consistencia
-            results.sort(key=lambda x: x["fecha"], reverse=True)
-
-            return results
-
-
-async def get_last_state(pool, user_id):
-    async with pool.acquire() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as cur:
-            await cur.execute("""
-                SELECT id
-                FROM sac_agent_memory
-                WHERE user_id = %s
-                ORDER BY fecha DESC
-                LIMIT 1
-            """, (user_id,))
-            row = await cur.fetchone()
-            if not row:
-                return None
-            await cur.execute("""
-                SELECT * FROM sac_agent_memory WHERE id = %s
-            """, (row['id'],))
-            return await cur.fetchone()
-
-
-async def save_message(pool, user_id, mensaje_entrante, mensaje_saliente, contexto):
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            if isinstance(contexto, BaseModel):
-                contexto_json = contexto.model_dump_json()
-            else:
-                contexto_json = json.dumps(contexto)
-
-            await cur.execute("""
-                INSERT INTO sac_agent_memory (user_id, mensaje_entrante, mensaje_saliente, contexto)
-                VALUES (%s, %s, %s, %s)
-            """, (user_id, mensaje_entrante, mensaje_saliente, contexto_json))
-            
-#---------------------Env del Usuario que contacta--------------------#
-async def get_user_env(pool, phone, whatsapp_username):
-    phone = re.sub(r"\D", "", phone)
-    try:
-        if not phone.startswith("+"):
-            phone = "+" + phone
-            parsed = phonenumbers.parse(phone, None)
-        else:
-            parsed = phonenumbers.parse(phone, None)
-        phone = str(parsed.national_number)
-    except Exception as e:
-        phone = re.sub(r"\D", "", phone)
-
-    async with pool.acquire() as conn:
-        async with conn.cursor(aiomysql.DictCursor) as cur:
-            await cur.execute("""
-                SELECT idPackage, enterpriseCode, fkIdUser, fullName, email
-                FROM package
-                WHERE phone_digits = %s
-                ORDER BY insertDate DESC
-                LIMIT 3
-            """, (phone,))
-            paquetes = await cur.fetchall()
-
-            if not paquetes:
-                return {
-                        "username": whatsapp_username,
-                        "phone": phone, 
-                        "paquetes": "No se encontraron paquetes para este usuario."
-                        }
-
-            nombres = ["Último paquete", "Penúltimo paquete", "Antepenúltimo paquete"]
-            resultados = []
-            nombre_usuario = paquetes[0]['fullName'] if paquetes[0].get('fullName') else "Usuario"
-            email_usuario = paquetes[0]['email'] if paquetes[0].get('email') else "Sin correo registrado"
-
-            for idx, paquete in enumerate(paquetes):
-                id_package = paquete['idPackage']
-                enterprise_code = paquete.get('enterpriseCode', 'N/A')
-                await cur.execute("""
-                    SELECT psd.dateServer, ps.description
-                    FROM packageStatusDetailed psd
-                    JOIN packageStatus ps ON psd.fkIdPackageStatus = ps.idPackageStatus
-                    WHERE psd.idPackage = %s
-                    ORDER BY psd.dateServer DESC
-                    LIMIT 1
-                """, (id_package,))
-                estado = await cur.fetchone()
-                if estado:
-                    fecha_formateada = format_fecha(estado['dateServer'])
-                    resultados.append({
-                        "paquete": nombres[idx],
-                        "tracking": f"{id_package} / {enterprise_code}",
-                        "estado": estado['description'],
-                        "fecha": fecha_formateada
-                    })
-                else:
-                    resultados.append({
-                        "paquete": nombres[idx],
-                        "tracking": f"{id_package} / {enterprise_code}",
-                        "estado": "Sin estados registrados."
-                    })
-
-            return {
-                "username": nombre_usuario,
-                "phone": phone,
-                "email": email_usuario,
-                "paquetes": resultados,
-                
-            }
-#---------------------get_SLA--------------------#
 async def get_delivery_date(pool, enterprise_code: str) -> dict:
     package = await get_id_package(pool, enterprise_code)
     if not package:
@@ -438,7 +242,7 @@ async def get_delivery_date(pool, enterprise_code: str) -> dict:
             "SLA": "Paquete no encontrado"
         }
     timeline = await get_package_historic(pool, package)
-    if timeline and str(timeline[-1].get("status", "")).upper() in {"DELIVERED", "DELIVEREDCOMPLETE"}:
+    if timeline and str(timeline[0].get("status", "")).upper() in {"DELIVERED", "DELIVEREDCOMPLETE"}:
         return {
             "Tracking": package,
             "SLA_found": True,
@@ -521,6 +325,200 @@ async def get_delivery_date(pool, enterprise_code: str) -> dict:
             "SLA_found": False,
             "SLA": "No hay días de entrega programados para esta ruta"
         }
+
+#--------------------Funciones de chat_history--------------------#
+async def get_agent_history(pool):
+    """
+    Obtiene el historial completo de la tabla sac_agent_memory,
+    ordenado por user_id y fecha.
+    Devuelve una lista de dicts.
+    """
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("""
+                SELECT *
+                FROM sac_agent_memory
+                ORDER BY user_id DESC, fecha DESC
+            """)
+            result = await cur.fetchall()
+            return result
         
-#--------------------KB para Package Status y Agente --------------------#
+async def get_users_last_messages(pool):
+    """
+    Obtiene el último mensaje de cada usuario en la tabla sac_agent_memory,
+    basado en la fecha más reciente. Devuelve una lista de dicts.
+    """
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            # Paso 1: obtener los IDs de los últimos registros de cada usuario
+            await cur.execute("""
+                SELECT MAX(id) as id
+                FROM sac_agent_memory
+                GROUP BY user_id
+                LIMIT 50
+            """)
+            ids = await cur.fetchall()
+
+            if not ids:
+                return []
+
+            # Paso 2: obtener los registros completos para esos IDs
+            id_list = tuple(row["id"] for row in ids)
+            in_clause = ",".join(["%s"] * len(id_list))
+
+            await cur.execute(f"""
+                SELECT * FROM sac_agent_memory
+                WHERE id IN ({in_clause})
+                ORDER BY fecha DESC
+            """, id_list)
+            return await cur.fetchall()
+
+async def get_last_messages_by_user(pool, user_id: str, limit: int, last_id: int = None):
+    """
+    Devuelve los últimos `limit` mensajes de un usuario específico.
+    Si se proporciona `last_id`, solo devuelve mensajes con `id` < `last_id`.
+    Utiliza subconsulta por IDs para evitar problemas de memoria (buffer).
+    """
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            # Paso 1: obtener los IDs de los mensajes filtrados
+            if last_id:
+                await cur.execute("""
+                    SELECT id
+                    FROM sac_agent_memory
+                    WHERE user_id = %s AND id < %s
+                    ORDER BY fecha DESC
+                    LIMIT %s
+                """, (user_id, last_id, limit))
+            else:
+                await cur.execute("""
+                    SELECT id
+                    FROM sac_agent_memory
+                    WHERE user_id = %s
+                    ORDER BY fecha DESC
+                    LIMIT %s
+                """, (user_id, limit))
+
+            rows = await cur.fetchall()
+            if not rows:
+                return []
+
+            # Paso 2: obtener los registros completos por ID
+            id_list = tuple(row["id"] for row in rows)
+            in_clause = ",".join(["%s"] * len(id_list))
+
+            await cur.execute(f"""
+                SELECT *
+                FROM sac_agent_memory
+                WHERE id IN ({in_clause})
+            """, id_list)
+
+            results = await cur.fetchall()
+
+            # Reordenar por fecha DESC para garantizar consistencia
+            results.sort(key=lambda x: x["fecha"], reverse=True)
+
+            return results
+
+async def get_last_state(pool, user_id):
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("""
+                SELECT id
+                FROM sac_agent_memory
+                WHERE user_id = %s
+                ORDER BY fecha DESC
+                LIMIT 1
+            """, (user_id,))
+            row = await cur.fetchone()
+            if not row:
+                return None
+            await cur.execute("""
+                SELECT * FROM sac_agent_memory WHERE id = %s
+            """, (row['id'],))
+            return await cur.fetchone()
+
+async def save_message(pool, user_id, mensaje_entrante, mensaje_saliente, contexto):
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            if isinstance(contexto, BaseModel):
+                contexto_json = contexto.model_dump_json()
+            else:
+                contexto_json = json.dumps(contexto)
+
+            await cur.execute("""
+                INSERT INTO sac_agent_memory (user_id, mensaje_entrante, mensaje_saliente, contexto)
+                VALUES (%s, %s, %s, %s)
+            """, (user_id, mensaje_entrante, mensaje_saliente, contexto_json))          
+#---------------------Env del Usuario que contacta--------------------#
+async def get_user_env(pool, phone, whatsapp_username):
+    phone = re.sub(r"\D", "", phone)
+    try:
+        if not phone.startswith("+"):
+            phone = "+" + phone
+            parsed = phonenumbers.parse(phone, None)
+        else:
+            parsed = phonenumbers.parse(phone, None)
+        phone = str(parsed.national_number)
+    except Exception as e:
+        phone = re.sub(r"\D", "", phone)
+
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("""
+                SELECT idPackage, enterpriseCode, fkIdUser, fullName, email
+                FROM package
+                WHERE phone_digits = %s
+                ORDER BY insertDate DESC
+                LIMIT 3
+            """, (phone,))
+            paquetes = await cur.fetchall()
+
+            if not paquetes:
+                return {
+                        "username": whatsapp_username,
+                        "phone": phone, 
+                        "paquetes": "No se encontraron paquetes para este usuario."
+                        }
+
+            nombres = ["Último paquete", "Penúltimo paquete", "Antepenúltimo paquete"]
+            resultados = []
+            nombre_usuario = paquetes[0]['fullName'] if paquetes[0].get('fullName') else "Usuario"
+            email_usuario = paquetes[0]['email'] if paquetes[0].get('email') else "Sin correo registrado"
+
+            for idx, paquete in enumerate(paquetes):
+                id_package = paquete['idPackage']
+                enterprise_code = paquete.get('enterpriseCode', 'N/A')
+                await cur.execute("""
+                    SELECT psd.dateServer, ps.description
+                    FROM packageStatusDetailed psd
+                    JOIN packageStatus ps ON psd.fkIdPackageStatus = ps.idPackageStatus
+                    WHERE psd.idPackage = %s
+                    ORDER BY psd.dateServer DESC
+                    LIMIT 1
+                """, (id_package,))
+                estado = await cur.fetchone()
+                if estado:
+                    fecha_formateada = format_fecha(estado['dateServer'])
+                    resultados.append({
+                        "paquete": nombres[idx],
+                        "tracking": f"{id_package} / {enterprise_code}",
+                        "estado": estado['description'],
+                        "fecha": fecha_formateada
+                    })
+                else:
+                    resultados.append({
+                        "paquete": nombres[idx],
+                        "tracking": f"{id_package} / {enterprise_code}",
+                        "estado": "Sin estados registrados."
+                    })
+
+            return {
+                "username": nombre_usuario,
+                "phone": phone,
+                "email": email_usuario,
+                "paquetes": resultados,
+                
+            }
+
 

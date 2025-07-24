@@ -1,15 +1,16 @@
 const ToolOutput = ({ tool, output }) => {
   let parsedOutput = {};
-  try {
-    parsedOutput = JSON.parse(output);  
-  } catch (err) {
-    return <pre className="text-sm text-red-500">Error parsing JSON</pre>;
-  }
+  console.log("Tipo de output usado:", typeof output);
+
+  parsedOutput = JSON.parse(output);
 
   if (tool === "get_package_timeline" && parsedOutput.timeline) {
     return (
       <div className="flex-col z-1000 max-h-auto w-full rounded bg-gray-900 text-gray-200 border border-gray-700">
-        <table style={{fontSize:"smaller"}} className="w-full text-sm text-left">
+        <table
+          style={{ fontSize: "smaller" }}
+          className="w-full text-sm text-left"
+        >
           <thead>
             <tr className="border-b border-gray-600">
               <th className="px-1 py-1">FECHA</th>
@@ -18,7 +19,10 @@ const ToolOutput = ({ tool, output }) => {
           </thead>
           <tbody>
             {parsedOutput.timeline.map((item, idx) => (
-              <tr key={idx} className="border-b border-gray-800 hover:bg-gray-800">
+              <tr
+                key={idx}
+                className="border-b border-gray-800 hover:bg-gray-800"
+              >
                 <td className="px-2 py-1 whitespace-nowrap">{item.dateUser}</td>
                 <td className="px-2 py-1 whitespace-nowrap">{item.status}</td>
               </tr>

@@ -68,20 +68,22 @@ const ConversationsTab = ({ onSelectUser, selectedUserId })=>{
     const [lastMessages, setLastMessages] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])([]);
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
         "ConversationsTab.useEffect": ()=>{
-            (0, __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$services$2f$ManagerUI_service$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["fetchHistoryPreview"])().then({
-                "ConversationsTab.useEffect": (history)=>{
+            let isMounted = true;
+            const fetchAndSet = {
+                "ConversationsTab.useEffect.fetchAndSet": async ()=>{
+                    const history = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$services$2f$ManagerUI_service$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["fetchHistoryPreview"])();
+                    if (!isMounted) return;
                     const grouped = {};
                     const lastMessages = [];
                     history.sort({
-                        "ConversationsTab.useEffect": (a, b)=>new Date(b.fecha) - new Date(a.fecha)
-                    }["ConversationsTab.useEffect"]).forEach({
-                        "ConversationsTab.useEffect": (entry)=>{
+                        "ConversationsTab.useEffect.fetchAndSet": (a, b)=>new Date(b.fecha) - new Date(a.fecha)
+                    }["ConversationsTab.useEffect.fetchAndSet"]).forEach({
+                        "ConversationsTab.useEffect.fetchAndSet": (entry)=>{
                             try {
                                 const raw = entry.contexto;
                                 const parsedOnce = JSON.parse(raw);
                                 entry.contexto = typeof parsedOnce === "string" ? JSON.parse(parsedOnce) : parsedOnce;
                             } catch (e) {
-                                console.warn("❌ Error al parsear contexto en entry", entry.id, e);
                                 entry.contexto = {};
                             }
                             if (!grouped[entry.user_id]) {
@@ -89,11 +91,19 @@ const ConversationsTab = ({ onSelectUser, selectedUserId })=>{
                                 lastMessages.push(entry);
                             }
                         }
-                    }["ConversationsTab.useEffect"]);
+                    }["ConversationsTab.useEffect.fetchAndSet"]);
                     setHistory(history);
                     setLastMessages(lastMessages);
                 }
-            }["ConversationsTab.useEffect"]);
+            }["ConversationsTab.useEffect.fetchAndSet"];
+            fetchAndSet();
+            const interval = setInterval(fetchAndSet, 3000);
+            return ({
+                "ConversationsTab.useEffect": ()=>{
+                    isMounted = false;
+                    clearInterval(interval);
+                }
+            })["ConversationsTab.useEffect"];
         }
     }["ConversationsTab.useEffect"], []);
     //
@@ -119,7 +129,7 @@ const ConversationsTab = ({ onSelectUser, selectedUserId })=>{
                     children: "Chats"
                 }, void 0, false, {
                     fileName: "[project]/src/components/ConversationsTab.jsx",
-                    lineNumber: 49,
+                    lineNumber: 56,
                     columnNumber: 9
                 }, this),
                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -147,7 +157,7 @@ const ConversationsTab = ({ onSelectUser, selectedUserId })=>{
                                     children: entry.contexto.context.user_env.username || entry.user_id
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/ConversationsTab.jsx",
-                                    lineNumber: 80,
+                                    lineNumber: 87,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -159,7 +169,7 @@ const ConversationsTab = ({ onSelectUser, selectedUserId })=>{
                                     children: entry.mensaje_entrante || entry.mensaje_saliente
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/ConversationsTab.jsx",
-                                    lineNumber: 83,
+                                    lineNumber: 90,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -174,24 +184,24 @@ const ConversationsTab = ({ onSelectUser, selectedUserId })=>{
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/ConversationsTab.jsx",
-                                    lineNumber: 88,
+                                    lineNumber: 95,
                                     columnNumber: 15
                                 }, this)
                             ]
                         }, entry.user_id, true, {
                             fileName: "[project]/src/components/ConversationsTab.jsx",
-                            lineNumber: 64,
+                            lineNumber: 71,
                             columnNumber: 13
                         }, this))
                 }, void 0, false, {
                     fileName: "[project]/src/components/ConversationsTab.jsx",
-                    lineNumber: 62,
+                    lineNumber: 69,
                     columnNumber: 9
                 }, this)
             ]
         }, void 0, true, {
             fileName: "[project]/src/components/ConversationsTab.jsx",
-            lineNumber: 41,
+            lineNumber: 48,
             columnNumber: 7
         }, this)
     }, void 0, false);
@@ -217,18 +227,8 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist
 ;
 const ToolOutput = ({ tool, output })=>{
     let parsedOutput = {};
-    try {
-        parsedOutput = JSON.parse(output);
-    } catch (err) {
-        return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("pre", {
-            className: "text-sm text-red-500",
-            children: "Error parsing JSON"
-        }, void 0, false, {
-            fileName: "[project]/src/components/ToolOutput.jsx",
-            lineNumber: 6,
-            columnNumber: 12
-        }, this);
-    }
+    console.log("Tipo de output usado:", typeof output);
+    parsedOutput = JSON.parse(output);
     if (tool === "get_package_timeline" && parsedOutput.timeline) {
         return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
             className: "flex-col z-1000 max-h-auto w-full rounded bg-gray-900 text-gray-200 border border-gray-700",
@@ -247,7 +247,7 @@ const ToolOutput = ({ tool, output })=>{
                                     children: "FECHA"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/ToolOutput.jsx",
-                                    lineNumber: 15,
+                                    lineNumber: 16,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -255,18 +255,18 @@ const ToolOutput = ({ tool, output })=>{
                                     children: "ESTADO"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/ToolOutput.jsx",
-                                    lineNumber: 16,
+                                    lineNumber: 17,
                                     columnNumber: 15
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/ToolOutput.jsx",
-                            lineNumber: 14,
+                            lineNumber: 15,
                             columnNumber: 13
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/src/components/ToolOutput.jsx",
-                        lineNumber: 13,
+                        lineNumber: 14,
                         columnNumber: 11
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tbody", {
@@ -278,7 +278,7 @@ const ToolOutput = ({ tool, output })=>{
                                         children: item.dateUser
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/ToolOutput.jsx",
-                                        lineNumber: 22,
+                                        lineNumber: 26,
                                         columnNumber: 17
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -286,29 +286,29 @@ const ToolOutput = ({ tool, output })=>{
                                         children: item.status
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/ToolOutput.jsx",
-                                        lineNumber: 23,
+                                        lineNumber: 27,
                                         columnNumber: 17
                                     }, this)
                                 ]
                             }, idx, true, {
                                 fileName: "[project]/src/components/ToolOutput.jsx",
-                                lineNumber: 21,
+                                lineNumber: 22,
                                 columnNumber: 15
                             }, this))
                     }, void 0, false, {
                         fileName: "[project]/src/components/ToolOutput.jsx",
-                        lineNumber: 19,
+                        lineNumber: 20,
                         columnNumber: 11
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/components/ToolOutput.jsx",
-                lineNumber: 12,
+                lineNumber: 10,
                 columnNumber: 9
             }, this)
         }, void 0, false, {
             fileName: "[project]/src/components/ToolOutput.jsx",
-            lineNumber: 11,
+            lineNumber: 9,
             columnNumber: 7
         }, this);
     }
@@ -318,12 +318,12 @@ const ToolOutput = ({ tool, output })=>{
             children: JSON.stringify(parsedOutput, null, 2)
         }, void 0, false, {
             fileName: "[project]/src/components/ToolOutput.jsx",
-            lineNumber: 34,
+            lineNumber: 38,
             columnNumber: 7
         }, this)
     }, void 0, false, {
         fileName: "[project]/src/components/ToolOutput.jsx",
-        lineNumber: 33,
+        lineNumber: 37,
         columnNumber: 5
     }, this);
 };
@@ -363,6 +363,7 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
             } else {
                 label = `Tool: ${action.name}`;
                 const result = getToolOutput(action.call_id);
+                console.log("Herramienta usada:", action.name, "salida de la herramienta", result);
                 extra = result && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                     className: "relative",
                     children: [
@@ -373,7 +374,7 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                             children: "Ver resultado"
                         }, void 0, false, {
                             fileName: "[project]/src/components/AgentTimeline.jsx",
-                            lineNumber: 23,
+                            lineNumber: 25,
                             columnNumber: 13
                         }, this),
                         hoveredItem === index && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -383,18 +384,18 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                                 output: result
                             }, void 0, false, {
                                 fileName: "[project]/src/components/AgentTimeline.jsx",
-                                lineNumber: 32,
+                                lineNumber: 34,
                                 columnNumber: 17
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/src/components/AgentTimeline.jsx",
-                            lineNumber: 31,
+                            lineNumber: 33,
                             columnNumber: 15
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/AgentTimeline.jsx",
-                    lineNumber: 22,
+                    lineNumber: 24,
                     columnNumber: 11
                 }, this);
             }
@@ -410,7 +411,7 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                         children: "Ver respuesta"
                     }, void 0, false, {
                         fileName: "[project]/src/components/AgentTimeline.jsx",
-                        lineNumber: 42,
+                        lineNumber: 44,
                         columnNumber: 11
                     }, this),
                     hoveredItem === index && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -418,13 +419,13 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                         children: action.content?.[0]?.text
                     }, void 0, false, {
                         fileName: "[project]/src/components/AgentTimeline.jsx",
-                        lineNumber: 50,
+                        lineNumber: 52,
                         columnNumber: 13
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/components/AgentTimeline.jsx",
-                lineNumber: 41,
+                lineNumber: 43,
                 columnNumber: 9
             }, this);
         }
@@ -446,30 +447,30 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                                     d: "M20 4a2 2 0 0 0-2-2h-2V1a1 1 0 0 0-2 0v1h-3V1a1 1 0 0 0-2 0v1H6V1a1 1 0 0 0-2 0v1H2a2 2 0 0 0-2 2v2h20V4Z"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/AgentTimeline.jsx",
-                                    lineNumber: 69,
+                                    lineNumber: 71,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/src/components/AgentTimeline.jsx",
-                                lineNumber: 63,
+                                lineNumber: 65,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/src/components/AgentTimeline.jsx",
-                            lineNumber: 62,
+                            lineNumber: 64,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                             className: "hidden sm:flex w-full bg-gray-200 h-0.5 dark:bg-gray-700"
                         }, void 0, false, {
                             fileName: "[project]/src/components/AgentTimeline.jsx",
-                            lineNumber: 72,
+                            lineNumber: 74,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/AgentTimeline.jsx",
-                    lineNumber: 61,
+                    lineNumber: 63,
                     columnNumber: 9
                 }, this),
                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -480,20 +481,20 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                             children: label
                         }, void 0, false, {
                             fileName: "[project]/src/components/AgentTimeline.jsx",
-                            lineNumber: 75,
+                            lineNumber: 77,
                             columnNumber: 11
                         }, this),
                         extra
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/AgentTimeline.jsx",
-                    lineNumber: 74,
+                    lineNumber: 76,
                     columnNumber: 9
                 }, this)
             ]
         }, index, true, {
             fileName: "[project]/src/components/AgentTimeline.jsx",
-            lineNumber: 60,
+            lineNumber: 62,
             columnNumber: 7
         }, this);
     };
@@ -505,17 +506,17 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                 children: "No hay acciones del agente"
             }, void 0, false, {
                 fileName: "[project]/src/components/AgentTimeline.jsx",
-                lineNumber: 90,
+                lineNumber: 92,
                 columnNumber: 11
             }, this)
         }, void 0, false, {
             fileName: "[project]/src/components/AgentTimeline.jsx",
-            lineNumber: 86,
+            lineNumber: 88,
             columnNumber: 7
         }, this)
     }, void 0, false, {
         fileName: "[project]/src/components/AgentTimeline.jsx",
-        lineNumber: 85,
+        lineNumber: 87,
         columnNumber: 5
     }, this);
 };
