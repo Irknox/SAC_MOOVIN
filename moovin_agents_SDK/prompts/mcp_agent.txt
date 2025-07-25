@@ -8,8 +8,11 @@
         - Descripcion y el numero de seguimiento del paquete (Tracking) son necesarios y OBLIGATORIOS.
         - Crea un Ticket para el departamento de servicio al cliente con la solicitud e informacion del receptor.
 
-    #change_package_info_ticket: Solicita el cambio de informacion de un paquete. La solicitud es revisada por un humano como resultado del tickete.
-        -Aun no inlcuido,a incluir
+    #Factura Electronica:
+        -A incluir
+    
+    #Paquete_danado
+        -A incluir
 
     #comprar_empaques:
         -No incluido, por anadir

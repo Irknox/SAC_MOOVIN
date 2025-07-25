@@ -3,12 +3,14 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Literal
-from uuid import uuid4
+import subprocess
 import os
+import tempfile
+import aiohttp
+
 import requests
-from database_handler import get_last_state,save_message,get_user_env,get_agent_history,get_users_last_messages,get_last_messages_by_user
+from database_handler import get_last_state,save_message,get_user_env, get_agent_history, get_users_last_messages,get_last_messages_by_user
 from config import create_mysql_pool, create_tools_pool
-from tools import make_get_package_timeline_tool, make_get_SLA_tool
 from main import build_agents, MoovinAgentContext
 from agents import (
     Runner, MessageOutputItem, HandoffOutputItem, ToolCallItem,
@@ -17,13 +19,54 @@ from agents import (
 import json
 from datetime import datetime, timedelta
 import traceback
+from Crypto.Cipher import AES
+from Crypto.Hash import HMAC, SHA256
+from Crypto.Protocol.KDF import HKDF
+from Crypto.Util.Padding import unpad
+import base64
+import hashlib
+
 
 import tiktoken
-import asyncio
-
+from openai import OpenAI
 
 from dotenv import load_dotenv
 load_dotenv()
+
+
+client = OpenAI()
+
+def save_base64_audio(base64_string: str, suffix: str = ".ogg") -> str:
+    """
+    Guarda el audio base64 como archivo binario (.ogg por defecto).
+    Devuelve la ruta del archivo guardado.
+    """
+    audio_bytes = base64.b64decode(base64_string)
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    with open(temp_file.name, 'wb') as f:
+        f.write(audio_bytes)
+    return temp_file.name
+    
+async def transcribe_audio(media_key_b64: str) -> str:
+    decrypted_path = save_base64_audio(media_key_b64)
+    print(f"📥 Audio cifrado guardado en: {decrypted_path}")
+    if not decrypted_path:
+        return "[Error al descifrar audio]"
+    print(f"📥 Audio descifrado guardado en: {decrypted_path}")
+
+    try:
+        with open(decrypted_path, "rb") as audio_file:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="es"
+            )
+        return transcript.text
+    except Exception as e:
+        print("❌ Error al transcribir:", e)
+        return "[Error al transcribir audio]"
+
+
 
 class AgentEvent(BaseModel):
     id: str
@@ -105,6 +148,7 @@ def count_tokens(text, model="gpt-4o"):
 @app.post("/ask")
 async def whatsapp_webhook(request: Request):
     payload = await request.json()
+    print (f"📥 Payload recibido: {json.dumps(payload, indent=2)}")
     try:
         data_item = payload["data"]
         message_data = data_item["message"]
@@ -114,10 +158,22 @@ async def whatsapp_webhook(request: Request):
 
         if "conversation" in message_data:
             user_message = message_data["conversation"]
+
         elif "locationMessage" in message_data:
             lat = message_data["locationMessage"]["degreesLatitude"]
             lng = message_data["locationMessage"]["degreesLongitude"]
             user_message = f"[Ubicación recibida] Lat: {lat}, Lng: {lng}"
+
+        elif "audioMessage" in message_data:
+            audio_info = message_data["audioMessage"]
+            audio_b64 = message_data.get("base64")
+            print(f"audio info: {audio_info}")
+            print(f"Audio en base64: {audio_b64}")
+            if audio_b64:
+                audio_transcripted = await transcribe_audio(audio_b64)
+                user_message=audio_transcripted
+            else:
+                user_message = "[Audio recibido pero sin URL o mediaKey]"
         else:
             user_message = "[Mensaje no soportado]"
             
