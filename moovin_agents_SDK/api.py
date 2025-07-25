@@ -3,10 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Literal
-import subprocess
 import os
 import tempfile
-import aiohttp
 
 import requests
 from database_handler import get_last_state,save_message,get_user_env, get_agent_history, get_users_last_messages,get_last_messages_by_user
@@ -19,12 +17,7 @@ from agents import (
 import json
 from datetime import datetime, timedelta
 import traceback
-from Crypto.Cipher import AES
-from Crypto.Hash import HMAC, SHA256
-from Crypto.Protocol.KDF import HKDF
-from Crypto.Util.Padding import unpad
 import base64
-import hashlib
 
 
 import tiktoken
