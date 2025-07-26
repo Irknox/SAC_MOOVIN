@@ -82,7 +82,7 @@ async def lifespan(app: FastAPI):
         mysql_pool = await create_mysql_pool()
         tools_pool = await create_tools_pool()
 
-        general_agent, package_analysis_agent, mcp_agent, create_initial_context = await build_agents(tools_pool)
+        general_agent, package_analysis_agent, mcp_agent, railing_agent ,create_initial_context = await build_agents(tools_pool)
        
         
         app.state.mysql_pool = mysql_pool
@@ -90,7 +90,8 @@ async def lifespan(app: FastAPI):
         app.state.agents = {
             mcp_agent.name: mcp_agent,
             general_agent.name: general_agent,
-            package_analysis_agent.name: package_analysis_agent
+            package_analysis_agent.name: package_analysis_agent,
+            railing_agent.name: railing_agent,
             
         }
         app.state.create_initial_context = create_initial_context
@@ -141,7 +142,6 @@ def count_tokens(text, model="gpt-4o"):
 @app.post("/ask")
 async def whatsapp_webhook(request: Request):
     payload = await request.json()
-    print (f"📥 Payload recibido: {json.dumps(payload, indent=2)}")
     try:
         data_item = payload["data"]
         message_data = data_item["message"]
@@ -177,14 +177,12 @@ async def whatsapp_webhook(request: Request):
             agent_name = "General Agent"
 
         print(
-            f"📥 Recibido mensaje de: {user_name} ({user_id}) | "
-            f"Atendido por Agente: {agent_name} | "
-            f"Mensaje del usuario: {user_message}"
+            f"📥 Recibido mensaje de: {user_name} ({user_id}) \n"
+            f"🤖 Atendido por Agente: {agent_name} \n"
+            f"✉️ Mensaje del usuario: {user_message}\n"
         )    
-            
 
         is_new = store.get(user_id) is None
-        print(f"🔍 Estado de la conversación: {'Nuevo' if is_new else 'Existente'}")
         if is_new:
             last_state_record = await get_last_state(request.app.state.mysql_pool, user_id)
             if last_state_record and last_state_record.get("fecha"):
@@ -236,8 +234,19 @@ async def whatsapp_webhook(request: Request):
 
         current_agent = _get_agent_by_name(request.app, state["current_agent"])
         state["input_items"].append({"role": "user", "content": user_message})
-
-        result = await Runner.run(current_agent, state["input_items"], context=state["context"])
+        
+        
+        """
+        Ejecucion del agente actual con el mensaje del usuario y contexto reconstruido.
+        """
+        try:
+            result = await Runner.run(current_agent, state["input_items"], context=state["context"])
+        except InputGuardrailTripwireTriggered as e:
+            railing_agent = _get_agent_by_name(request.app, "Railing Agent")
+            result = await Runner.run(railing_agent, state["input_items"], context=state["context"])
+            current_agent = railing_agent 
+            
+            
         response_text = "🤖 No hay respuesta disponible."
         for item in result.new_items:
             try:
@@ -302,7 +311,7 @@ async def whatsapp_webhook(request: Request):
 
         all_text_with_prompt = prompt_text + "\n" + all_text
         tokens_used = count_tokens(all_text_with_prompt)
-        print(f"🔢 Tokens usados en la interacción (incluyendo prompt): {tokens_used}") 
+        print(f"🪙 Tokens usados en la interacción (incluyendo prompt): {tokens_used}") 
         
         
         print("📤 Enviado a WhatsApp:", response_text)

@@ -79,7 +79,6 @@ def get_zoho_contact(email: str = "", phone: str = "", token: str = "") -> dict:
         contacto = buscar_contacto("email", email)
 
     if not contacto:
-        print("⚠️ No se encontró contacto por teléfono ni email")
         return { "response": "No contacts found" }
 
     return contacto
@@ -110,7 +109,6 @@ def create_zoho_contact(email: str, phone: str, name: str, token:str) -> dict:
         "email": email,
         "phone": phone
     }
-
     response = requests.post(url, headers=headers, json=payload)
 
     if response.status_code == 201:
@@ -137,8 +135,6 @@ def create_pickup_ticket(email: str, phone: str,
     Crea un ticket en Zoho Desk usando los datos provistos.
 
     Parámetros:
-      - access_token: token válido de Zoho.
-      - org_id: ID de la organización (ej. "716348510").
       - email: correo del contacto.
       - phone: teléfono del contacto.
       - name: nombre del contacto.
@@ -150,12 +146,10 @@ def create_pickup_ticket(email: str, phone: str,
     """
     try:
         token = get_cached_token()
-        contact = get_zoho_contact(email=email, phone=phone, token=token)
-        print (f"🔍 Contacto encontrado desde create ticket: {contact}")
-        
+        contact = get_zoho_contact(email=email, phone=phone, token=token)     
         if "id" not in contact:
             print("⚠️ No se encontró contacto, creando uno nuevo...")
-            contact = create_zoho_contact(email=email, phone=phone, name=name, token=token)
+            contact = create_zoho_contact(email=email,phone=phone, name=name, token=token)
             if "id" not in contact:
                 return {
                     "error": "No se pudo crear el contacto",
@@ -185,7 +179,6 @@ def create_pickup_ticket(email: str, phone: str,
             "status" : "Closed",
             "contactId": contact["id"]
         }
-
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
         print(f"Ticket creado exitosamente: {response}")
@@ -196,3 +189,74 @@ def create_pickup_ticket(email: str, phone: str,
             "details": str(e)
         }
         
+        
+        
+def request_electronic_receipt(owner: dict, package_id: str,legal_name:str, legal_id: str,            
+                            full_address: str, reason: str = "") -> dict:
+    """
+    Crea un ticket en Zoho Desk usando los datos provistos.
+
+    Parámetros:
+      - email: correo del contacto.
+      - phone: teléfono del contacto.
+      - name: nombre del contacto.
+      - package_id: identificador del paquete.
+      - description: descripción opcional del ticket.
+
+    Retorna:
+      - Diccionario JSON con lo retornado por Zoho (el ticket creado).
+    """
+    email = owner.get("email", None)
+    phone = owner.get("phone", None)
+    name = owner.get("name",None)
+    
+    try:
+        token = get_cached_token()
+        contact = get_zoho_contact(email=email, phone=phone, token=token)
+        
+        if "id" not in contact:
+            print("⚠️ No se encontró contacto, creando uno nuevo...")
+            contact = create_zoho_contact(email=email,phone=phone, name=name, token=token)
+            if "id" not in contact:
+                return {
+                    "error": "No se pudo crear el contacto",
+                    "details": contact
+                }
+                
+                
+        url = "https://desk.zoho.com/api/v1/tickets"
+
+        headers = {
+            "Authorization": f"Zoho-oauthtoken {token}",
+            "orgId": zoho_org_id,
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "subject": "Solicitud Factura Electronica (Prueba de Integración)",
+            "email": email,
+            "phone": phone,
+            "description":
+                f"ESTO ES UNA PRUEBA, por favor hacer caso omiso.\n\n Descripcion: {reason}\n"
+                f"Nombre Juridico: {legal_name} \n"
+                f"Cedula Juridica: {legal_id} \n"
+                f"Direccion Completa: {full_address} \n",          
+            "departmentId": "504200000001777045",
+            "channel": "WhatsApp",
+            "teamId": "504200000035799001",
+            "cf": {
+                "cf_id_de_envio": package_id
+            },
+            "status" : "Closed",
+            "contactId": contact["id"]
+        }
+        
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        print(f"Ticket creado exitosamente: {response}")
+        return response.json()
+    except Exception as e:
+        return {
+            "error": "Error general al crear ticket",
+            "details": str(e)
+        }
