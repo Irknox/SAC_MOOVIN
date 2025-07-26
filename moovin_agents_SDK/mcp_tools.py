@@ -87,8 +87,6 @@ def Make_request_electronic_receipt_tool(pool):
             "phone": owner_phone,
             "name": package_historic.get("nombre_dueño_paquete")
         }
-        print(f"Owner info: {type(owner_info)}")
-        print(f"Tipos de dato: {type(str(package_id))}, {type(reason)}, {type(legal_name)}, {type(legal_id)}, {type(full_address)}")
         result = request_electronic_receipt(
                                     package_id=str(package_id), 
                                     reason=reason,
