@@ -96,7 +96,6 @@ def make_get_package_timeline_tool(pool):
         if phone_dueño.strip().lower() != phone.strip().lower():
             print(f"🟠 [WARNING] Teléfono no coincide. Proporcionado: {phone}, Dueño: {phone_dueño}")
             return {"error": "El teléfono proporcionado no coincide con el dueño del paquete."}
-        print(f"✅ [SUCCESS] Teléfono verificado. Resultados obtenidos:{historic.get('timeline', [])}, dueño: {historic.get('nombre_dueño_paquete', 'Desconocido')}")
         
         return {
             "timeline": historic.get("timeline"),
