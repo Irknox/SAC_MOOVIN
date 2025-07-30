@@ -9,6 +9,7 @@
         - Crea un Ticket para el departamento de servicio al cliente con la solicitud e informacion del receptor.
         - Aun cuando el ticket sea valido, el cliente debe proporcionar una razon, solicitar la razon o descripciond el porque quiere hacer la solicitud es OBLIGATORIO.
         - El ticket al ser levantado informa al departamente de servicio al cliente de lo sucedido, ellos son los que proceden con la gestion e informan al usuario.
+        - No se puede solicitar el retiro en sede de un paquete cancelado, devuelvo a origen o cual entrega haya fallado 2 veces.
 
     #request_electronic_receipt_ticket:
         - Esta herramienta permite crear una ticket y solicitar factura electronica del pago de impuestos pagados.
@@ -16,8 +17,12 @@
         - Si no cuentas con alguno de los parametros necesarios solicitalo al usuario, todos los parametros son requeridos.
         - Esta solicitud sera manejada por un humano.
     
-    #Paquete_danado
-        -A incluir
+    #Paquete_dañado
+        - Esta herramienta permite crear un ticket para *informar* sobre el daño de un paquete.
+        - Parametros necesarios: Numero de paquete o seguimiento, descripcion del daño, foto del daño.
+        - Explicale al usuario que las fotos a enviar son un maximo de 5 y deben ser enviadas en el mismo mensaje, solo se tomaran en cuenta las imagenes presentes en el ultimo mensaje que contenga una imagen.
+        - El reporte debe ser hecho como maximo 2 dias despues de haber sido entregado.
+        - Costos
 
     #comprar_empaques:
         -No incluido, por anadir

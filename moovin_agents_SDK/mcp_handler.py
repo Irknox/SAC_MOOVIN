@@ -181,8 +181,15 @@ def create_pickup_ticket(email: str, phone: str,
         }
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
-        print(f"Ticket creado exitosamente: {response}")
-        return response.json()
+        ticket_data = response.json()
+        ticket_number = ticket_data.get("ticketNumber", "DESCONOCIDO")
+        
+        print(f"🎫 Ticket creado: {ticket_number}")
+        
+        return {
+            "ticket_number": ticket_number,
+            "message": "Ticket creado exitosamente"
+        }
     except Exception as e:
         return {
             "error": "Error general al crear ticket",
@@ -253,8 +260,15 @@ def request_electronic_receipt(owner: dict, package_id: str,legal_name:str, lega
         
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
-        print(f"Ticket creado exitosamente: {response}")
-        return response.json()
+        ticket_data = response.json()
+        ticket_number = ticket_data.get("ticketNumber", "DESCONOCIDO")
+        
+        print(f"🎫 Ticket creado: {ticket_number}")
+        
+        return {
+            "ticket_number": ticket_number,
+            "message": "Ticket creado exitosamente"
+        }
     except Exception as e:
         return {
             "error": "Error general al crear ticket",
