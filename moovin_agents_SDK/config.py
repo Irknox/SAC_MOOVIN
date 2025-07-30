@@ -1,7 +1,5 @@
 import os
 import aiomysql
-
-
 # Variables de entorno
 
 #Base de datos para el historial de chat
@@ -17,7 +15,6 @@ TOOLS_DB_USER = os.environ.get('Main_Db_User')
 TOOLS_DB_PASSWORD = os.environ.get('Main_Db_password')
 TOOLS_DB_NAME = os.environ.get('Main_Db')
 TOOLS_DB_PORT = int(os.environ.get('Main_Db_Port'))
-
 
 
 #-------------------Pools-------------------#

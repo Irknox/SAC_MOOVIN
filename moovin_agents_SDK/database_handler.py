@@ -7,6 +7,7 @@ import json
 from pydantic import BaseModel
 import re
 import phonenumbers
+import base64
 
 # ----------------- Configuración de MySQL ------------------
 load_dotenv()
@@ -143,31 +144,15 @@ async def get_package_historic(pool, package_id):
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute("""
                 SELECT 
-                    IFNULL(PSD.value, '') AS value,
-                    PSD.idPackageStatus,
                     PSD.dateUser,
-                    PSD.executeAction,
-                    PSD.infoControl,
                     (
                         SELECT name
                         FROM packageStatus
                         WHERE idPackageStatus = PSD.fkIdPackageStatus
                     ) AS status,
-                    U.idUser,
-                    CONCAT(U.name, ' ', U.lastName) AS fullName,
-                    (
-                        SELECT name
-                        FROM userType
-                        WHERE idUserType = U.fkIdUserType
-                    ) AS userType,
-                    PSD.id_delegate AS idDelegate,
-                    d.name AS delegateName,
-                    PSD.id_warehouse AS idWarehouse,
-                    dw.warehouse_name AS warehouseName
+                    U.idUser
                 FROM packageStatusDetailed PSD
                 INNER JOIN user U ON PSD.fkIdUserAction = U.idUser
-                LEFT JOIN delegate d ON d.id_delegate = PSD.id_delegate
-                LEFT JOIN delegates_warehouses dw ON dw.id_delegate = d.id_delegate AND dw.id_warehouse = PSD.id_warehouse
                 WHERE PSD.idPackage = %s
                 ORDER BY PSD.dateUser DESC
             """, (package_id,))
@@ -181,14 +166,11 @@ async def get_package_historic(pool, package_id):
                 if isinstance(evento.get("dateUser"), datetime):
                     evento["dateUser"] = evento["dateUser"].strftime("%Y-%m-%d %H:%M:%S")
                 if status in estados_cambio:
-                    if int(id_user) == 40220:
-                        evento["realizado_por"] = "cliente"
-                    else:
-                        evento["realizado_por"] = "moovin"
+                    evento["realizado_por"] = "cliente" if int(id_user) == 40220 else "moovin"
                 timeline.append(evento)
 
             await cur.execute("""
-                SELECT phone_digits, fullName,email FROM package WHERE idPackage = %s LIMIT 1
+                SELECT phone_digits, fullName, email FROM package WHERE idPackage = %s LIMIT 1
             """, (package_id,))
             phone_row = await cur.fetchone()
             phone = phone_row["phone_digits"] if phone_row and phone_row.get("phone_digits") else None
@@ -450,6 +432,33 @@ async def save_message(pool, user_id, mensaje_entrante, mensaje_saliente, contex
                 INSERT INTO sac_agent_memory (user_id, mensaje_entrante, mensaje_saliente, contexto)
                 VALUES (%s, %s, %s, %s)
             """, (user_id, mensaje_entrante, mensaje_saliente, contexto_json))          
+            
+async def save_img_data(pool, user_id: str, user_message: str, images: list[str], mime_type: str = "image/jpeg") -> list[int]:
+    """
+    Guarda una lista de imágenes en base64 como registros binarios en la base de datos.
+    
+    Args:
+        pool: pool de conexión MySQL (async).
+        user_id (str): ID del usuario.
+        user_message (str): mensaje de usuario asociado.
+        images (list[str]): lista de strings base64.
+        mime_type (str): tipo MIME (default: image/jpeg).
+    
+    Returns:
+        list[int]: lista de IDs insertados.
+    """
+    inserted_ids = []
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            for img_b64 in images:
+                img_bytes = base64.b64decode(img_b64)
+                await cur.execute("""
+                    INSERT INTO sac_img_data (user_id, user_message, mime_type, data, date_created)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (user_id, user_message, mime_type, img_bytes, datetime.utcnow()))
+                inserted_ids.append(cur.lastrowid)
+        await conn.commit()
+    return inserted_ids
 #---------------------Env del Usuario que contacta--------------------#
 async def get_user_env(pool, phone, whatsapp_username):
     phone = re.sub(r"\D", "", phone)
