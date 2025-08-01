@@ -531,3 +531,11 @@ async def get_user_env(pool, phone, whatsapp_username):
             }
 
 
+async def get_img_data(pool, id: int) -> dict | None:
+    query = "SELECT * FROM sac_img_data WHERE id = %s"
+    print("Llamado a funcion que obtiene datos de paquetes")
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cursor:
+            await cursor.execute(query, (id,))
+            result = await cursor.fetchone()
+            return result

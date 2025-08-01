@@ -61,6 +61,67 @@ async def transcribe_audio(media_key_b64: str) -> str:
         print("❌ Error al transcribir:", e)
         return "[Error al transcribir audio]"
 
+async def build_state(request: Request, user_id: str, user_name: str, user_message: str, img_data_ids: list[int]) -> dict:
+    last_state_record = await get_last_state(request.app.state.mysql_pool, user_id)
+    if not last_state_record:
+        ctx = request.app.state.create_initial_context()
+        ctx.user_id = user_id
+        ctx.imgs_ids= img_data_ids or []
+        user_env_data = await get_user_env(request.app.state.tools_pool, user_id, whatsapp_username=user_name)
+        ctx.user_env = user_env_data
+        state = {
+                "context": ctx,
+                "input_items": [],
+                "current_agent": request.app.state.agents["General Agent"].name,
+            }
+    elif last_state_record and last_state_record.get("fecha"):
+        last_time = last_state_record["fecha"]
+        if isinstance(last_time, str):
+            last_time = datetime.strptime(last_time, "%Y-%m-%d %H:%M:%S")
+        if datetime.utcnow() - last_time > timedelta(minutes=2):
+            print("🕒 Último contexto es muy viejo, creando nuevo contexto...")
+            last_state_record = None
+        if last_state_record and last_state_record.get("contexto"):
+            try:
+                raw_context = last_state_record["contexto"]
+                restored_state = json.loads(raw_context)
+                if isinstance(restored_state, str):
+                    restored_state = json.loads(restored_state)
+                restored_context_dict = restored_state["context"]
+                restored_context = MoovinAgentContext(**restored_context_dict)
+                user_env_data = await get_user_env(request.app.state.tools_pool, user_id, whatsapp_username=user_name)
+                restored_context.user_env = user_env_data
+                if img_data_ids:
+                    restored_context.imgs_ids = img_data_ids
+                state = {
+                    "context": restored_context,
+                    "input_items": restored_state.get("input_items", []),
+                    "current_agent": restored_state.get("current_agent", request.app.state.agents["General Agent"].name),
+                }
+            except Exception as e:
+                print("⚠️ Error restaurando contexto desde BD, se crea uno nuevo:", e)
+                ctx = request.app.state.create_initial_context()
+                ctx.user_id = user_id
+                user_env_data = await get_user_env(request.app.state.tools_pool, user_id, whatsapp_username=user_name)
+                ctx.user_env = user_env_data
+                state = {
+                    "context": ctx,
+                    "input_items": [],
+                    "current_agent": request.app.state.agents["General Agent"].name,
+                }
+        else:
+            ctx = request.app.state.create_initial_context()
+            ctx.user_id = user_id
+            ctx.imgs_ids= img_data_ids or []
+            print (f"Imagenes en contexto: {ctx.imgs_ids}")
+            user_env_data = await get_user_env(request.app.state.tools_pool, user_id, whatsapp_username=user_name)
+            ctx.user_env = user_env_data
+            state = {
+                    "context": ctx,
+                    "input_items": [],
+                    "current_agent": request.app.state.agents["General Agent"].name,
+                }
+    return state
 
 
 class AgentEvent(BaseModel):
@@ -84,7 +145,7 @@ async def lifespan(app: FastAPI):
         mysql_pool = await create_mysql_pool()
         tools_pool = await create_tools_pool()
 
-        general_agent, package_analysis_agent, mcp_agent, railing_agent ,create_initial_context = await build_agents(tools_pool)
+        general_agent, package_analysis_agent, mcp_agent, railing_agent ,create_initial_context = await build_agents(tools_pool,mysql_pool)
        
         
         app.state.mysql_pool = mysql_pool
@@ -144,6 +205,7 @@ def count_tokens(text, model="gpt-4o"):
 @app.post("/ask")
 async def whatsapp_webhook(request: Request):
     payload = await request.json()
+    print (f"Payload recibido del usuario {payload}")
     try:
         data_item = payload["data"]
         message_data = data_item["message"]
@@ -176,61 +238,49 @@ async def whatsapp_webhook(request: Request):
         ## ------------------------Procesamiento de imagenes------------------------ ##
         elif "imageMessage" in message_data:
             img_base64 = message_data.get("base64")
+            img_info=message_data.get("imageMessage")
+            caption = img_info.get("caption",None)
             if not img_base64:
                 return {"status": "ok", "response": "[Imagen vacía ignorada]"}
             now = datetime.utcnow()
-            # Si usuario ya está en buffer
+
             if user_id in image_buffer:
                 buffer = image_buffer[user_id]
                 buffer["images"].append(img_base64)
                 buffer["last_seen"] = now
-
-                # Solo conservar las últimas 5 imágenes
                 if len(buffer["images"]) > 5:
                     buffer["images"] = buffer["images"][-5:]
             else:
-                # Limitar a 30 usuarios
                 if len(image_buffer) >= 30:
-                    image_buffer.popitem(last=False)  # elimina el más viejo
+                    image_buffer.popitem(last=False)
                 image_buffer[user_id] = {
                     "images": [img_base64],
                     "last_seen": now
                 }
-            print(f"🕓 Esperando 5 segundos para agrupar imágenes de {user_id}...")
             await asyncio.sleep(5)
-            # Si después de 5 segundos no han llegado más imágenes del mismo usuario
             last_seen = image_buffer[user_id]["last_seen"]
             if (datetime.utcnow() - last_seen).total_seconds() >= 5:
                 num_imgs = len(image_buffer[user_id]["images"])
-                if "conversation" in message_data:
-                    user_message = message_data["conversation"]
+                if caption:
+                    if  num_imgs == 1:
+                        user_message = f"Mensaje del usuario: {caption} (Desde el sistema -> Ademas: Una imagen fue recibida del usuario.)"
+                    else:
+                        user_message=f"Mensaje del usuario: {caption} (Desde el sistema -> Ademas:{num_imgs} imágenes fueron recibidas del usuario.)"
                 elif  num_imgs == 1:
-                    user_message = "Imagen recibida del usuario. Verifica segun el historial de la conversacion si pertenece a una solicitud del usuario"
+                    user_message = "Imagen recibida del usuario."
                 else:
-                    user_message=f"{num_imgs} imágenes recibidas del usuario. Verifica segun el historial de la conversacion si pertenecen a una solicitud del usuario"
-                
+                    user_message=f"{num_imgs} imágenes recibidas del usuario."
                 images = image_buffer[user_id]["images"]
                 num_imgs = len(images)
-
-                # Guardar en base de datos
                 img_data_ids = await save_img_data(
                     request.app.state.mysql_pool, user_id, user_message, images
                 )
-
-                # Opcional: puedes guardarlos en el contexto después
-                print(f"🆔 Imágenes guardadas en BD con IDs: {img_data_ids}")
-
-                # Limpiar buffer
                 del image_buffer[user_id]
-
-                # Continuar con flujo
                 message_data["conversation"] = user_message
-                
                 print(f"📦 Procesando imágenes acumuladas de {user_id}: {num_imgs}")
                 # Simula mensaje de texto → continua el flujo completo
                 message_data["conversation"] = user_message
             else:
-                # Aún se están acumulando imágenes, salir sin procesar
                 print("⏳ Más imágenes podrían llegar, no se procesa aún.")
                 return {"status": "ok", "response": "[Imagen recibida, esperando otras...]"}
         else:
@@ -242,69 +292,11 @@ async def whatsapp_webhook(request: Request):
             f"📥 Recibido mensaje de: {user_name} ({user_id}) \n"
             f"✉️ Mensaje del usuario: {user_message}\n"
         )    
-        
+               
         ##------------------Contexto y estado------------------##        
-        last_state_record = await get_last_state(request.app.state.mysql_pool, user_id)
-        if not last_state_record:
-            ctx = request.app.state.create_initial_context()
-            ctx.user_id = user_id
-            ctx.imgs_ids= img_data_ids or []
-            user_env_data = await get_user_env(request.app.state.tools_pool, user_id,whatsapp_username=user_name)
-            ctx.user_env = user_env_data
-            state = {
-                    "context": ctx,
-                    "input_items": [],
-                    "current_agent": request.app.state.agents["General Agent"].name,
-                }
-        elif last_state_record and last_state_record.get("fecha"):
-            last_time = last_state_record["fecha"]
-            if isinstance(last_time, str):
-                last_time = datetime.strptime(last_time, "%Y-%m-%d %H:%M:%S")
-            if datetime.utcnow() - last_time > timedelta(minutes=5):
-                print("🕒 Último contexto es muy viejo, creando nuevo contexto...")
-                last_state_record = None
-            if last_state_record and last_state_record.get("contexto"):
-                try:
-                    raw_context = last_state_record["contexto"]
-                    restored_state = json.loads(raw_context)
-                    if isinstance(restored_state, str):
-                        restored_state = json.loads(restored_state)
-                    restored_context_dict = restored_state["context"]
-                    restored_context = MoovinAgentContext(**restored_context_dict)
-                    user_env_data = await get_user_env(request.app.state.tools_pool, user_id,whatsapp_username=user_name)
-                    restored_context.user_env = user_env_data
-                    if img_data_ids:
-                        restored_context.imgs_ids = img_data_ids
-                    state = {
-                        "context": restored_context,
-                        "input_items": restored_state.get("input_items", []),
-                        "current_agent": restored_state.get("current_agent", request.app.state.agents["General Agent"].name),
-                    }
-                except Exception as e:
-                    print("⚠️ Error restaurando contexto desde BD, se crea uno nuevo:", e)
-                    ctx = request.app.state.create_initial_context()
-                    ctx.user_id = user_id
-                    user_env_data = await get_user_env(request.app.state.tools_pool, user_id,whatsapp_username=user_name)
-                    ctx.user_env = user_env_data
-                    state = {
-                        "context": ctx,
-                        "input_items": [],
-                        "current_agent": request.app.state.agents["General Agent"].name,
-                    }
-            else:
-                ctx = request.app.state.create_initial_context()
-                ctx.user_id = user_id
-                ctx.imgs_ids= img_data_ids or []
-                print (f"Imagenes en contexto: {ctx.imgs_ids}")
-                user_env_data = await get_user_env(request.app.state.tools_pool, user_id,whatsapp_username=user_name)
-                ctx.user_env = user_env_data
-                state = {
-                        "context": ctx,
-                        "input_items": [],
-                        "current_agent": request.app.state.agents["General Agent"].name,
-                    }
+        state = await build_state(request, user_id, user_name, user_message, img_data_ids)
         store.save(user_id, state)
-        
+
         current_agent = _get_agent_by_name(request.app, state["current_agent"])
         if current_agent.name == "Railing Agent":
             current_agent = request.app.state.agents["General Agent"]
@@ -323,8 +315,6 @@ async def whatsapp_webhook(request: Request):
             result = await Runner.run(railing_agent, state["input_items"], context=state["context"])
             current_agent = railing_agent 
             
-
-        response_text = "🤖 No hay respuesta disponible."
         for item in result.new_items:
             try:
                 if isinstance(item, MessageOutputItem):

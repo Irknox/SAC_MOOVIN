@@ -1,6 +1,6 @@
-from agents import function_tool
-from database_handler import get_package_historic, get_id_package
-from mcp_handler import create_pickup_ticket,request_electronic_receipt
+from agents import function_tool,RunContextWrapper
+from database_handler import get_package_historic, get_id_package, get_img_data
+from mcp_handler import create_pickup_ticket,request_electronic_receipt, report_package_damaged
 
 
 ## ------------------ MCP Tools ------------------ ##
@@ -81,10 +81,10 @@ def Make_request_electronic_receipt_tool(pool):
             }
             
         print(f"🎫 Creando ticket para solicitud de factura electronica para {package_id}...")
-        owner_phone=package_historic.get("telefono_dueño","")
+        
         owner_info= {
             "email": package_historic.get("email_dueño_paquete",""),
-            "phone": owner_phone,
+            "phone": package_historic.get("telefono_dueño",""),
             "name": package_historic.get("nombre_dueño_paquete")
         }
         result = request_electronic_receipt(
@@ -98,3 +98,65 @@ def Make_request_electronic_receipt_tool(pool):
         return result
 
     return request_electronic_receipt_ticket
+
+def Make_package_damaged_tool(mysql_pool,tools_pool):
+    @function_tool(
+        name_override="package_damaged_ticket",
+        description_override="Crea un ticket para reportar el daño de un paquete a partir de su Tracking o número de seguimiento. Si el paquete existe y ha sido entregado, solicita número de seguimiento, descripción del daño y fotos del daño."
+    )
+    async def package_damaged_ticket(
+        ctx: RunContextWrapper,
+        package: str,
+        description: str
+    ) -> dict:
+        print(f"Intentado crear ticket para paquete {package} con descripcion {description}")
+        if not package or not description:
+            return {
+                "status": "error",
+                "message": "Faltan datos necesarios para crear el ticket. Proporciona número de seguimiento y descripción del daño."
+            }
+
+        package_id = await get_id_package(tools_pool, package)
+        
+        if not package_id:
+            return {"status": "error", "message": f"Paquete {package} no encontrado en la base de datos."}
+
+        package_historic = await get_package_historic(tools_pool, package_id)
+        timeline = package_historic.get("timeline", [])
+
+        if not timeline or str(timeline[0].get("status", "")).upper() not in {"DELIVERED", "DELIVEREDCOMPLETE"}:
+            return {
+                "tracking": package_id,
+                "package_found": True,
+                "response": "Este ticket solo puede generarse para paquetes que ya hayan sido entregados."
+            }
+
+        owner_info = {
+            "email": package_historic.get("email_dueño_paquete", ""),
+            "phone": package_historic.get("telefono_dueño", ""),
+            "name": package_historic.get("nombre_dueño_paquete", "")
+        }
+
+        img_data_result = []
+        print (f"[Debugg] Intentado obtener data de imagenes con ids {ctx.context.imgs_ids}")
+        if ctx.context.imgs_ids:
+            for img_id in ctx.context.imgs_ids:
+                try:
+                    row = await get_img_data(mysql_pool, img_id)
+                    if row and row.get("data"):
+                        img_data_result.append(row["data"])
+                except Exception as e:
+                    print(f"⚠️ Error recuperando imagen {img_id}: {e}")
+
+        print(f"📦 Reporte de paquete dañado con {len(img_data_result)} imágenes recuperadas. Datos: {img_data_result}")
+        
+        result = report_package_damaged(
+            owner=owner_info,
+            package_id=str(package_id),
+            description=description,
+            img_data=img_data_result
+        )
+
+        return result
+
+    return package_damaged_ticket
