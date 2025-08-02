@@ -1,9 +1,10 @@
-from agents import function_tool
-from database_handler import get_delivery_date, get_package_historic,get_id_package
+from agents import function_tool, RunContextWrapper
+from database_handler import get_delivery_date, get_package_historic,get_id_package,get_delivery_address,reverse_geocode_osm,send_location_to_whatsapp
 import os
 import psycopg2
 from openai import OpenAI
 from psycopg2.extras import Json
+
 
 
 client = OpenAI()
@@ -139,3 +140,59 @@ def make_get_likely_package_timelines_tool(pool):
         return response
 
     return get_likely_package_timelines
+
+def Make_send_current_delivery_address_tool(tools_pool):
+    @function_tool(
+    name_override="send_current_delivery_address",
+    description_override="Envia al usuario la direccion de entrega actual para el paquete, numero de seguimiento y numero de telefono del paquete son necesarios." 
+    )
+    async def send_current_delivery_address(
+        ctx: RunContextWrapper,
+        package:str,
+        phone: str
+    ) -> dict:
+        print (f"🌎 Buscando la direcion de entrega para el paquete {package} con telefono {phone}")
+        try:
+            historic = await get_package_historic(tools_pool, package)
+        except Exception as e:
+            print(f"🔴 [ERROR] Fallo al obtener el histórico del paquete {package}: {e}")
+            return {"error": "Hubo un problema al obtener el historial del paquete."}
+
+        phone_dueño = historic.get("telefono_dueño")
+        if not phone_dueño:
+            print(f"🔴 [ERROR] No se encontró el teléfono del dueño del paquete en los datos: {historic}")
+            return {"error": "No se encontró el teléfono del dueño del paquete."}
+
+        if phone_dueño.strip().lower() != phone.strip().lower():
+            print(f"🟠 [WARNING] Teléfono no coincide. Proporcionado: {phone}, Dueño: {phone_dueño}")
+            return {"error": "El teléfono proporcionado no coincide con el dueño del paquete."}
+        
+        delivery_address= await get_delivery_address(tools_pool,enterprise_code=package)
+        lat=delivery_address.get("latitude",None)
+        lng=delivery_address.get("longitude",None)
+        try:
+            address_response =reverse_geocode_osm(lat, lng)
+            address_data=address_response.get("address",{})
+            user_id=ctx.context.user_id
+            if address_data:
+                town_name=address_data.get("road",None)
+                full_address=address_response.get("display_name", None)
+                if town_name and full_address:
+                    is_message_sent=await send_location_to_whatsapp(user_id,lat,lng,town_name,full_address)
+                    message_sent_data=is_message_sent.json()
+                    print (f"Resultado de enviar el mensaje a whatsapp{message_sent_data}")
+                    message=message_sent_data.get("message", None)
+                    location_data=message.get("locationMessage",None)
+                    if location_data:
+                        address=location_data.get("address")
+                        return {
+                            "status": "Success, message with ubication in ubication format was sent to user",
+                            "delivery_address":address
+                        }
+        except Exception as e:
+            print(f"❌ Error al enviar la direccion al usuario: {e}")
+            return "[Error al enviar direccion al usuario]"
+        
+        
+        
+    return send_current_delivery_address

@@ -1,5 +1,5 @@
 from agents import function_tool,RunContextWrapper
-from database_handler import get_package_historic, get_id_package, get_img_data
+from database_handler import get_package_historic, get_id_package, get_img_data,get_delivery_address,reverse_geocode_osm,send_location_to_whatsapp
 from mcp_handler import create_pickup_ticket,request_electronic_receipt, report_package_damaged
 
 
@@ -156,7 +156,79 @@ def Make_package_damaged_tool(mysql_pool,tools_pool):
             description=description,
             img_data=img_data_result
         )
-
+        ctx.context.imgs_ids=[]
         return result
 
     return package_damaged_ticket
+
+def Make_send_delivery_address_requested_tool():
+    @function_tool(
+    name_override="send_delivery_address_requested",
+    description_override="Envia al usuario la direccion enviada por el usuario para el cambio de direccion, usala para que el usuario confirme la direccion que desea " 
+    )
+    async def send_delivery_address_requested(
+        ctx: RunContextWrapper,
+    ) -> dict:
+        print (f"🌎 Enviando la direcciona que desea cambiar el usuario como confirmacion....")
+        print (f"Contexto que esta siendo usado {ctx.context}")
+        cordinates_info=ctx.context.location_sent       
+        lat=cordinates_info.get("latitude")
+        lng=cordinates_info.get("longitude")
+        print (f"Enviando direccion a usario con longitud {lng} y latitud {lat}")
+        try:
+            address_response =reverse_geocode_osm(lat, lng)
+            address_data=address_response.get("address",{})
+            user_id=ctx.context.user_id
+            if address_data:
+                town_name=address_data.get("road",None)
+                full_address=address_response.get("display_name", None)
+                if town_name and full_address:
+                    is_message_sent=await send_location_to_whatsapp(user_id,lat,lng,town_name,full_address)
+                    message_sent_data=is_message_sent.json()
+                    message=message_sent_data.get("message", None)
+                    location_data=message.get("locationMessage",None)
+                    if location_data:
+                        address=location_data.get("address")
+                        return {
+                            "status": "Success, message with ubication in ubication format was sent to user",
+                            "address pre info": address
+                        }
+        except Exception as e:
+            print(f"❌ Error al enviar la direccion al usuario: {e}")
+            return "[Error al enviar direccion al usuario]"
+        
+        
+        
+    return send_delivery_address_requested
+
+def Make_change_delivery_address_tool():
+    @function_tool(
+    name_override="change_delivery_address",
+    description_override="Cambia la direccion de entrega para un paquete, el numero de seguimiento, numero de telefono del paquete, confirmacion de cambio y confirmacion de nueva direccion son los parametros necesarios. " 
+    )
+    async def change_delivery_address(
+        ctx:RunContextWrapper,
+        package: str,
+        is_new_address_confirmed:bool,
+        is_request_confirmed:bool
+    ) -> dict:
+        print (f"Cambiando direccion de paquete para paquete {package}...") 
+        print (f"Datos recibidos: Nueva direccion confirmada: {is_new_address_confirmed}, Request confirmado: {is_request_confirmed}")
+        
+        new_address=ctx.context.location_sent
+        if not new_address:
+            return {
+                "status": "error",
+                "reason": "New Delivery Address hasn't been provided"
+            }
+            
+        if not is_new_address_confirmed or not is_request_confirmed:
+            return {
+                "status": "denied",
+                "reason": "New address or request confirmation hasn't been done yet"
+            }
+        return {
+            "status": "In Progress",
+            "reason":"Developers testing face"
+        }
+    return change_delivery_address

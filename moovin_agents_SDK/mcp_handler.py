@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 import os
 import requests
 
+
 load_dotenv()
 import time
 
@@ -396,3 +397,4 @@ def report_package_damaged(owner: dict, package_id: str, description: str, img_d
             "status": "error",
             "message": f"Error general al crear ticket: {str(e)}"
         }
+        

@@ -13,9 +13,9 @@ from agents import (
     input_guardrail,output_guardrail
 )
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
-from tools import make_get_package_timeline_tool, make_get_SLA_tool,make_get_likely_package_timelines_tool
+from tools import make_get_package_timeline_tool, make_get_SLA_tool,make_get_likely_package_timelines_tool, Make_send_current_delivery_address_tool
 from dotenv import load_dotenv
-from mcp_tools import Make_request_to_pickup_tool,Make_request_electronic_receipt_tool,Make_package_damaged_tool
+from mcp_tools import Make_request_to_pickup_tool,Make_request_electronic_receipt_tool,Make_package_damaged_tool, Make_send_delivery_address_requested_tool,Make_change_delivery_address_tool
 
 
 #---------------------- Prompts ----------------------#
@@ -40,6 +40,7 @@ class MoovinAgentContext(BaseModel):
     issue_ticket_id: str | None = None
     user_env: dict | None = None
     imgs_ids: list[int] | None = None
+    location_sent: dict | None = None
     
 def create_initial_context() -> MoovinAgentContext:
     return MoovinAgentContext(user_id=str(random.randint(10000, 99999)))
@@ -153,7 +154,7 @@ async def build_agents(tools_pool,mysql_pool):
         name="MCP Agent",
         model="gpt-4o-mini",
         instructions=mcp_agent_instructions,
-        tools=[Make_request_to_pickup_tool(tools_pool),Make_request_electronic_receipt_tool(tools_pool),Make_package_damaged_tool(mysql_pool,tools_pool)],
+        tools=[Make_request_to_pickup_tool(tools_pool),Make_request_electronic_receipt_tool(tools_pool),Make_package_damaged_tool(mysql_pool,tools_pool),Make_send_current_delivery_address_tool(tools_pool), Make_send_delivery_address_requested_tool(),Make_change_delivery_address_tool()],
         input_guardrails=[],
     
     )
@@ -163,7 +164,7 @@ async def build_agents(tools_pool,mysql_pool):
         model="gpt-4o-mini",
         instructions=package_analysis_instructions,
         handoffs=[mcp_agent],
-        tools=[make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool)],
+        tools=[make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool),Make_send_current_delivery_address_tool(tools_pool)],
         input_guardrails=[],
     
     )

@@ -36,7 +36,7 @@
         -¿Cuáles medios de pago tengo disponibles?
             - Podés pagar al mensajero al momento de la entrega en efectivo, con tarjeta o SINPE Móvil, siempre que esté a nombre de Moovin de Costa Rica. Moovin nunca cobrará un monto superior al indicado en la guía del paquete, por lo que no nos hacemos responsables por los pagos que tú, como usuario, realices por otros medios que no sean los indicados.
         -¿Puedo cambiar la dirección de entrega?
-            - Sí, en el correo que recibís encontrarás un enlace donde podés realizar los cambios de dirección necesarios antes de que el paquete esté listo para su distribución. También puedo ayudarte a realizar el cambio(ticketing_agent)
+            - Sí, en el correo que recibís encontrarás un enlace donde podés realizar los cambios de dirección necesarios antes de que el paquete esté listo para su distribución. También puedo ayudarte a realizar el cambio (mcp_agent)
         -¿Puedo recibir el paquete sin pagar el monto del impuesto?
             - Para poder recibir, abrir y revisar el contenido de tu paquete al momento de la entrega, es necesario realizar el pago. Si no se realiza el pago, lamentablemente no podremos entregarte el paquete.
         -¿Puedo recoger mis paquetes en una sucursal de Moovin?

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 import re
 import phonenumbers
 import base64
+import requests
 
 # ----------------- Configuración de MySQL ------------------
 load_dotenv()
@@ -23,6 +24,57 @@ DB_NAME = os.environ.get('Db_NAME')
 DB_PORT = int(os.environ.get('Db_PORT'))
 
 #--------------------Funciones auxiliares--------------------#
+def reverse_geocode_osm(lat: float, lon: float) -> str:
+    url = "https://nominatim.openstreetmap.org/reverse"
+    params = {
+        "format": "json",
+        "lat": lat,
+        "lon": lon,
+        "zoom": 16,
+        "addressdetails": 1
+    }
+    headers = {
+        "User-Agent": "MoovinBot/1.0 alejca15@gmail.com"
+    }
+
+    try:
+        response = requests.get(url, params=params, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            return data
+        else:
+            return f"[Error OSM {response.status_code}]"
+    except Exception as e:
+        print(f"❌ Error en reverse_geocode_osm_sync: {e}")
+        return "[Error al obtener dirección]"
+    
+async def send_location_to_whatsapp(user_id: str, latitude: float, longitude: float, name:str, address=str):
+    """
+    Envía una ubicación por WhatsApp mediante Evolution API.
+    """
+    url = f"{os.environ.get('Whatsapp_URL')}/message/sendLocation/SAC-Moovin"
+    payload = {
+        "number": user_id.replace("@s.whatsapp.net", ""),
+        "name": name,
+        "address": address,
+        "latitude": latitude,
+        "longitude": longitude
+    }
+
+
+    headers = {
+        "apikey": os.environ.get("Whatsapp_API_KEY"),
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        print("📍 Ubicación enviada a WhatsApp ✔️")
+        return response
+    except Exception as e:
+        print("❌ Error al enviar ubicación a WhatsApp:", e)
+        return None
+
 def format_fecha(date_server):
     fecha_dt = datetime.strptime(str(date_server), "%Y-%m-%d %H:%M:%S")
     return fecha_dt.strftime("%A %d de %B %Y %H:%M")
@@ -122,9 +174,6 @@ async def get_delivery_address(pool, enterprise_code):
     package = await get_id_package(pool, enterprise_code)
     if not package:
         return "No se encontró el paquete."
-    gam = await is_gam(pool, package)
-    if gam:
-        return "GAM"
     else:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:

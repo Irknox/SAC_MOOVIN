@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any, Literal
 import os
 import tempfile
 import requests
-from database_handler import get_last_state,save_message,get_user_env, get_agent_history, get_users_last_messages,get_last_messages_by_user,save_img_data
+from database_handler import get_last_state,save_message,get_user_env, get_agent_history, get_users_last_messages,get_last_messages_by_user,save_img_data,reverse_geocode_osm
 from config import create_mysql_pool, create_tools_pool
 from main import build_agents, MoovinAgentContext
 from agents import (
@@ -25,11 +25,13 @@ import asyncio
 
 
 image_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+location_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 
 load_dotenv()
 
 
 client = OpenAI()
+
 
 def save_base64_audio(base64_string: str, suffix: str = ".ogg") -> str:
     """
@@ -61,12 +63,14 @@ async def transcribe_audio(media_key_b64: str) -> str:
         print("❌ Error al transcribir:", e)
         return "[Error al transcribir audio]"
 
-async def build_state(request: Request, user_id: str, user_name: str, user_message: str, img_data_ids: list[int]) -> dict:
+async def build_state(request: Request, user_id: str, user_name: str, user_message: str, img_data_ids: list[int], location_data: dict |  None) -> dict:
+
     last_state_record = await get_last_state(request.app.state.mysql_pool, user_id)
     if not last_state_record:
         ctx = request.app.state.create_initial_context()
         ctx.user_id = user_id
         ctx.imgs_ids= img_data_ids or []
+        ctx.location_sent = location_data or {}
         user_env_data = await get_user_env(request.app.state.tools_pool, user_id, whatsapp_username=user_name)
         ctx.user_env = user_env_data
         state = {
@@ -74,11 +78,12 @@ async def build_state(request: Request, user_id: str, user_name: str, user_messa
                 "input_items": [],
                 "current_agent": request.app.state.agents["General Agent"].name,
             }
+        
     elif last_state_record and last_state_record.get("fecha"):
         last_time = last_state_record["fecha"]
         if isinstance(last_time, str):
             last_time = datetime.strptime(last_time, "%Y-%m-%d %H:%M:%S")
-        if datetime.utcnow() - last_time > timedelta(minutes=2):
+        if datetime.utcnow() - last_time > timedelta(minutes=10):
             print("🕒 Último contexto es muy viejo, creando nuevo contexto...")
             last_state_record = None
         if last_state_record and last_state_record.get("contexto"):
@@ -93,6 +98,7 @@ async def build_state(request: Request, user_id: str, user_name: str, user_messa
                 restored_context.user_env = user_env_data
                 if img_data_ids:
                     restored_context.imgs_ids = img_data_ids
+                restored_context.location_sent=location_data or {}
                 state = {
                     "context": restored_context,
                     "input_items": restored_state.get("input_items", []),
@@ -113,7 +119,7 @@ async def build_state(request: Request, user_id: str, user_name: str, user_messa
             ctx = request.app.state.create_initial_context()
             ctx.user_id = user_id
             ctx.imgs_ids= img_data_ids or []
-            print (f"Imagenes en contexto: {ctx.imgs_ids}")
+            ctx.location_sent= location_data or {}
             user_env_data = await get_user_env(request.app.state.tools_pool, user_id, whatsapp_username=user_name)
             ctx.user_env = user_env_data
             state = {
@@ -123,6 +129,35 @@ async def build_state(request: Request, user_id: str, user_name: str, user_messa
                 }
     return state
 
+async def send_text_to_whatsapp(user_id: str, user_message: str, response_text: str, message_id: str):
+    """
+    Envía un mensaje de texto a un número de WhatsApp mediante Evolution API.
+    """
+    url = f"{os.environ.get('Whatsapp_URL')}/message/sendText/SAC-Moovin"
+    payload = {
+        "number": user_id.replace("@s.whatsapp.net", ""),
+        "text": response_text,
+        "delay": 100,
+        "linkPreview": False,
+        "mentionsEveryOne": False,
+        "mentioned": [user_id],
+        "quoted": {
+            "key": {"id": message_id},
+            "message": {"conversation": user_message}
+        }
+    }
+    headers = {
+        "apikey": os.environ.get("Whatsapp_API_KEY"),
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        print("📤 Enviado a WhatsApp ✔️")
+        return response
+    except Exception as e:
+        print("❌ Error al enviar mensaje a WhatsApp:", e)
+        return None
 
 class AgentEvent(BaseModel):
     id: str
@@ -205,7 +240,6 @@ def count_tokens(text, model="gpt-4o"):
 @app.post("/ask")
 async def whatsapp_webhook(request: Request):
     payload = await request.json()
-    print (f"Payload recibido del usuario {payload}")
     try:
         data_item = payload["data"]
         message_data = data_item["message"]
@@ -223,7 +257,19 @@ async def whatsapp_webhook(request: Request):
         elif "locationMessage" in message_data:
             lat = message_data["locationMessage"]["degreesLatitude"]
             lng = message_data["locationMessage"]["degreesLongitude"]
-            user_message = f"[Ubicación recibida] Lat: {lat}, Lng: {lng}"
+            address_info_response = reverse_geocode_osm(lat, lng)
+            direccion=address_info_response.get('display_name', None)
+            user_message = f"[Ubicación recibida en formato de Ubicacion]"
+
+            # Guardar ubicación en el buffer
+            now = datetime.utcnow()
+            if len(location_buffer) >= 30 and user_id not in location_buffer:
+                location_buffer.popitem(last=False)  # Quitar el más viejo
+
+            location_buffer[user_id] = {
+                "location": {"latitude": lat, "longitude": lng},
+                "last_seen": now
+            }
 
         ## ------------------------Procesamiento de audio------------------------ ##
         elif "audioMessage" in message_data:
@@ -270,6 +316,7 @@ async def whatsapp_webhook(request: Request):
                     user_message = "Imagen recibida del usuario."
                 else:
                     user_message=f"{num_imgs} imágenes recibidas del usuario."
+                    
                 images = image_buffer[user_id]["images"]
                 num_imgs = len(images)
                 img_data_ids = await save_img_data(
@@ -278,7 +325,6 @@ async def whatsapp_webhook(request: Request):
                 del image_buffer[user_id]
                 message_data["conversation"] = user_message
                 print(f"📦 Procesando imágenes acumuladas de {user_id}: {num_imgs}")
-                # Simula mensaje de texto → continua el flujo completo
                 message_data["conversation"] = user_message
             else:
                 print("⏳ Más imágenes podrían llegar, no se procesa aún.")
@@ -286,7 +332,7 @@ async def whatsapp_webhook(request: Request):
         else:
             return print("[Mensaje no soportado]")
         
-        
+        location_data = location_buffer.get(user_id, {}).get("location", None)
         ##---------------Debug------------------##
         print(
             f"📥 Recibido mensaje de: {user_name} ({user_id}) \n"
@@ -294,7 +340,8 @@ async def whatsapp_webhook(request: Request):
         )    
                
         ##------------------Contexto y estado------------------##        
-        state = await build_state(request, user_id, user_name, user_message, img_data_ids)
+        state = await build_state(request, user_id, user_name, user_message, img_data_ids, location_data)
+
         store.save(user_id, state)
 
         current_agent = _get_agent_by_name(request.app, state["current_agent"])
@@ -348,27 +395,8 @@ async def whatsapp_webhook(request: Request):
         )
         
         ##------------------Enviar respuesta a WhatsApp------------------##
-        url = f"{os.environ.get('Whatsapp_URL')}/message/sendText/SAC-Moovin"
-        payload = {
-            "number": user_id.replace("@s.whatsapp.net", ""),
-            "text": response_text,
-            "delay": 100,
-            "linkPreview": False,
-            "mentionsEveryOne": False,
-            "mentioned": [user_id],
-            "quoted": {
-                "key": {"id": message_id},
-                "message": {"conversation": user_message}
-            }
-        }
-        headers = {
-            "apikey": os.environ.get("Whatsapp_API_KEY"),
-            "Content-Type": "application/json"
-        }
-
-        r = requests.post(url, json=payload, headers=headers)
-        
-        
+        await send_text_to_whatsapp(user_id, user_message, response_text, message_id)
+ 
         ##------------------Calcular Tokens------------------##
         prompt_text = current_agent.instructions(
         RunContextWrapper(state["context"]), current_agent
