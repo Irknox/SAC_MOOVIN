@@ -13,9 +13,9 @@ from agents import (
     input_guardrail,output_guardrail
 )
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
-from tools import make_get_package_timeline_tool, make_get_SLA_tool,make_get_likely_package_timelines_tool
+from tools import make_get_package_timeline_tool, make_get_SLA_tool,make_get_likely_package_timelines_tool, Make_send_current_delivery_address_tool
 from dotenv import load_dotenv
-from mcp_tools import Make_request_to_pickup_tool,Make_request_electronic_receipt_tool
+from mcp_tools import Make_request_to_pickup_tool,Make_request_electronic_receipt_tool,Make_package_damaged_tool, Make_send_delivery_address_requested_tool,Make_change_delivery_address_tool
 
 
 #---------------------- Prompts ----------------------#
@@ -40,6 +40,7 @@ class MoovinAgentContext(BaseModel):
     issue_ticket_id: str | None = None
     user_env: dict | None = None
     imgs_ids: list[int] | None = None
+    location_sent: dict | None = None
     
 def create_initial_context() -> MoovinAgentContext:
     return MoovinAgentContext(user_id=str(random.randint(10000, 99999)))
@@ -62,7 +63,8 @@ input_guardrail_agent = Agent[MoovinAgentContext](
     name="Input Guardrail Agent",
     model="gpt-4o-mini",
     instructions="""
-        Evalua si la entrada es relevante para el flujo de trabajo actual. 
+        Evalua si la entrada es relevante para el flujo de trabajo actual.
+        Si la entrada indica que recibiste una imagen, esta es relevante para el flujo actual, no debe activarse el guardariales en estos casos
         Si es relevante y puede ser atendida, devuelve 'true' y una breve explicación. 
         Si no es relevante, devuelve 'false' y una breve explicación. 
         
@@ -79,7 +81,7 @@ async def basic_guardrail(
 ) -> GuardrailFunctionOutput:
     result = await Runner.run(input_guardrail_agent, input, context=context.context)
     final = result.final_output_as(BasicGuardrailOutput)
-
+    print (f"🚦 Resultado del guardarailes: {final}")
     if not final.passed:
         print(f"⚠️ Tripwire activado, razon de guardarailes: {final.reasoning}")
         return GuardrailFunctionOutput(
@@ -100,9 +102,8 @@ def debug_context_info(ctx: RunContextWrapper[MoovinAgentContext], label: str = 
 # AGENTES
 # =========================
 
-async def build_agents(tools_pool):
+async def build_agents(tools_pool,mysql_pool):
 
-        
     def general_agent_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
         env_info = ""
         if ctx.context.user_env:
@@ -129,8 +130,6 @@ async def build_agents(tools_pool):
         env_info = ""
         if ctx.context.user_env:
             env_info = f"\nUser data:\n{ctx.context.user_env}"
-        if ctx.context.imgs_ids:
-            print(f"Imagenes precargadas: {ctx.context.imgs_ids}")
         return (
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
             f"{GENERAL_PROMPT}\n"
@@ -138,8 +137,6 @@ async def build_agents(tools_pool):
             f"{MCP_AGENT_PROMPT}\n"
         )
     def railing_agent_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
-        debug_context_info(ctx, "[Railing Agent]")  # Imprime imágenes y user info si existen
-
         return (
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
             f"{GENERAL_PROMPT} "
@@ -157,8 +154,8 @@ async def build_agents(tools_pool):
         name="MCP Agent",
         model="gpt-4o-mini",
         instructions=mcp_agent_instructions,
-        tools=[Make_request_to_pickup_tool(tools_pool),Make_request_electronic_receipt_tool(tools_pool)],
-        input_guardrails=[basic_guardrail],
+        tools=[Make_request_to_pickup_tool(tools_pool),Make_request_electronic_receipt_tool(tools_pool),Make_package_damaged_tool(mysql_pool,tools_pool),Make_send_current_delivery_address_tool(tools_pool), Make_send_delivery_address_requested_tool(),Make_change_delivery_address_tool()],
+        input_guardrails=[],
     
     )
     
@@ -167,8 +164,8 @@ async def build_agents(tools_pool):
         model="gpt-4o-mini",
         instructions=package_analysis_instructions,
         handoffs=[mcp_agent],
-        tools=[make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool)],
-        input_guardrails=[basic_guardrail],
+        tools=[make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool),Make_send_current_delivery_address_tool(tools_pool)],
+        input_guardrails=[],
     
     )
 
@@ -177,7 +174,7 @@ async def build_agents(tools_pool):
         model="gpt-4o-mini",
         instructions=general_agent_instructions,
         handoffs=[package_analysis_agent,mcp_agent],
-        input_guardrails=[basic_guardrail],    
+        input_guardrails=[],    
     )
     
     railing_agent = Agent[MoovinAgentContext](

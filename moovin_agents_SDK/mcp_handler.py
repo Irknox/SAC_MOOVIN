@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 import os
 import requests
 
+
 load_dotenv()
 import time
 
@@ -11,9 +12,51 @@ zoho_client_id = os.environ.get("Zoho_Client_ID", "")
 zoho_client_secret = os.environ.get("Zoho_Client_Secret", "")
 zoho_org= os.environ.get("Zoho_Organization_ID")
 
+##---------------------------------Auxiliares------------------------------------##
+def upload_attachments_to_ticket(ticket_id: str, images: list[bytes]) -> list[dict]:
+    """
+    Sube una lista de imágenes (como bytes) como adjuntos al ticket de Zoho Desk.
+
+    Parámetros:
+      - ticket_id: ID del ticket ya creado.
+      - images: lista de blobs (bytes) de las imágenes.
+
+    Retorna:
+      - Lista de resultados por imagen.
+    """
+    results = []
+    token = get_cached_token()
+
+    for i, img_bytes in enumerate(images):
+        files = {
+            "file": (f"image_{i+1}.jpg", img_bytes, "image/jpeg")
+        }
+
+        headers = {
+            "Authorization": f"Zoho-oauthtoken {token}",
+            "orgId": zoho_org_id
+        }
+
+        url = f"https://desk.zoho.com/api/v1/tickets/{ticket_id}/attachments"
+
+        try:
+            resp = requests.post(url, headers=headers, files=files)
+            if resp.status_code == 201:
+                data = resp.json()
+                results.append({"status": "ok", "attachment_id": data.get("id")})
+                print(f"✅ Imagen {i+1} subida correctamente")
+                print(f"Respuesta {resp}")
+            else:
+                print(f"❌ Error subiendo imagen {i+1}: {resp.status_code}")
+                print(f"Error: {resp.json()}")
+                results.append({"status": "error", "code": resp.status_code})
+        except Exception as e:
+            print(f"⚠️ Excepción subiendo imagen {i+1}: {e}")
+            results.append({"status": "error", "exception": str(e)})
+
+    return results
 
 ##----------------------------Zoho--------------------------------##
-##---------------Auxiliares------------------##
 _token_info = {
     "access_token": None,
     "expires_at": 0,
@@ -45,7 +88,6 @@ def refresh_token():
     _token_info["access_token"] = data["access_token"]
     _token_info["expires_at"] = time.time() + int(data["expires_in"]) - 60 
     return _token_info["access_token"]
-
 
 def get_zoho_contact(email: str = "", phone: str = "", token: str = "") -> dict:
     url = "https://desk.zoho.com/api/v1/contacts/search"
@@ -82,7 +124,6 @@ def get_zoho_contact(email: str = "", phone: str = "", token: str = "") -> dict:
         return { "response": "No contacts found" }
 
     return contacto
-
 
 def create_zoho_contact(email: str, phone: str, name: str, token:str) -> dict:
     """
@@ -144,6 +185,7 @@ def create_pickup_ticket(email: str, phone: str,
     Retorna:
       - Diccionario JSON con lo retornado por Zoho (el ticket creado).
     """
+    print(f"🛠️ Creando ticket de recogida para {package_id}... \n Tipo de dato: {type(package_id)}")
     try:
         token = get_cached_token()
         contact = get_zoho_contact(email=email, phone=phone, token=token)     
@@ -194,9 +236,7 @@ def create_pickup_ticket(email: str, phone: str,
         return {
             "error": "Error general al crear ticket",
             "details": str(e)
-        }
-        
-        
+        }   
         
 def request_electronic_receipt(owner: dict, package_id: str,legal_name:str, legal_id: str,            
                             full_address: str, reason: str = "") -> dict:
@@ -273,4 +313,88 @@ def request_electronic_receipt(owner: dict, package_id: str,legal_name:str, lega
         return {
             "error": "Error general al crear ticket",
             "details": str(e)
+        }    
+        
+def report_package_damaged(owner: dict, package_id: str, description: str, img_data: list[int] = []) -> dict:
+    """
+    Crea un ticket en Zoho Desk para reportar un paquete dañado.
+
+    Parámetros:
+      - owner: diccionario con datos del propietario del paquete.
+      - package_id: identificador del paquete.
+      - description: descripción del daño.
+      - img_data: lista de IDs de imágenes relacionadas al daño.
+
+    Retorna:
+      - Diccionario JSON con lo retornado por Zoho (el ticket creado).
+    """
+    email = owner.get("email", None)
+    phone = owner.get("phone", None)
+    name = owner.get("name", None)
+
+    try:
+        token = get_cached_token()
+        contact = get_zoho_contact(email=email, phone=phone, token=token)
+        
+        if "id" not in contact:
+            print("⚠️ No se encontró contacto, creando uno nuevo...")
+            contact = create_zoho_contact(email=email, phone=phone, name=name, token=token)
+            if "id" not in contact:
+                return {
+                    "error": "No se pudo crear el contacto",
+                    "details": contact
+                }
+                
+        url = "https://desk.zoho.com/api/v1/tickets"
+
+        headers = {
+            "Authorization": f"Zoho-oauthtoken {token}",
+            "orgId": zoho_org_id,
+            "Content-Type": "application/json"
         }
+
+        payload = {
+            "subject": f"Reporte de Paquete Dañado - {package_id}  (Prueba de Integración)",
+            "email": email,
+            "phone": phone,
+            "description": f"ESTO ES UNA PRUEBA, por favor hacer caso omiso.\n\n Descripción del daño: {description}",
+            "departmentId": "504200000001777045",
+            "channel": "WhatsApp",
+            "teamId": "504200000035799001",
+            "cf": {
+                "cf_id_de_envio": package_id
+            },
+            "status" : "Closed",
+            "contactId": contact["id"]
+        }
+
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if not response.ok:
+            return {
+                "status": "error",
+                "message": f"Error al crear el ticket: {response}"
+            }
+        
+        ticket_data = response.json()
+        ticket_id= ticket_data.get("id", "DESCONOCIDO")
+        ticketNumber=ticket_data.get("ticketNumber","DESCONOCIDO")
+        
+        attachment_results = []
+        if img_data:
+            print(f"📤 Subiendo {len(img_data)} imágenes al ticket {ticket_id}...")
+            attachment_results = upload_attachments_to_ticket(ticket_id, img_data)
+            
+        return {
+            "status": "ok",
+            "message": f"Ticket de daño creado para el paquete {package_id}",
+            "Numero de Ticket": ticketNumber,
+            "attachments": attachment_results
+        } 
+        
+    except Exception as e: 
+        return {
+            "status": "error",
+            "message": f"Error general al crear ticket: {str(e)}"
+        }
+        
