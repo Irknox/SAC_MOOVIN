@@ -11,7 +11,7 @@ from config import create_mysql_pool, create_tools_pool
 from main import build_agents, MoovinAgentContext
 from agents import (
     Runner, MessageOutputItem, HandoffOutputItem, ToolCallItem,
-    ToolCallOutputItem, InputGuardrailTripwireTriggered,RunContextWrapper
+    ToolCallOutputItem, InputGuardrailTripwireTriggered,RunContextWrapper,OutputGuardrailTripwireTriggered
 )
 import json
 from datetime import datetime, timedelta
@@ -267,8 +267,16 @@ async def whatsapp_webhook(request: Request):
                 location_buffer.popitem(last=False)  # Quitar el más viejo
 
             location_buffer[user_id] = {
-                "location": {"latitude": lat, "longitude": lng},
-                "last_seen": now
+                "location": {
+                    "latitude": lat, 
+                    "longitude": lng, 
+                    "confirmations": {
+                        "is_request_confirmed_by_user":False,
+                        "is_new_address_confirmed":False
+                        }
+                },
+                "last_seen": now,
+                
             }
 
         ## ------------------------Procesamiento de audio------------------------ ##
@@ -354,21 +362,27 @@ async def whatsapp_webhook(request: Request):
         """
         Ejecucion del agente actual con el mensaje del usuario y contexto reconstruido.
         """
-        print(f"🤖 Agente Atendiendo: {current_agent.name}")
         try:
             result = await Runner.run(current_agent, state["input_items"], context=state["context"])
         except InputGuardrailTripwireTriggered as e:
             railing_agent = _get_agent_by_name(request.app, "Railing Agent")
-            result = await Runner.run(railing_agent, state["input_items"], context=state["context"])
-            current_agent = railing_agent 
+            state["context"].tripwired_trigered_reason= e.guardrail_result.output.output_info.reasoning
+            result = await Runner.run(railing_agent, state["input_items"], context=state["context"]) 
+        except OutputGuardrailTripwireTriggered as e:
+            railing_agent = _get_agent_by_name(request.app, "Railing Agent")
+            state["context"].tripwired_trigered_reason = e.guardrail_result.output.output_info.reasoning
+            result = await Runner.run(railing_agent,state["input_items"], context=state["context"])
             
+        print(f"🤖 Agente Atendiendo: {current_agent.name}")
+        
         for item in result.new_items:
             try:
                 if isinstance(item, MessageOutputItem):
                     content = getattr(item.raw_item, "content", None)
                     text = content[0].text if isinstance(content, list) and content else str(content)
                     print("📤 Respuesta del agente:", text)
-                    response_text = text
+                    response_dict = json.loads(text)
+                    response_text = response_dict.get("response")
 
                 elif isinstance(item, HandoffOutputItem):
                     current_agent = item.target_agent

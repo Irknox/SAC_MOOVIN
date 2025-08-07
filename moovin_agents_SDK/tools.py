@@ -185,6 +185,11 @@ def Make_send_current_delivery_address_tool(tools_pool):
                     location_data=message.get("locationMessage",None)
                     if location_data:
                         address=location_data.get("address")
+                        if "confirmations" in ctx.context.location_sent:
+                            ctx.context.location_sent["confirmations"]["is_request_confirmed_by_user"] = True
+                            print(f"[CTX DEBUG] Confirmación actualizada: {ctx.context.location_sent.get('confirmations')}")
+                        else:
+                            print(f" 🚨 confirmation was not found in context")
                         return {
                             "status": "Success, message with ubication in ubication format was sent to user",
                             "delivery_address":address

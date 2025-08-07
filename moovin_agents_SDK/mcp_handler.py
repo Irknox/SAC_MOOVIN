@@ -1,8 +1,8 @@
 from dotenv import load_dotenv
 import os
 import requests
-
-
+import json
+from database_handler import get_delivery_address
 load_dotenv()
 import time
 
@@ -11,7 +11,7 @@ zoho_org_id = "716348510"
 zoho_client_id = os.environ.get("Zoho_Client_ID", "")
 zoho_client_secret = os.environ.get("Zoho_Client_Secret", "")
 zoho_org= os.environ.get("Zoho_Organization_ID")
-
+moovin_url=os.environ.get("Moovin_URL")
 ##---------------------------------Auxiliares------------------------------------##
 def upload_attachments_to_ticket(ticket_id: str, images: list[bytes]) -> list[dict]:
     """
@@ -41,7 +41,7 @@ def upload_attachments_to_ticket(ticket_id: str, images: list[bytes]) -> list[di
 
         try:
             resp = requests.post(url, headers=headers, files=files)
-            if resp.status_code == 201:
+            if resp.status_code == 200:
                 data = resp.json()
                 results.append({"status": "ok", "attachment_id": data.get("id")})
                 print(f"✅ Imagen {i+1} subida correctamente")
@@ -55,6 +55,86 @@ def upload_attachments_to_ticket(ticket_id: str, images: list[bytes]) -> list[di
             results.append({"status": "error", "exception": str(e)})
 
     return results
+
+_moovin_token_cache = {
+    "token": None,
+    "expires_at": 0  
+}
+
+
+def get_moovin_dev_token():
+    url = f"{moovin_url}/moovinApiWebServices-cr/rest/api/loginEmployee"
+    payload = json.dumps({
+        "mail": "ma@m.com",
+        "password": "*Nc8oAVn&D!$m7m&OS2W",
+        "device": {
+            "identifierDevice": "1330",
+            "system": "Android"
+        }
+    })
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(url, headers=headers, data=payload)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("token")
+    except Exception as e:
+        print(f"❌ Error al obtener token Moovin: {e}")
+        return None
+    
+    
+def get_valid_moovin_token():
+    now = int(time.time())
+    if _moovin_token_cache["token"] and _moovin_token_cache["expires_at"] > now:
+        return _moovin_token_cache["token"]
+
+    # Token expirado o inexistente: solicitar uno nuevo
+    token = get_moovin_dev_token()
+    if token:
+        _moovin_token_cache["token"] = token
+        _moovin_token_cache["expires_at"] = now + 1800  # válido por 30 min
+    return token
+
+
+async def change_delivery_address(idPoint:int,lat:float,lng:float):
+    testing_point=181898
+    token = get_valid_moovin_token()
+    url = f"{moovin_url}/moovinApiWebServices-cr/rest/api/moovinEnterprise/package/editPackageLocation"
+    payload = json.dumps({
+    "idPoint": testing_point,
+    "idProfile": "65", 
+    "confirm": True,
+    "type": "DELIVERY",
+    "contactsAdditionalPoint": [],
+    "phone": "+506 64208746",
+    "latitude": lat,
+    "longitude": lng,
+    "channel": "WA_INITIATIVE",
+    "address": "Demo SAC",
+    "notes": "Probando cambio de direccion de entrega",
+    "whatsAppData": {
+        "isWhatsApp": True,
+        "phoneNumber": "+506 64208746",
+        "name": ""
+    }
+    })
+    headers = {
+    'token': token,
+    'Content-Type': 'application/json'
+    }
+
+    response = requests.request("POST", url, headers=headers, data=payload)
+    if response.status_code == 401:
+        print ("No autorizado, renovando Token")
+        _moovin_token_cache["expires_at"] = 0
+        token = get_valid_moovin_token()
+        headers["token"] = token
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+    return response
+##-----------------------------Moovin----------------------------##
 
 ##----------------------------Zoho--------------------------------##
 _token_info = {
@@ -151,10 +231,11 @@ def create_zoho_contact(email: str, phone: str, name: str, token:str) -> dict:
         "phone": phone
     }
     response = requests.post(url, headers=headers, json=payload)
-
-    if response.status_code == 201:
+    if response.status_code == 200:
+        print (f"✅ Contacto creado")
         return response.json()
     else:
+        print (f"❌ Error al crear el contacto")
         try:
             return {
                 "error": True,
@@ -338,7 +419,11 @@ def report_package_damaged(owner: dict, package_id: str, description: str, img_d
         
         if "id" not in contact:
             print("⚠️ No se encontró contacto, creando uno nuevo...")
-            contact = create_zoho_contact(email=email, phone=phone, name=name, token=token)
+            try:
+                contact = create_zoho_contact(email=email, phone=phone, name=name, token=token)
+            except Exception as e:
+                print (f"Error al crear el contacto")
+                
             if "id" not in contact:
                 return {
                     "error": "No se pudo crear el contacto",

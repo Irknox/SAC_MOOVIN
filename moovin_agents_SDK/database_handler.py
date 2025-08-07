@@ -178,7 +178,7 @@ async def get_delivery_address(pool, enterprise_code):
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute("""
-                    SELECT point.address, point.province, point.canton, point.district, point.latitude, point.longitude
+                    SELECT  point.idPoint, point.address, point.province, point.canton, point.district, point.latitude, point.longitude
                     FROM package
                     JOIN point ON package.fkIdPoint = point.idPoint
                     WHERE package.idPackage = %s
@@ -356,6 +356,8 @@ async def get_delivery_date(pool, enterprise_code: str) -> dict:
             "SLA_found": False,
             "SLA": "No hay días de entrega programados para esta ruta"
         }
+
+
 
 #--------------------Funciones de chat_history--------------------#
 async def get_agent_history(pool):
@@ -578,7 +580,6 @@ async def get_user_env(pool, phone, whatsapp_username):
                 "paquetes": resultados,
                 
             }
-
 
 async def get_img_data(pool, id: int) -> dict | None:
     query = "SELECT * FROM sac_img_data WHERE id = %s"

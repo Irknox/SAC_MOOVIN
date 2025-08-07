@@ -1,6 +1,6 @@
 from agents import function_tool,RunContextWrapper
 from database_handler import get_package_historic, get_id_package, get_img_data,get_delivery_address,reverse_geocode_osm,send_location_to_whatsapp
-from mcp_handler import create_pickup_ticket,request_electronic_receipt, report_package_damaged
+from mcp_handler import create_pickup_ticket,request_electronic_receipt, report_package_damaged,change_delivery_address as change_delivery_address_request
 
 
 ## ------------------ MCP Tools ------------------ ##
@@ -15,6 +15,7 @@ def Make_request_to_pickup_tool(pool):
     ) -> dict:
         if not package or not description:
             return {"status": "error", "message": "Faltan datos necesarios para crear el ticket. Por favor, proporciona el número de seguimiento y una descripción del motivo."}
+        
         package_id = await get_id_package(pool, package)
         if not package_id:
             return {"status": "error", "message": f"Paquete {package} no encontrado en la base de datos."}
@@ -109,7 +110,7 @@ def Make_package_damaged_tool(mysql_pool,tools_pool):
         package: str,
         description: str
     ) -> dict:
-        print(f"Intentado crear ticket para paquete {package} con descripcion {description}")
+        print(f"🔨 Intentado crear ticket para paquete danado, numero de paquete {package} con descripcion {description}")
         if not package or not description:
             return {
                 "status": "error",
@@ -156,8 +157,20 @@ def Make_package_damaged_tool(mysql_pool,tools_pool):
             description=description,
             img_data=img_data_result
         )
-        ctx.context.imgs_ids=[]
-        return result
+        if result.get("status")=="ok":
+            print (f"✅Ticket creado con exito")
+            ctx.context.imgs_ids=[]
+            return {
+                "status":"success",
+                "TicketNumber":result.get("'Numero de Ticket")
+            }
+            
+        else:
+            print (f"Error al crear el ticket {result}")
+            return {
+                "status":"error",
+                "reason":"error occured while creating the ticket"
+            }
 
     return package_damaged_ticket
 
@@ -189,6 +202,11 @@ def Make_send_delivery_address_requested_tool():
                     location_data=message.get("locationMessage",None)
                     if location_data:
                         address=location_data.get("address")
+                        if "confirmations" in ctx.context.location_sent:
+                            ctx.context.location_sent["confirmations"]["is_new_address_confirmed"] = True
+                            print(f"Valor actuailizado del contexto de location {cordinates_info}")
+                        else:
+                            print(f"confirmation was not found in context")
                         return {
                             "status": "Success, message with ubication in ubication format was sent to user",
                             "address pre info": address
@@ -201,34 +219,60 @@ def Make_send_delivery_address_requested_tool():
         
     return send_delivery_address_requested
 
-def Make_change_delivery_address_tool():
+def Make_change_delivery_address_tool(pool):
     @function_tool(
     name_override="change_delivery_address",
-    description_override="Cambia la direccion de entrega para un paquete, el numero de seguimiento, numero de telefono del paquete, confirmacion de cambio y confirmacion de nueva direccion son los parametros necesarios. " 
+    description_override="Cambia la direccion de entrega para un paquete, el numero de seguimiento y numero de telefono del paquete son necesarios, ademas, antes de usar esta herramienta es necesario el uso de send_delivery_address_requested y send_current_delivery_address para confirmaciones. " 
     )
     async def change_delivery_address(
         ctx:RunContextWrapper,
         package: str,
-        is_new_address_confirmed:bool,
-        is_request_confirmed:bool
     ) -> dict:
-        print (f"Cambiando direccion de paquete para paquete {package}...") 
-        print (f"Datos recibidos: Nueva direccion confirmada: {is_new_address_confirmed}, Request confirmado: {is_request_confirmed}")
+        print (f"🧭 Cambiando direccion de paquete para paquete {package}...") 
         
         new_address=ctx.context.location_sent
-        if not new_address:
+        if new_address.get("is_is_request_confirmed_by_user") == False:
+            return { "error":"User hasn't confirmed he wants to change the current address yet, confirm with the user and try again"}
+        if new_address.get("is_new_address_confirmed") == False:
+            return { "error":"User hasn't confirmed the new address, confirm it with the user and try again"}
+        
+        package_id = await get_id_package(pool, package)
+        if not package_id:
+            return {"status": "error", "message": f"Paquete {package} no encontrado en la base de datos."}
+
+        package_historic = await get_package_historic(pool, package_id)
+        timeline=package_historic.get("timeline", [])
+        if timeline and str(timeline[0].get("status", "")).upper() in {"DELIVERED", "DELIVEREDCOMPLETE"}:
             return {
-                "status": "error",
-                "reason": "New Delivery Address hasn't been provided"
+                "tracking": package_id,
+                "package_found": True,
+                "response": "Paquete ya fue entregado, por lo tanto la solicitud para el cambio de direccion no es posible."
             }
             
-        if not is_new_address_confirmed or not is_request_confirmed:
+        package_info = await get_delivery_address(pool, package_id)
+        id_point=package_info.get("idPoint")
+        if not id_point:
+            print (f"No se obtuvo el id point f{package_info}")
+            return {"status": "error", "reason": "No se encontró el punto de entrega para este paquete."}
+        
+        
+        lat=new_address.get("latitude")
+        lng=new_address.get("longitude")
+        delivery_address_request= await change_delivery_address_request(id_point,lat,lng)
+        delivery_change_request_data=delivery_address_request.json() 
+
+
+        if delivery_change_request_data.get("status") == "SUCCESS":
+            ctx.context.location_sent = {}
+            print (f"Se limpio el contexto, su valor ahora es {ctx.context.location_sent}")
             return {
-                "status": "denied",
-                "reason": "New address or request confirmation hasn't been done yet"
+                "status": "success",
+                "reason":"Delivery address changed"
             }
-        return {
-            "status": "In Progress",
-            "reason":"Developers testing face"
-        }
+        else:
+            print(f"Error al cambiar la direccion de entrega, el valor de status no existe o no SUCCESS")
+            return {
+                "status":"error",
+                "reason":"An error occured while changing deliery address"
+            }
     return change_delivery_address
