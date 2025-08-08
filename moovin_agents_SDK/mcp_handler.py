@@ -104,7 +104,7 @@ async def change_delivery_address(idPoint:int,lat:float,lng:float):
     token = get_valid_moovin_token()
     url = f"{moovin_url}/moovinApiWebServices-cr/rest/api/moovinEnterprise/package/editPackageLocation"
     payload = json.dumps({
-    "idPoint": testing_point,
+    "idPoint": idPoint,
     "idProfile": "65", 
     "confirm": True,
     "type": "DELIVERY",
@@ -128,11 +128,16 @@ async def change_delivery_address(idPoint:int,lat:float,lng:float):
 
     response = requests.request("POST", url, headers=headers, data=payload)
     if response.status_code == 401:
-        print ("No autorizado, renovando Token")
+        Json_response=response.json()
+        message=Json_response.get("message")
+        if message=="Not exist package":
+            return response
+        print (f"No autorizado, Mostrando error de la solicitud{response.json()}")
         _moovin_token_cache["expires_at"] = 0
         token = get_valid_moovin_token()
         headers["token"] = token
         response = requests.post(url, headers=headers, data=json.dumps(payload))
+    print (f"La respuesta de la API de MOOVIN es {response.json()}")
     return response
 ##-----------------------------Moovin----------------------------##
 

@@ -99,9 +99,10 @@ def make_get_package_timeline_tool(pool):
             return {"error": "El teléfono proporcionado no coincide con el dueño del paquete."}
         
         return {
-            "timeline": historic.get("timeline"),
+            "timeline": historic.get("timeline","Dato no fue encontrado"),
             "Numero de Telefono": phone_dueño,
-            "Dueño del Paquete": historic.get("nombre_dueño_paquete")
+            "Dueño del Paquete": historic.get("nombre_dueño_paquete","Dato no fue encontrado"),
+            "Tienda donde se compro el paquete":historic.get("tienda_donde_se_compro","Dato no fue encontrado")
         }
 
     return get_package_timeline
@@ -175,25 +176,31 @@ def Make_send_current_delivery_address_tool(tools_pool):
             address_data=address_response.get("address",{})
             user_id=ctx.context.user_id
             if address_data:
-                town_name=address_data.get("road",None)
+                town_name=address_data.get("road") or address_data.get("county") or None
+                if not town_name:
+                    print (f"Falta el nombre del pueblo")
                 full_address=address_response.get("display_name", None)
                 if town_name and full_address:
                     is_message_sent=await send_location_to_whatsapp(user_id,lat,lng,town_name,full_address)
                     message_sent_data=is_message_sent.json()
-                    print (f"Resultado de enviar el mensaje a whatsapp{message_sent_data}")
                     message=message_sent_data.get("message", None)
                     location_data=message.get("locationMessage",None)
                     if location_data:
                         address=location_data.get("address")
-                        if "confirmations" in ctx.context.location_sent:
-                            ctx.context.location_sent["confirmations"]["is_request_confirmed_by_user"] = True
-                            print(f"[CTX DEBUG] Confirmación actualizada: {ctx.context.location_sent.get('confirmations')}")
-                        else:
-                            print(f" 🚨 confirmation was not found in context")
                         return {
                             "status": "Success, message with ubication in ubication format was sent to user",
                             "delivery_address":address
                         }
+                    else:
+                        return {
+                            "status":"error",
+                            "reason":"error ocurred while sending the ubication through whatsapp"
+                        }
+            else:
+                return {
+                    "status","error",
+                    "reason","an error ocurred while finding the address name"
+                }
         except Exception as e:
             print(f"❌ Error al enviar la direccion al usuario: {e}")
             return "[Error al enviar direccion al usuario]"

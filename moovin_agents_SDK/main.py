@@ -29,6 +29,8 @@ with open(os.path.join(os.path.dirname(__file__), "prompts", "mcp_agent.txt"), "
         MCP_AGENT_PROMPT = f.read()  
 with open(os.path.join(os.path.dirname(__file__), "prompts", "railing_agent.txt"), "r", encoding="utf-8") as f:
        RAILING_AGENT_PROMPT = f.read()  
+with open(os.path.join(os.path.dirname(__file__), "prompts", "input_guardrail_prompt.txt"), "r", encoding="utf-8") as f:
+       INPUT_GUARDRAIL_PROMPT = f.read()  
 
 load_dotenv()
 
@@ -44,6 +46,8 @@ class MoovinAgentContext(BaseModel):
     imgs_ids: list[int] | None = None
     location_sent: dict | None = None
     tripwired_trigered_reason: str | None = None
+    current_agent: str | None = None
+
     
     
 def create_initial_context() -> MoovinAgentContext:
@@ -61,48 +65,54 @@ class MessageOutput(BaseModel):
 class BasicGuardrailOutput(BaseModel):
     reasoning: str
     passed: bool
-
-
+    
+def input_guardrail_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
+        if ctx.context.current_agent:
+            current_agent=ctx.context.current_agent
+            print(f"Print del prompt del input de guardrail con el agente actual: {current_agent}")
+        return (
+            f"{INPUT_GUARDRAIL_PROMPT}\n"
+                f"Guardrail actualmente en agente: {current_agent}"
+        )
+        
+def output_guardrail_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
+        if ctx.context.current_agent:
+            current_agent=ctx.context.current_agent
+            print(f"Print del prompt del input de guardrail con el agente actual: {current_agent}")
+        return (
+            f"Guardrail actualmente en agente: {current_agent}"
+            """
+                Rol: Eres un Guardarail de Output.
+                tarea: Recibes la respuesta de un agente en el flujo de agentes, tu deber es validar si esta respuesta es apta para el flujo actual.
+                La respuesta debe ser evaluada con respecto al agente que la emitió.
+                - El guardrail **nunca debe exigir un handoff hacia el mismo agente que está respondiendo**.
+                
+                El agente no debe:
+                    -Dar informacion para la cual el usuario no haya verificado aun (Dar informacion del dueno de un paquete cuando el usuario no ha proporcionado el numero de paquete y telefono por ejemplo)
+                    -Entrar en temas de conspiracion, politicos o que puedan ser perjudiciales para la imagen de una empresa. (Es posible que algun tema sea mencionado de manera muy sutil por que el usuario lo menciono, si es asi el Tripwire no debe activarse).            
+                    - Mencionar cambios entre agentes o handoffs.
+                    
+                    Si la respuesta se encuentra detro de lo deseado, devuelve 'true' y una breve explicación. 
+                    Si no es deseado, devuelve 'false' y una breve explicación.
+                    
+                Contexto general sobre el flujo actual: 
+            """
+            f"{GENERAL_PROMPT}"
+        )
+    
 input_guardrail_agent = Agent[MoovinAgentContext](
     name="Input Guardrail Agent",
     model="gpt-4o-mini",
-    instructions="""
-        Rol: Eres un Guardarail de Input.
-        Tarea: Evalua si el mensaje del usuario es relevante para el flujo de trabajo actual y relacionado a Movin o si el usuario esta intentando acceder a informacion que no deberia.
-        
-        Debes verificar UNICAMENTE si el mensaje del usuario tiene que ver con algo relacionado al flujo actual, si no activarse.
-        NUNCA evalúes si el mensaje debería ser atendido por otro agente, tu única función es decidir si el mensaje es relevante o no para la empresa Moovin. No digas cosas como “esto debe ser manejado por el MCP Agent” — eso no te corresponde.
-        Si la entrada indica que recibiste una imagen, esta es relevante para el flujo actual y no debe activarse el guardariales en estos casos.
-        Temas politicos, teorias de conspiracion o cualquier tema que pueda ser polemico *DEBE* activar el guardarailes.
-        
-        Si es relevante y puede ser atendida, devuelve 'true' y una breve explicación. 
-        Si no es relevante, devuelve 'false' y una breve explicación.
-        
-        Contexto general sobre el flujo actual: 
-
-        """ + GENERAL_PROMPT,
+    instructions=input_guardrail_instructions,
     output_type=BasicGuardrailOutput,
 )
+
+
 
 output_guardrail_agent = Agent[MoovinAgentContext](
     name="Output Guardrail Agent",
     model="gpt-4o-mini",
-    instructions="""
-        Rol: Eres un Guardarail de Output.
-        tarea: Recibes la respuesta de un agente en el flujo de agentes, tu deber es validar si esta respuesta es apta para el flujo actual.
-        La respuesta debe ser evaluada con respecto al agente que la emitió.
-        - El guardrail **nunca debe exigir un handoff hacia el mismo agente que está respondiendo**.
-        
-        El agente no debe:
-            -Dar informacion para la cual el usuario no haya verificado aun (Dar informacion del dueno de un paquete cuando el usuario no ha proporcionado el numero de paquete y telefono por ejemplo)
-            -Entrar en temas de conspiracion, politicos o que puedan ser perjudiciales para la imagen de una empresa. (Es posible que algun tema sea mencionado de manera muy sutil por que el usuario lo menciono, si es asi el Tripwire no debe activarse).            
-            - Mencionar cambios entre agentes o handoffs.
-            
-            Si la respuesta se encuentra detro de lo deseado, devuelve 'true' y una breve explicación. 
-            Si no es deseado, devuelve 'false' y una breve explicación.
-            
-        Contexto general sobre el flujo actual: 
-        """ + GENERAL_PROMPT,
+    instructions= output_guardrail_instructions,
     output_type=BasicGuardrailOutput,
 )
 
@@ -111,11 +121,9 @@ output_guardrail_agent = Agent[MoovinAgentContext](
 async def basic_guardrail(
     context: RunContextWrapper[MoovinAgentContext], agent: Agent, input: str | list[TResponseInputItem]
 ) -> GuardrailFunctionOutput:
-    print (f"Este es el agente en el input {agent.name}")
     result = await Runner.run(input_guardrail_agent, input, context=context.context)
     final = result.final_output_as(BasicGuardrailOutput)
     if not final.passed:
-        print(f"⚠️ Tripwire activado en el input, razon de guardarailes: {final.reasoning}")
         return GuardrailFunctionOutput(
             output_info=final,
             tripwire_triggered=True,
@@ -128,11 +136,9 @@ async def basic_output_guardrail(
     ctx:RunContextWrapper[MoovinAgentContext], agent: Agent, output: MessageOutput
  )-> GuardrailFunctionOutput:
         print (f"Este es el agente en el output {agent.name}")
-        print (f"Y este es el output {output}")
+        print (f"Y este es el output que recibio:  {output}")
         result = await Runner.run(output_guardrail_agent, output.response, context=ctx.context)
         final = result.final_output_as(BasicGuardrailOutput)
-        if not final.passed:
-            print(f"⚠️ Tripwire activado en el output, razon de guardarailes: {final.reasoning}")
         return GuardrailFunctionOutput(
             output_info=final,
             tripwire_triggered=not final.passed,
@@ -159,8 +165,10 @@ async def build_agents(tools_pool,mysql_pool):
             env_info = f"\nUser data:\n{ctx.context.user_env}"
         return (
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
+            f"Contexto General sobre el SDK y Flujo de trabajo actual, instrucciones y demas..:\n" 
             f"{GENERAL_PROMPT}\n"
             f"Datos precargados para este usuario: {env_info}\n"
+            f"System prompt para el agente actual:\n"
             f"{GENERAL_AGENT_PROMPT}\n"
         )
         
@@ -171,8 +179,10 @@ async def build_agents(tools_pool,mysql_pool):
             env_info = f"\nUser data:\n{ctx.context.user_env}"
         return (
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
+            f"Contexto General sobre el SDK y Flujo de trabajo actual, instrucciones y demas..:\n" 
             f"{GENERAL_PROMPT}\n"
             f"Datos precargados para este usuario: {env_info}\n"
+            f"System prompt para el agente actual:\n"
             f"{PACKAGE_ANALYST_PROMPT}\n"
         )
         
@@ -183,16 +193,24 @@ async def build_agents(tools_pool,mysql_pool):
             env_info = f"\nUser data:\n{ctx.context.user_env}"
         return (
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
+            f"Contexto General sobre el SDK y Flujo de trabajo actual, instrucciones y demas..:\n" 
             f"{GENERAL_PROMPT}\n"
             f"Datos precargados para este usuario: {env_info}\n"
+            f"System prompt para el agente actual:\n"
             f"{MCP_AGENT_PROMPT}\n"
         )
+        
     def railing_agent_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
         debug_context_info(ctx, label="Railing agent")  
+        if ctx.context.user_env:
+            env_info = f"\nUser data:\n{ctx.context.user_env}"
         return (
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
-            f"{GENERAL_PROMPT} " 
-            f"{RAILING_AGENT_PROMPT}"
+            f"Contexto General sobre el SDK y Flujo de trabajo actual, instrucciones y demas..:\n" 
+            f"{GENERAL_PROMPT}\n"
+            f"Datos precargados para este usuario: {env_info}\n"
+            f"System prompt para el agente actual:\n"
+            f"{RAILING_AGENT_PROMPT}\n"  
             f"Razon por la que el triwire fue activado, razonamiento del guardrailes: {ctx.context.tripwired_trigered_reason}"
         )
         
@@ -222,7 +240,7 @@ async def build_agents(tools_pool,mysql_pool):
         instructions=general_agent_instructions,
         tools=[],
         handoffs=[package_analysis_agent, mcp_agent],
-        input_guardrails=[basic_guardrail],  
+        input_guardrails=[basic_guardrail], 
         output_type=MessageOutput,
     )
     

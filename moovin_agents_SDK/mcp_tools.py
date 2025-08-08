@@ -232,9 +232,9 @@ def Make_change_delivery_address_tool(pool):
         
         new_address=ctx.context.location_sent
         if new_address.get("is_is_request_confirmed_by_user") == False:
-            return { "error":"User hasn't confirmed he wants to change the current address yet, confirm with the user and try again"}
+            return { "error":"User hasn't confirmed he wants to change the current address yet, confirm with the user using the proper tool and try again"}
         if new_address.get("is_new_address_confirmed") == False:
-            return { "error":"User hasn't confirmed the new address, confirm it with the user and try again"}
+            return { "error":"User hasn't confirmed the new address, confirm it with the user using the proper tool and try again"}
         
         package_id = await get_id_package(pool, package)
         if not package_id:
@@ -242,12 +242,12 @@ def Make_change_delivery_address_tool(pool):
 
         package_historic = await get_package_historic(pool, package_id)
         timeline=package_historic.get("timeline", [])
-        if timeline and str(timeline[0].get("status", "")).upper() in {"DELIVERED", "DELIVEREDCOMPLETE"}:
-            return {
-                "tracking": package_id,
-                "package_found": True,
-                "response": "Paquete ya fue entregado, por lo tanto la solicitud para el cambio de direccion no es posible."
-            }
+        # if timeline and str(timeline[0].get("status", "")).upper() in {"DELIVERED", "DELIVEREDCOMPLETE"}:
+        #     return {
+        #         "tracking": package_id,
+        #         "package_found": True,
+        #         "response": "Paquete ya fue entregado, por lo tanto la solicitud para el cambio de direccion no es posible."
+        #     }
             
         package_info = await get_delivery_address(pool, package_id)
         id_point=package_info.get("idPoint")
@@ -260,8 +260,6 @@ def Make_change_delivery_address_tool(pool):
         lng=new_address.get("longitude")
         delivery_address_request= await change_delivery_address_request(id_point,lat,lng)
         delivery_change_request_data=delivery_address_request.json() 
-
-
         if delivery_change_request_data.get("status") == "SUCCESS":
             ctx.context.location_sent = {}
             print (f"Se limpio el contexto, su valor ahora es {ctx.context.location_sent}")
@@ -269,10 +267,16 @@ def Make_change_delivery_address_tool(pool):
                 "status": "success",
                 "reason":"Delivery address changed"
             }
-        else:
-            print(f"Error al cambiar la direccion de entrega, el valor de status no existe o no SUCCESS")
+        elif delivery_change_request_data.get("message") == "Not exist package":
+            print(f"⚠️ Error al cambiar la direccion de entrega, el paquete no ha sido anadido a la BD en Dev aun")
             return {
                 "status":"error",
-                "reason":"An error occured while changing deliery address"
+                "reason":"Package hasn't been added to the Developer DB yet, advise the user package hasn't been added"
+            }
+        else:
+            print(f"⚠️ Error al cambiar la direccion de entrega")
+            return {
+                "status":"error",
+                "reason":"An error ocurred when changing the delivery address"
             }
     return change_delivery_address

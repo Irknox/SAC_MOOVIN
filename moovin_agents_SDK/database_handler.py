@@ -219,17 +219,19 @@ async def get_package_historic(pool, package_id):
                 timeline.append(evento)
 
             await cur.execute("""
-                SELECT phone_digits, fullName, email FROM package WHERE idPackage = %s LIMIT 1
+                SELECT phone_digits, fullName, email, third_party_provider FROM package WHERE idPackage = %s LIMIT 1
             """, (package_id,))
             phone_row = await cur.fetchone()
             phone = phone_row["phone_digits"] if phone_row and phone_row.get("phone_digits") else None
             userName = phone_row["fullName"] if phone_row and phone_row.get("fullName") else None
             userEmail = phone_row["email"] if phone_row and phone_row.get("email") else None
+            third_party_store = phone_row["third_party_provider"] if phone_row and phone_row.get("third_party_provider") else None
             return {
                 "timeline": timeline,
                 "telefono_dueño": phone,
                 "nombre_dueño_paquete": userName,
-                "email_dueño_paquete": userEmail
+                "email_dueño_paquete": userEmail,
+                "tienda_donde_se_compro": third_party_store
             }
 
 async def is_final_warehouse(pool, package_id):
