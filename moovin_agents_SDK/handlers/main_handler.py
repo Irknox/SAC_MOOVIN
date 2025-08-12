@@ -9,6 +9,9 @@ import re
 import phonenumbers
 import base64
 import requests
+from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo 
+
 
 # ----------------- Configuración de MySQL ------------------
 load_dotenv()
@@ -24,6 +27,227 @@ DB_NAME = os.environ.get('Db_NAME')
 DB_PORT = int(os.environ.get('Db_PORT'))
 
 #--------------------Funciones auxiliares--------------------#
+def _format_transcript(ordered_msgs, max_chars=4000) -> str:
+    """Convierte ordered_msgs [{role,text}] en un transcript 'Usuario:/Agente:' y recorta si se pasa."""
+    lines = []
+    role_map = {"user": "Usuario", "assistant": "Agente"}
+    for m in ordered_msgs:
+        r = role_map.get(m.get("role"), m.get("role","")).strip() or "Otro"
+        t = (m.get("text") or "").strip()
+        if not t: 
+            continue
+        lines.append(f"{r}: {t}")
+    txt = "\n".join(lines)
+    return txt[-max_chars:]
+
+CR_TZ = ZoneInfo("America/Costa_Rica")
+
+def _to_datetime(fecha):
+    """Convierte `fecha` (str|datetime) a datetime."""
+    if isinstance(fecha, datetime):
+        return fecha
+    if isinstance(fecha, str):
+        s = fecha.strip()
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except Exception:
+            pass
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(s, fmt)
+            except Exception:
+                continue
+    return None
+
+def how_long_ago(fecha, now=None) -> str:
+    """Devuelve 'Hace X ...' en español (seg, min, horas, días, semanas, meses, años)."""
+    dt = _to_datetime(fecha)
+    if dt is None:
+        return "Hace un tiempo"
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=CR_TZ)
+    if now is None:
+        now = datetime.now(CR_TZ)
+        
+    delta = now - dt
+    seconds = int(delta.total_seconds())
+    if seconds < 0:
+        seconds = 0
+
+    if seconds < 60:
+        return "Hace unos segundos"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"Hace {minutes} minuto{'s' if minutes != 1 else ''}"
+    hours = minutes // 60
+    if hours < 24:
+        return f"Hace {hours} hora{'s' if hours != 1 else ''}"
+    days = hours // 24
+    if days < 7:
+        return f"Hace {days} día{'s' if days != 1 else ''}"
+    weeks = days // 7
+    if weeks < 5:
+        return f"Hace {weeks} semana{'s' if weeks != 1 else ''}"
+    months = days // 30
+    if months < 12:
+        return f"Hace {months} mes{'es' if months != 1 else ''}"
+    years = days // 365
+    return f"Hace {years} año{'s' if years != 1 else ''}"
+
+async def get_last_states(pool, user_id: str, k: int = 3) -> List[Dict[str, Any]]:
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("""
+                SELECT id, fecha, contexto
+                FROM sac_agent_memory
+                WHERE user_id = %s
+                ORDER BY id DESC     -- más reciente primero
+                LIMIT %s
+            """, (user_id, k))
+            rows = await cur.fetchall()
+
+    result = []
+    for r in rows:
+        ctx_val = r.get("contexto")
+        # normaliza a dict (maneja str/bytes y doble-JSON)
+        if isinstance(ctx_val, (bytes, bytearray)):
+            try: ctx_val = ctx_val.decode("utf-8")
+            except: ctx_val = str(ctx_val)
+        if isinstance(ctx_val, str):
+            try:
+                tmp = json.loads(ctx_val)
+                ctx_val = json.loads(tmp) if isinstance(tmp, str) else tmp
+            except: 
+                ctx_val = {}
+        elif not isinstance(ctx_val, dict):
+            ctx_val = {}
+        result.append({"id": r["id"], "fecha": r["fecha"], "contexto": ctx_val})
+    return result
+
+def _normalize_contexto(val: Any) -> Dict:
+    """
+    Devuelve un dict a partir de un valor que puede venir como:
+    - dict
+    - str con JSON
+    - str con JSON-encadenado (JSON dentro de otro JSON)
+    - bytes
+    Si no se puede, devuelve {}.
+    """
+    # bytes -> str
+    if isinstance(val, (bytes, bytearray)):
+        try:
+            val = val.decode("utf-8")
+        except Exception:
+            val = str(val)
+
+    obj = val
+    # Intenta hasta 2 parseos por si está doblemente serializado
+    for _ in range(2):
+        if isinstance(obj, str):
+            s = obj.strip()
+            try:
+                obj = json.loads(s)
+                continue
+            except Exception:
+                break
+        break
+
+    return obj if isinstance(obj, dict) else {}
+
+def extract_user_and_assistant_messages(
+    input_items: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Extrae mensajes de 'user' y 'assistant'.
+    - input_items: lista con items que tienen 'role' y 'content'
+    - keep_order=True: además de listas separadas, devuelve 'ordered' con el flujo en orden
+
+    Devuelve:
+    {
+      "user": [ ... ],            # solo textos del usuario
+      "assistant": [ ... ],       # solo textos del asistente
+      "ordered": [                # opcional si keep_order=True
+         {"role":"user","text":"..."},
+         {"role":"assistant","text":"..."},
+         ...
+      ]
+    }
+    """
+
+    def _pull_text(content: Any) -> Optional[str]:
+        # Soporta:
+        #  - "content": "Hola"
+        #  - "content": [{"type":"output_text","text":"{\"response\":\"...\"}"}]
+        #  - "content": [{"type":"text","text":"..."}]
+        if isinstance(content, str):
+            t = content.strip()
+            return t or None
+
+        if isinstance(content, list):
+            # toma el último bloque con 'text' (suele ser la respuesta final)
+            for block in reversed(content):
+                text = block.get("text")
+                if not isinstance(text, str):
+                    continue
+                t = text.strip()
+                if not t:
+                    continue
+                # Algunos outputs vienen como JSON con {"response":"..."}
+                try:
+                    parsed = json.loads(t)
+                    if isinstance(parsed, dict) and isinstance(parsed.get("response"), str):
+                        return parsed["response"].strip() or None
+                except Exception:
+                    pass
+                return t
+        return None
+
+    ordered: List[Dict[str, str]] = []
+
+    for it in (input_items or []):
+        role = it.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        text = _pull_text(it.get("content"))
+        if not text:
+            continue
+        ordered.append({"role": role, "text": text})
+
+    result: Dict[str, Any] = {"ordered_msgs": ordered}
+    return result
+
+async def get_msgs_from_last_states(pool, user_id: str, states: int = 3) -> List[Dict[str, Any]]:
+    """
+    Trae los k estados anteriores al último para 'user_id',
+    y devuelve una lista con los mensajes relevantes por estado:
+    [
+      {
+        "state_id": 123,
+        "fecha": "2025-08-12 11:22:33",
+        "messages": [ {"role":"user","text":"..."}, {"role":"assistant","text":"..."} ]
+      },
+      ...
+    ]
+    """
+    prev_states = await get_last_states(pool, user_id, states)
+    grouped: List[Dict[str, Any]] = []
+    for s in prev_states:
+        ctx = s["contexto"] or {}
+        ctx_dict = _normalize_contexto(ctx)
+        input_items = ctx_dict.get("input_items") or []
+        msgs = extract_user_and_assistant_messages(input_items)
+        # formatea fecha a str si viene datetime
+        fecha_val = s["fecha"]
+        if hasattr(fecha_val, "strftime"):
+            fecha_val = fecha_val.strftime("%Y-%m-%d %H:%M:%S")
+        grouped.append({
+            "state_id": s["id"],
+            "fecha": fecha_val,
+            "messages": msgs
+        })
+    return grouped
+
 def reverse_geocode_osm(lat: float, lon: float) -> str:
     url = "https://nominatim.openstreetmap.org/reverse"
     params = {
@@ -79,16 +303,6 @@ def format_fecha(date_server):
     fecha_dt = datetime.strptime(str(date_server), "%Y-%m-%d %H:%M:%S")
     return fecha_dt.strftime("%A %d de %B %Y %H:%M")
 
-async def create_tools_pool():
-    return await aiomysql.create_pool(
-        host=TOOLS_DB_HOST,
-        user=TOOLS_DB_USER,
-        password=TOOLS_DB_PASSWORD,
-        db=TOOLS_DB_NAME,
-        port=TOOLS_DB_PORT,
-        autocommit=True
-    )
-    
 async def get_id_package(pool, enterprise_code):
     """
     Intenta primero buscar idPackage usando el valor como un ID (int),
@@ -358,8 +572,6 @@ async def get_delivery_date(pool, enterprise_code: str) -> dict:
             "SLA_found": False,
             "SLA": "No hay días de entrega programados para esta ruta"
         }
-
-
 
 #--------------------Funciones de chat_history--------------------#
 async def get_agent_history(pool):
