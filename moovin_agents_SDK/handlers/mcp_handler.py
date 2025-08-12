@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 import os
 import requests
 import json
-from database_handler import get_delivery_address
+from handlers.main_handler import get_delivery_address
 load_dotenv()
 import time
 

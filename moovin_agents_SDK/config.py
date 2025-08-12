@@ -16,6 +16,8 @@ TOOLS_DB_PASSWORD = os.environ.get('Main_Db_password')
 TOOLS_DB_NAME = os.environ.get('Main_Db')
 TOOLS_DB_PORT = int(os.environ.get('Main_Db_Port'))
 
+REDISURL=os.environ.get('REDIS_URL')
+REDISPASSWORD=os.environ.get('REDIS_PASSWORD')
 
 #-------------------Pools-------------------#
 async def create_mysql_pool():

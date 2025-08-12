@@ -13,7 +13,7 @@ from agents import (
     input_guardrail,output_guardrail
 )
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
-from tools import make_get_package_timeline_tool, make_get_SLA_tool,make_get_likely_package_timelines_tool, Make_send_current_delivery_address_tool
+from tools import Make_remember_tool,make_get_package_timeline_tool, make_get_SLA_tool,make_get_likely_package_timelines_tool, Make_send_current_delivery_address_tool
 from dotenv import load_dotenv
 from mcp_tools import Make_request_to_pickup_tool,Make_request_electronic_receipt_tool,Make_package_damaged_tool, Make_send_delivery_address_requested_tool,Make_change_delivery_address_tool
 
@@ -47,6 +47,7 @@ class MoovinAgentContext(BaseModel):
     location_sent: dict | None = None
     tripwired_trigered_reason: str | None = None
     current_agent: str | None = None
+    backup_memory_called:bool | None = None
 
     
     
@@ -69,7 +70,6 @@ class BasicGuardrailOutput(BaseModel):
 def input_guardrail_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
         if ctx.context.current_agent:
             current_agent=ctx.context.current_agent
-            print(f"Print del prompt del input de guardrail con el agente actual: {current_agent}")
         return (
             f"{INPUT_GUARDRAIL_PROMPT}\n"
                 f"Guardrail actualmente en agente: {current_agent}"
@@ -116,7 +116,6 @@ output_guardrail_agent = Agent[MoovinAgentContext](
     output_type=BasicGuardrailOutput,
 )
 
-
 @input_guardrail(name="Basic Relevance Check")
 async def basic_guardrail(
     context: RunContextWrapper[MoovinAgentContext], agent: Agent, input: str | list[TResponseInputItem]
@@ -144,6 +143,85 @@ async def basic_output_guardrail(
             tripwire_triggered=not final.passed,
         )
 
+##----------------------------Guardrailes de Redireccion----------------------------##
+
+to_mcp_guardrail_agent = Agent[MoovinAgentContext](
+    name="To Mcp Guardrail Agent",
+    model="gpt-4o-mini",
+    instructions="""
+    ##Tarea: Valida si el mensaje esta dentro de las capacidades del Agente MCP, si lo esta, el guardarailes debe activarse.
+    
+    Agente MCP
+    
+    - **mcp_agent
+    - Agente encargado de ejecutar acciones en aplicaciones externas, Encargado de manejar las siguientes solicitudes.
+        - Capacidades:
+            - Crear Ticket para solicitud de recoleccion en sede Moovin.
+            - Cambiar la direccion de entrega de un paquete.
+            - Solicitud de Factura electronica por los impuestos pagados.
+            - Crear Ticket para reporte de paquete dañado.
+            - Trabajar con Moovin
+                - Aun no disponible
+            - Comprar Empaques
+                - Aun no disponible
+            Este agente *NO* contacta con servicio al cliente ni es una manera para llegar a ellos.
+    - Si el mensaje del usuario esta relacionado a algo de lo mencionado anteriormente, el guardarail DEBE ser activado
+    
+    - Respondes con reasoning: str=Explicacion del por que el resultado y passed: booleano, en true si se activa, false si no
+    """,
+    output_type=BasicGuardrailOutput,
+)
+
+to_pacakage_analyst_guardrail_agent = Agent[MoovinAgentContext](
+    name="To Package Analyst Guardrail Agent",
+    model="gpt-4o-mini",
+    instructions="""
+    ##Tarea: Valida si el mensaje esta dentro de las capacidades del Package Analyst, si lo esta, el guardarailes debe activarse.
+    
+    Package Analyst:
+    
+    - **package_analysis_agent**  
+        - Encargado de todas las consultas relacionadas con paquetes: donde esta mi paquete, que ha pasado, cuando llegará.
+        - Puede consultar informacion sobre los paquetes del usuario.
+        - Envia la direccion de entrega actual del paquete al usuario.
+        - Puede conocer la tienda donde se compro.
+    - Si el mensaje del usuario esta relacionado a algo de lo mencionado anteriormente, el guardarail DEBE ser activado
+    
+    - Respondes con reasoning: str=Explicacion del por que el resultado y passed: booleano, en true si se activa, false si no
+    """,
+    output_type=BasicGuardrailOutput,
+)
+
+@input_guardrail(name="To Mcp Guardrail")
+async def to_mcp_guardrail(
+    context: RunContextWrapper[MoovinAgentContext], agent: Agent, input: str | list[TResponseInputItem]
+) -> GuardrailFunctionOutput:
+    result = await Runner.run(to_mcp_guardrail_agent, input, context=context.context)
+    final = result.final_output_as(BasicGuardrailOutput)
+    if  final.passed:
+        return GuardrailFunctionOutput(
+            output_info=final,
+            tripwire_triggered=True,
+        )
+
+    return GuardrailFunctionOutput(output_info=final, tripwire_triggered=False)
+
+@input_guardrail(name="To Package Analyst Guardrail")
+async def to_pacakage_analys_guardrail(
+    context: RunContextWrapper[MoovinAgentContext], agent: Agent, input: str | list[TResponseInputItem]
+) -> GuardrailFunctionOutput:
+    result = await Runner.run(to_pacakage_analyst_guardrail_agent, input, context=context.context)
+    final = result.final_output_as(BasicGuardrailOutput)
+    if  final.passed:
+        return GuardrailFunctionOutput(
+            output_info=final,
+            tripwire_triggered=True,
+        )
+
+    return GuardrailFunctionOutput(output_info=final, tripwire_triggered=False)
+
+
+
 
 def debug_context_info(ctx: RunContextWrapper[MoovinAgentContext], label: str = ""):
     return
@@ -165,7 +243,6 @@ async def build_agents(tools_pool,mysql_pool):
             env_info = f"\nUser data:\n{ctx.context.user_env}"
         return (
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
-            f"Contexto General sobre el SDK y Flujo de trabajo actual, instrucciones y demas..:\n" 
             f"{GENERAL_PROMPT}\n"
             f"Datos precargados para este usuario: {env_info}\n"
             f"System prompt para el agente actual:\n"
@@ -178,8 +255,7 @@ async def build_agents(tools_pool,mysql_pool):
         if ctx.context.user_env:
             env_info = f"\nUser data:\n{ctx.context.user_env}"
         return (
-            f"{RECOMMENDED_PROMPT_PREFIX}\n"
-            f"Contexto General sobre el SDK y Flujo de trabajo actual, instrucciones y demas..:\n" 
+            f"{RECOMMENDED_PROMPT_PREFIX}\n" 
             f"{GENERAL_PROMPT}\n"
             f"Datos precargados para este usuario: {env_info}\n"
             f"System prompt para el agente actual:\n"
@@ -193,7 +269,6 @@ async def build_agents(tools_pool,mysql_pool):
             env_info = f"\nUser data:\n{ctx.context.user_env}"
         return (
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
-            f"Contexto General sobre el SDK y Flujo de trabajo actual, instrucciones y demas..:\n" 
             f"{GENERAL_PROMPT}\n"
             f"Datos precargados para este usuario: {env_info}\n"
             f"System prompt para el agente actual:\n"
@@ -206,19 +281,18 @@ async def build_agents(tools_pool,mysql_pool):
             env_info = f"\nUser data:\n{ctx.context.user_env}"
         return (
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
-            f"Contexto General sobre el SDK y Flujo de trabajo actual, instrucciones y demas..:\n" 
             f"{GENERAL_PROMPT}\n"
             f"Datos precargados para este usuario: {env_info}\n"
             f"System prompt para el agente actual:\n"
             f"{RAILING_AGENT_PROMPT}\n"  
-            f"Razon por la que el triwire fue activado, razonamiento del guardrailes: {ctx.context.tripwired_trigered_reason}"
+            f"Razon por la que el tripwire fue activado, razonamiento del guardrailes: {ctx.context.tripwired_trigered_reason}"
         )
         
     mcp_agent = Agent[MoovinAgentContext](
         name="MCP Agent",
         model="gpt-4o-mini",
         instructions=mcp_agent_instructions,
-        tools=[Make_request_to_pickup_tool(tools_pool),Make_request_electronic_receipt_tool(tools_pool),Make_package_damaged_tool(mysql_pool,tools_pool),Make_send_current_delivery_address_tool(tools_pool), Make_send_delivery_address_requested_tool(),Make_change_delivery_address_tool(tools_pool)],
+        tools=[Make_remember_tool(mysql_pool),Make_request_to_pickup_tool(tools_pool),Make_request_electronic_receipt_tool(tools_pool),Make_package_damaged_tool(mysql_pool,tools_pool),Make_send_current_delivery_address_tool(tools_pool), Make_send_delivery_address_requested_tool(),Make_change_delivery_address_tool(tools_pool)],
         input_guardrails=[basic_guardrail],
         output_type=MessageOutput
     )
@@ -228,7 +302,7 @@ async def build_agents(tools_pool,mysql_pool):
         model="gpt-4o-mini",
         instructions=package_analysis_instructions,
         handoffs=[mcp_agent],
-        tools=[make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool),Make_send_current_delivery_address_tool(tools_pool)],
+        tools=[Make_remember_tool(mysql_pool),make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool),Make_send_current_delivery_address_tool(tools_pool)],
         input_guardrails=[basic_guardrail],
         output_type=MessageOutput,
     
@@ -238,9 +312,9 @@ async def build_agents(tools_pool,mysql_pool):
         name="General Agent",
         model="gpt-4o-mini",
         instructions=general_agent_instructions,
-        tools=[],
+        tools=[Make_remember_tool(mysql_pool)],
         handoffs=[package_analysis_agent, mcp_agent],
-        input_guardrails=[basic_guardrail], 
+        input_guardrails=[basic_guardrail, to_mcp_guardrail, to_pacakage_analys_guardrail], 
         output_type=MessageOutput,
     )
     
@@ -248,7 +322,7 @@ async def build_agents(tools_pool,mysql_pool):
         name="Railing Agent",
         model="gpt-4o-mini",
         instructions=railing_agent_instructions,
-        tools=[],
+        tools=[Make_remember_tool(mysql_pool)],
         handoffs=[mcp_agent, package_analysis_agent, general_agent],
         input_guardrails=[],
         output_guardrails=[],

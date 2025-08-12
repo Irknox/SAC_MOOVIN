@@ -6,15 +6,12 @@ from typing import Optional, List, Dict, Any, Literal
 import os
 import tempfile
 import requests
-from database_handler import get_last_state,save_message,get_user_env, get_agent_history, get_users_last_messages,get_last_messages_by_user,save_img_data,reverse_geocode_osm
+from handlers.main_handler import get_msgs_from_last_states, save_message, get_user_env, get_users_last_messages, get_last_messages_by_user, save_img_data, reverse_geocode_osm
 from config import create_mysql_pool, create_tools_pool
 from main import build_agents, MoovinAgentContext
-from agents import (
-    Runner, MessageOutputItem, HandoffOutputItem, ToolCallItem,
-    ToolCallOutputItem, InputGuardrailTripwireTriggered,RunContextWrapper,OutputGuardrailTripwireTriggered
-)
+from agents import (Runner, MessageOutputItem, HandoffOutputItem, InputGuardrailTripwireTriggered,RunContextWrapper,OutputGuardrailTripwireTriggered)
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import traceback
 import base64
 import tiktoken
@@ -22,7 +19,8 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from collections import OrderedDict
 import asyncio
-
+import redis.asyncio as redis
+from handlers.redis_handler import RedisSession, SESSION_IDLE_SECONDS
 
 image_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 location_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
@@ -32,7 +30,7 @@ load_dotenv()
 
 client = OpenAI()
 
-
+##----------------------------Funciones Auxiliares----------------------------##
 def save_base64_audio(base64_string: str, suffix: str = ".ogg") -> str:
     """
     Guarda el audio base64 como archivo binario (.ogg por defecto).
@@ -64,9 +62,10 @@ async def transcribe_audio(media_key_b64: str) -> str:
         return "[Error al transcribir audio]"
 
 async def build_state(request: Request, user_id: str, user_name: str, user_message: str, img_data_ids: list[int], location_data: dict |  None) -> dict:
-
-    last_state_record = await get_last_state(request.app.state.mysql_pool, user_id)
-    if not last_state_record:
+    redis_session=request.app.state.redis_session
+    user_buffer_memory=await redis_session.get_session(user_id)
+    if not user_buffer_memory:
+        print (f"🆕 Usuario no tiene session activa, creando nueva sesion")
         ctx = request.app.state.create_initial_context()
         ctx.user_id = user_id
         ctx.imgs_ids= img_data_ids or []
@@ -78,55 +77,32 @@ async def build_state(request: Request, user_id: str, user_name: str, user_messa
                 "input_items": [],
                 "current_agent": request.app.state.agents["General Agent"].name,
             }
-        
-    elif last_state_record and last_state_record.get("fecha"):
-        last_time = last_state_record["fecha"]
-        if isinstance(last_time, str):
-            last_time = datetime.strptime(last_time, "%Y-%m-%d %H:%M:%S")
-        if datetime.utcnow() - last_time > timedelta(minutes=10):
-            print("🕒 Último contexto es muy viejo, creando nuevo contexto...")
-            last_state_record = None
-        if last_state_record and last_state_record.get("contexto"):
-            try:
-                raw_context = last_state_record["contexto"]
-                restored_state = json.loads(raw_context)
-                if isinstance(restored_state, str):
-                    restored_state = json.loads(restored_state)
-                restored_context_dict = restored_state["context"]
-                restored_context = MoovinAgentContext(**restored_context_dict)
-                user_env_data = await get_user_env(request.app.state.tools_pool, user_id, whatsapp_username=user_name)
-                restored_context.user_env = user_env_data
-                if img_data_ids:
-                    restored_context.imgs_ids = img_data_ids
-                restored_context.location_sent=location_data or {}
-                state = {
-                    "context": restored_context,
-                    "input_items": restored_state.get("input_items", []),
-                    "current_agent": restored_state.get("current_agent", request.app.state.agents["General Agent"].name),
-                }
-            except Exception as e:
-                print("⚠️ Error restaurando contexto desde BD, se crea uno nuevo:", e)
-                ctx = request.app.state.create_initial_context()
-                ctx.user_id = user_id
-                user_env_data = await get_user_env(request.app.state.tools_pool, user_id, whatsapp_username=user_name)
-                ctx.user_env = user_env_data
-                state = {
-                    "context": ctx,
-                    "input_items": [],
-                    "current_agent": request.app.state.agents["General Agent"].name,
-                }
-        else:
+    else:
+        state=user_buffer_memory.get("state")  
+        try:
+            raw_context = state.get("context")
+            restored_context = MoovinAgentContext(**raw_context)
+            user_env_data = await get_user_env(request.app.state.tools_pool, user_id, whatsapp_username=user_name)
+            restored_context.user_env = user_env_data
+            if img_data_ids:
+                restored_context.imgs_ids = img_data_ids
+            restored_context.location_sent=location_data or {}
+            state = {
+                "context": restored_context,
+                "input_items": state.get("input_items", []),
+                "current_agent": state.get("current_agent", request.app.state.agents["General Agent"].name),
+            }
+        except Exception as e:
+            print("⚠️ Error restaurando contexto desde BD, se crea uno nuevo:", e)
             ctx = request.app.state.create_initial_context()
             ctx.user_id = user_id
-            ctx.imgs_ids= img_data_ids or []
-            ctx.location_sent= location_data or {}
             user_env_data = await get_user_env(request.app.state.tools_pool, user_id, whatsapp_username=user_name)
             ctx.user_env = user_env_data
             state = {
                     "context": ctx,
                     "input_items": [],
                     "current_agent": request.app.state.agents["General Agent"].name,
-                }
+                }      
     return state
 
 async def send_text_to_whatsapp(user_id: str, user_message: str, response_text: str, message_id: str):
@@ -158,6 +134,86 @@ async def send_text_to_whatsapp(user_id: str, user_message: str, response_text: 
     except Exception as e:
         print("❌ Error al enviar mensaje a WhatsApp:", e)
         return None
+
+async def persist_session_to_mysql(mysql_pool, cid: str, session_obj: dict):
+    import json
+
+    state = session_obj.get("state", {}) or {}
+    # Normaliza context si es Pydantic
+    ctx = state.get("context")
+    if hasattr(ctx, "model_dump"):
+        state["context"] = ctx.model_dump()
+
+    input_items = state.get("input_items", []) or []
+
+    def extract_text_from_item(item: dict) -> str | None:
+        """
+        Devuelve el texto 'legible' del item. Soporta:
+        - {"role":"user","content":"Hola"}
+        - {"role":"assistant","content":[{"type":"output_text","text":"{\"response\":\"...\"}"}]}
+        - {"role":"assistant","content":[{"type":"text","text":"..."}]}
+        """
+        content = item.get("content")
+        if isinstance(content, str):
+            return content.strip() or None
+        if isinstance(content, list):
+            for block in reversed(content):
+                text = block.get("text")
+                if not isinstance(text, str):
+                    continue
+                text = text.strip()
+                if not text:
+                    continue
+                # A veces el modelo mete JSON con {"response":"..."}
+                try:
+                    parsed = json.loads(text)
+                    if isinstance(parsed, dict) and "response" in parsed and isinstance(parsed["response"], str):
+                        return parsed["response"].strip() or None
+                except Exception:
+                    pass
+                return text 
+        return None
+
+    last_user_msg = None
+    last_assistant_msg = None
+    for it in reversed(input_items):
+        role = it.get("role")
+        if not last_assistant_msg and role == "assistant":
+            last_assistant_msg = extract_text_from_item(it)
+        if not last_user_msg and role == "user":
+            last_user_msg = extract_text_from_item(it)
+        if last_user_msg and last_assistant_msg:
+            break
+
+    user_message = last_user_msg or "[SESSION_FLUSH]"
+    response_text = last_assistant_msg or "[BATCHED_SESSION]"
+
+    await save_message(
+        mysql_pool,
+        cid,
+        user_message,
+        response_text,
+        state
+    )
+
+async def session_flush_worker(app):
+    redis_session: RedisSession = app.state.redis_session
+    mysql_pool = app.state.mysql_pool
+    while True:
+        try:
+            cids = await redis_session.due_sessions()
+            for cid in cids:
+                session_obj = await redis_session.get_session(cid)
+                if not session_obj:
+                    continue
+                try:
+                    await persist_session_to_mysql(mysql_pool, cid, session_obj)
+                finally:
+                    await redis_session.delete_session(cid)
+        except Exception as e:
+            print(f"[flush_worker] error: {e}")
+        await asyncio.sleep(30)  # frecuencia de barrido
+
 
 class AgentEvent(BaseModel):
     id: str
@@ -194,7 +250,24 @@ async def lifespan(app: FastAPI):
         }
         app.state.create_initial_context = create_initial_context
 
+        
+        REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+
+        app.state.redis = redis.from_url(
+            REDIS_URL,
+            encoding="utf-8",
+            decode_responses=False
+        )
+        app.state.redis_session = RedisSession(app.state.redis)
+        app.state._flush_task = asyncio.create_task(session_flush_worker(app))
+
         yield
+
+        try:
+            app.state._flush_task.cancel()
+            await app.state._flush_task
+        except Exception:
+            pass
 
         mysql_pool.close()
         await mysql_pool.wait_closed()
@@ -341,14 +414,22 @@ async def whatsapp_webhook(request: Request):
             return print("[Mensaje no soportado]")
         
         location_data = location_buffer.get(user_id, {}).get("location", None)
+        
         ##---------------Debug------------------##
         print(
             f"📥 Recibido mensaje de: {user_name} ({user_id}) \n"
             f"✉️ Mensaje del usuario: {user_message}\n"
-        )    
-               
+        )          
+        
+
         ##------------------Contexto y estado------------------##        
         state = await build_state(request, user_id, user_name, user_message, img_data_ids, location_data)
+        
+        redis_session = request.app.state.redis_session
+        
+        await redis_session.upsert_state(user_id, state)
+        await redis_session.append_log(user_id, role="user", content=user_message)
+
 
         store.save(user_id, state)
 
@@ -357,7 +438,10 @@ async def whatsapp_webhook(request: Request):
         #     current_agent = request.app.state.agents["General Agent"]
         state["input_items"].append({"role": "user", "content": user_message})
         
-
+        
+        #Fuerzo la entrada con General agent, eliminando esto resume con el agente mas reciente, por ahora asi para probar el routing nuevo
+        current_agent=_get_agent_by_name(request.app, "General Agent")
+        
         ##------------------Ejecucion de SDK------------------##     
         """
         Ejecucion del agente actual con el mensaje del usuario y contexto reconstruido.
@@ -368,15 +452,49 @@ async def whatsapp_webhook(request: Request):
             
         except InputGuardrailTripwireTriggered as e:
             railing_agent = _get_agent_by_name(request.app, "Railing Agent")
-            print(f"⚠️ Tripwire activado en el input, razon de guardarailes: { e.guardrail_result.output.output_info.reasoning}")
-            state["context"].tripwired_trigered_reason= e.guardrail_result.output.output_info.reasoning
-            try:
-                result = await Runner.run(railing_agent, state["input_items"], context=state["context"])
-            except OutputGuardrailTripwireTriggered as e:
-                railing_agent = _get_agent_by_name(request.app, "Railing Agent")
-                print(f"⚠️ Tripwire activado en el output, razon de guardarailes: { e.guardrail_result.output.output_info.reasoning}")
-                state["context"].tripwired_trigered_reason = e.guardrail_result.output.output_info.reasoning
-                result = await Runner.run(railing_agent,state["input_items"], context=state["context"])
+            
+            guardrail_activated=e.guardrail_result.guardrail.name
+            print (f"Guardarail activado {guardrail_activated}")
+                        
+            if guardrail_activated== "To Mcp Guardrail":
+                print("🔀 Redireccionando a Agente MCP ")
+                print(f"Razon de redireccion: { e.guardrail_result.output.output_info.reasoning} \n\n")
+                current_agent=_get_agent_by_name(request.app, "MCP Agent")
+                state["context"].tripwired_trigered_reason= e.guardrail_result.output.output_info.reasoning
+                try:
+                    result = await Runner.run(current_agent, state["input_items"], context=state["context"])
+                except InputGuardrailTripwireTriggered as e:
+                    if guardrail_activated== "Basic Relevance Check":
+                        print(f"⚠️ Tripwire activado en el input, razon de guardarailes: { e.guardrail_result.output.output_info.reasoning}")
+                        railing_agent = _get_agent_by_name(request.app, "Railing Agent")
+                        state["context"].tripwired_trigered_reason = e.guardrail_result.output.output_info.reasoning
+                        result = await Runner.run(railing_agent,state["input_items"], context=state["context"])
+                
+            elif guardrail_activated== "To Package Analyst Guardrail":
+                print("🔀 Redireccionando a Agente Package Analyst ")
+                print(f"Razon de redireccion: { e.guardrail_result.output.output_info.reasoning} \n\n")
+                current_agent=_get_agent_by_name(request.app, "Package Analysis Agent")
+                state["context"].tripwired_trigered_reason= e.guardrail_result.output.output_info.reasoning
+                try:
+                    result = await Runner.run(current_agent, state["input_items"], context=state["context"])
+                except InputGuardrailTripwireTriggered as e:
+                    if guardrail_activated== "Basic Relevance Check":
+                        print(f"⚠️ Tripwire activado en el input, razon de guardarailes: { e.guardrail_result.output.output_info.reasoning}")
+                        railing_agent = _get_agent_by_name(request.app, "Railing Agent")
+                        state["context"].tripwired_trigered_reason = e.guardrail_result.output.output_info.reasoning
+                        result = await Runner.run(railing_agent,state["input_items"], context=state["context"])
+                
+            elif guardrail_activated== "Basic Relevance Check":
+                print(f"⚠️ Tripwire activado en el input, razon de guardarailes: { e.guardrail_result.output.output_info.reasoning}")
+                state["context"].tripwired_trigered_reason= e.guardrail_result.output.output_info.reasoning
+                try:
+                    print("🔀 Redireccionando a Railing Agent")
+                    result = await Runner.run(railing_agent, state["input_items"], context=state["context"])
+                except OutputGuardrailTripwireTriggered as e:
+                    railing_agent = _get_agent_by_name(request.app, "Railing Agent")
+                    print(f"⚠️ Tripwire activado en el output, razon de guardarailes: { e.guardrail_result.output.output_info.reasoning}")
+                    state["context"].tripwired_trigered_reason = e.guardrail_result.output.output_info.reasoning
+                    result = await Runner.run(railing_agent,state["input_items"], context=state["context"])
                 
         except OutputGuardrailTripwireTriggered as e:
             railing_agent = _get_agent_by_name(request.app, "Railing Agent")
@@ -386,9 +504,6 @@ async def whatsapp_webhook(request: Request):
             
         current_agent=result._last_agent
 
-        print(f"🤖 Agente Atendiendo: {current_agent.name}")
-
-        
         for item in result.new_items:
             try:
                 if isinstance(item, MessageOutputItem):
@@ -396,7 +511,7 @@ async def whatsapp_webhook(request: Request):
                     text = content[0].text if isinstance(content, list) and content else str(content)
                     response_dict = json.loads(text)
                     response_text = response_dict.get("response")
-                    print("📤 Respuesta del agente:", response_text)
+                    print(f"📤 Respuesta del {current_agent.name}: {response_text}")
 
                 elif isinstance(item, HandoffOutputItem):
                     current_agent = item.target_agent
@@ -407,20 +522,11 @@ async def whatsapp_webhook(request: Request):
         ##------------------Actualizar estado despues de ejecucion------------------##
         state["input_items"] = result.to_input_list()
         state["current_agent"] = current_agent.name
-        store.save(user_id, state)
         
-        ##------------------Guardar interaccion en la base de datos------------------##
-        state_to_save = state.copy()
-        if hasattr(state_to_save["context"], "model_dump"):
-            state_to_save["context"] = state_to_save["context"].model_dump()
-        context_json = json.dumps(state_to_save)
-        await save_message(
-            request.app.state.mysql_pool,
-            user_id,
-            user_message,
-            response_text,
-            context_json
-        )
+        await redis_session.upsert_state(user_id, state)
+        await redis_session.append_log(user_id, role="assistant", content=response_text)
+        
+        # store.save(user_id, state)
         
         ##------------------Enviar respuesta a WhatsApp------------------##
         await send_text_to_whatsapp(user_id, user_message, response_text, message_id)

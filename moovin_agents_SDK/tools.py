@@ -1,13 +1,39 @@
 from agents import function_tool, RunContextWrapper
-from database_handler import get_delivery_date, get_package_historic,get_id_package,get_delivery_address,reverse_geocode_osm,send_location_to_whatsapp
+from handlers.main_handler import _format_transcript,how_long_ago,get_msgs_from_last_states,get_delivery_date, get_package_historic,get_id_package,get_delivery_address,reverse_geocode_osm,send_location_to_whatsapp
 import os
 import psycopg2
 from openai import OpenAI
 from psycopg2.extras import Json
 
-
-
 client = OpenAI()
+
+
+async def resume_memorie_AI(client, transcript: str, lang="es") -> str:
+    """
+    Genera un resumen de lo hablado por el usuario y el asistente en la interaccion
+    """
+    sys = (
+        "Eres un asistente que resume conversaciones breves entre un usuario y un agente de IA de Moovin. "
+        "Devuelve un único resumen claro y conciso en español "
+        "Incluye intención/es del usuario, datos concretos (número de guía, teléfono, etc.), "
+        "acciones/decisiones del agente, próximos pasos o datos que veas de relevancia en la conversacion. No inventes datos."
+    )
+    user_msg = (
+        "Transcripción (Usuario/Agente):\n"
+        "--------------------------------\n"
+        f"{transcript}\n"
+        "--------------------------------\n"
+        "Genera el resumen solicitado."
+    )
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": sys},
+            {"role": "user", "content": user_msg},
+        ],
+        temperature=0.2,
+    )
+    return resp.choices[0].message.content.strip()
 
 # Funciones para Vector Store #
 def get_embedding(text: str, model: str = "text-embedding-3-small") -> list:
@@ -107,7 +133,6 @@ def make_get_package_timeline_tool(pool):
 
     return get_package_timeline
 
-
 # Factory function for get_likely_package_timelines tool
 def make_get_likely_package_timelines_tool(pool):
     @function_tool(
@@ -142,6 +167,7 @@ def make_get_likely_package_timelines_tool(pool):
 
     return get_likely_package_timelines
 
+# Factory function para enviar la ubicacion de entrega actual del paquete
 def Make_send_current_delivery_address_tool(tools_pool):
     @function_tool(
     name_override="send_current_delivery_address",
@@ -208,3 +234,39 @@ def Make_send_current_delivery_address_tool(tools_pool):
         
         
     return send_current_delivery_address
+
+# Factory function para funcion que recuerda
+# --- integración en tu tool remember_more ---
+def Make_remember_tool(pool):
+    from typing import Dict, Any, List
+    @function_tool(
+        name_override="remember_more",
+        description_override="Recupera un resumen de lo hablado en las últimas 3 sesiones (más reciente → más antigua)."
+    )
+    async def remember(ctx: RunContextWrapper) -> dict:
+        print("🧠 Recordando interacciones pasadas con el usuario")
+        try:
+            if ctx.context.backup_memory_called:
+                return {
+                    "status":"error",
+                    "reason":"You already remembered this information, and sessions haven't changed"
+                }
+            last_states = await get_msgs_from_last_states(pool, ctx.context.user_id)
+            print(f"[Debug] Valor de last states en el tool {last_states}")
+            memories = {}
+            for i, state in enumerate(last_states, start=1):
+                fecha = state.get("fecha")
+                ordered = ((state.get("messages") or {}).get("ordered_msgs") or [])
+                transcript = _format_transcript(ordered, max_chars=6000)
+                resumen = await resume_memorie_AI(client, transcript)
+                memories[f"sesion_{i}"] = {
+                    "cuando": how_long_ago(fecha),
+                    "fecha": fecha,
+                    "resumen": resumen
+                }
+            print(f"[Debug] El valor de los recuerdos es {memories}")
+            return memories
+        except Exception as e:
+            print(f"Error al recuperar/resumir mensajes: {e}")
+            return {"error": "No se pudo generar el resumen"}
+    return remember
