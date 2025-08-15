@@ -1,47 +1,82 @@
 from agents import function_tool,RunContextWrapper
 from handlers.main_handler import get_package_historic, get_id_package, get_img_data,get_delivery_address,reverse_geocode_osm,send_location_to_whatsapp
-from handlers.mcp_handler import create_pickup_ticket,request_electronic_receipt, report_package_damaged,change_delivery_address as change_delivery_address_request
+from handlers.mcp_handler import _parse_date_cr,create_pickup_ticket,request_electronic_receipt, report_package_damaged,change_delivery_address as change_delivery_address_request
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
+
+CR_TZ = ZoneInfo("America/Costa_Rica")
 
 
+DELIVERED_STATES= {"DELIVERED", "DELIVEREDCOMPLETE"}
+RETURN_STATES= {"RETURN"}
+FAILED_STATES= {"FAILED","DELETEPACKAGE","CANCELNOCHARGE","CANCEL"}
 ## ------------------ MCP Tools ------------------ ##
 def Make_request_to_pickup_tool(pool):
     @function_tool(
         name_override="pickup_ticket",
-        description_override="Crea un ticket de solicitud para retiro en sede de un paquete a partir de su Tracking o numero de seguimiento. Si el paquete existe y no ha sido entregado, solicita numero de seguimiento y descripcion del motivo del ticket."
+        description_override="Crea un ticket de solicitud para retiro en sede de un paquete a partir de su Tracking o número de seguimiento. Si el paquete existe y no ha sido entregado ni presenta retornos/fallas, solicita número de seguimiento y descripción del motivo."
     )
     async def pickup_ticket(
         package: str,
-        description: str 
+        description: str
     ) -> dict:
         if not package or not description:
-            return {"status": "error", "message": "Faltan datos necesarios para crear el ticket. Por favor, proporciona el número de seguimiento y una descripción del motivo."}
-        
+            return {
+                "status": "error",
+                "message": "Faltan datos: provee el número de seguimiento y una descripción del motivo."
+            }
+
         package_id = await get_id_package(pool, package)
         if not package_id:
-            return {"status": "error", "message": f"Paquete {package} no encontrado en la base de datos."}
-        
+            return {
+                "status": "error",
+                "message": f"Paquete {package} no encontrado en la base de datos."
+            }
 
         package_historic = await get_package_historic(pool, package_id)
-        timeline=package_historic.get("timeline", [])
-        if timeline and str(timeline[0].get("status", "")).upper() in {"DELIVERED", "DELIVEREDCOMPLETE"}:
+        timeline = package_historic.get("timeline", []) or []
+
+        statuses = [str(e.get("status", "")).strip().upper() for e in timeline]
+
+
+        blockers = []
+
+        if any(s in DELIVERED_STATES for s in statuses):
+            blockers.append("DELIVERED")
+
+        if any(s in RETURN_STATES for s in statuses):
+            blockers.append("RETURN")
+
+        failed_count = sum(1 for s in statuses if s in FAILED_STATES)
+        if failed_count > 2:
+            blockers.append("FAILED")
+
+        if blockers:
             return {
-                "tracking": package_id,
+                "tracking": str(package_id),
                 "package_found": True,
-                "response": "Paquete ya fue entregado"
+                "status": "error",
+                "response": ", ".join(blockers)
             }
-            
-        print(f"🛠️ Creando ticket de recogida para {package_id}... \n Tipo de dato: {type(package_id)}")
-        owner_phone=package_historic.get("telefono_dueño","")
-        print(f"📞 Dueño del paquete: {package_historic.get('nombre_dueño_paquete',"")} - Teléfono: {owner_phone}"
-              f" - Email: {package_historic.get('email_dueño_paquete',''),} - Descripcion {description}")
-        
+
+        print(f"🛠️ Creando ticket de recogida para {package_id}...  Tipo de dato: {type(package_id)}")
+
+        owner_phone = package_historic.get("telefono_dueño", "") or package_historic.get("telefono_dueño_paquete", "")
+        owner_name  = package_historic.get("nombre_dueño_paquete", "")
+        owner_mail  = package_historic.get("email_dueño_paquete", "")
+
+        print(
+            f"📞 Dueño del paquete: {owner_name} - Teléfono: {owner_phone} "
+            f"- Email: {owner_mail} - Descripción: {description}"
+        )
+
         result = create_pickup_ticket(
-                                    email=package_historic.get("email_dueño_paquete",""), 
-                                    phone=owner_phone,
-                                    name=package_historic.get("nombre_dueño_paquete"), 
-                                    package_id=str(package_id), 
-                                    description=description
-                                    )
+            email=owner_mail,
+            phone=owner_phone,
+            name=owner_name,
+            package_id=str(package_id),
+            description=description
+        )
         return result
 
     return pickup_ticket
@@ -100,76 +135,103 @@ def Make_request_electronic_receipt_tool(pool):
 
     return request_electronic_receipt_ticket
 
-def Make_package_damaged_tool(mysql_pool,tools_pool):
+def Make_package_damaged_tool(mysql_pool, tools_pool):
     @function_tool(
         name_override="package_damaged_ticket",
-        description_override="Crea un ticket para reportar el daño de un paquete a partir de su Tracking o número de seguimiento. Si el paquete existe y ha sido entregado, solicita número de seguimiento, descripción del daño y fotos del daño."
+        description_override="Crea un ticket para reportar el daño de un paquete a partir de su Tracking o número de seguimiento. Solo procede si el último estado del paquete es DELIVERED y han pasado más de 48 horas desde esa entrega. Requiere número de seguimiento, descripción del daño y fotos."
     )
     async def package_damaged_ticket(
         ctx: RunContextWrapper,
         package: str,
         description: str
     ) -> dict:
-        print(f"🔨 Intentado crear ticket para paquete danado, numero de paquete {package} con descripcion {description}")
-        if not package or not description:
+        print(f"🔨 Intentando crear ticket para paquete dañado. Tracking: {package} | Desc: {description}")
+
+        if not package or not description or not ctx.context.imgs_ids:
             return {
                 "status": "error",
-                "message": "Faltan datos necesarios para crear el ticket. Proporciona número de seguimiento y descripción del daño."
+                "message": "Faltan datos para crear el ticket. Proporciona tracking, descripción del daño y al menos 1 imagen."
             }
 
         package_id = await get_id_package(tools_pool, package)
-        
         if not package_id:
             return {"status": "error", "message": f"Paquete {package} no encontrado en la base de datos."}
 
         package_historic = await get_package_historic(tools_pool, package_id)
-        timeline = package_historic.get("timeline", [])
-
-        if not timeline or str(timeline[0].get("status", "")).upper() not in {"DELIVERED", "DELIVEREDCOMPLETE"}:
+        timeline = package_historic.get("timeline", []) or []
+        if not timeline:
             return {
-                "tracking": package_id,
+                "tracking": str(package_id),
                 "package_found": True,
-                "response": "Este ticket solo puede generarse para paquetes que ya hayan sido entregados."
+                "response": "No hay historial de estados para este paquete."
+            }
+
+        last_event = timeline[0]
+        last_status = str(last_event.get("status", "")).strip().upper()
+        last_date_str = last_event.get("dateUser")
+        last_dt = _parse_date_cr(last_date_str)
+        now_cr = datetime.now(CR_TZ)
+
+        if last_status not in DELIVERED_STATES:
+            return {
+                "tracking": str(package_id),
+                "package_found": True,
+                "response": "Este ticket solo puede generarse 48 horas después de la entrega. "
+            }
+        if not last_dt:
+            return {
+                "tracking": str(package_id),
+                "package_found": True,
+                "response": "No se pudo validar la fecha de entrega del paquete."
+            }
+
+        hours_since = (now_cr - last_dt).total_seconds() / 3600.0
+        if hours_since <= 48:
+            return {
+                "tracking": str(package_id),
+                "package_found": True,
+                "response": (
+                    f"Este ticket solo puede generarse 48 horas después de la entrega. "
+                    f"Última entrega: {last_date_str} (hace ~{int(hours_since)} horas)."
+                )
             }
 
         owner_info = {
-            "email": package_historic.get("email_dueño_paquete", ""),
-            "phone": package_historic.get("telefono_dueño", ""),
-            "name": package_historic.get("nombre_dueño_paquete", "")
+            "email": package_historic.get("email_dueño_paquete", "") or package_historic.get("email_duenho_paquete", ""),
+            "phone": package_historic.get("telefono_dueño", "") or package_historic.get("telefono_dueño_paquete", ""),
+            "name":  package_historic.get("nombre_dueño_paquete", "") or package_historic.get("nombre_duenho_paquete", "")
         }
 
         img_data_result = []
-        print (f"[Debugg] Intentado obtener data de imagenes con ids {ctx.context.imgs_ids}")
-        if ctx.context.imgs_ids:
-            for img_id in ctx.context.imgs_ids:
-                try:
-                    row = await get_img_data(mysql_pool, img_id)
-                    if row and row.get("data"):
-                        img_data_result.append(row["data"])
-                except Exception as e:
-                    print(f"⚠️ Error recuperando imagen {img_id}: {e}")
+        for img_id in (ctx.context.imgs_ids or []):
+            try:
+                row = await get_img_data(mysql_pool, img_id)
+                if row and row.get("data"):
+                    img_data_result.append(row["data"])
+            except Exception as e:
+                print(f"⚠️ Error recuperando imagen {img_id}: {e}")
 
-        print(f"📦 Reporte de paquete dañado con {len(img_data_result)} imágenes recuperadas. Datos: {img_data_result}")
-        
+        print(f"📦 Reporte de paquete dañado con {len(img_data_result)} imagen(es) recuperada(s).")
+
         result = report_package_damaged(
             owner=owner_info,
             package_id=str(package_id),
             description=description,
             img_data=img_data_result
         )
-        if result.get("status")=="ok":
-            print (f"✅Ticket creado con exito")
-            ctx.context.imgs_ids=[]
+
+        if result.get("status") == "ok":
+            print("✅ Ticket creado con éxito")
+            ctx.context.imgs_ids = []
             return {
-                "status":"success",
-                "TicketNumber":result.get("'Numero de Ticket")
+                "status": "success",
+                "TicketNumber": result.get("'Numero de Ticket")
             }
-            
         else:
-            print (f"Error al crear el ticket {result}")
+            print(f"❌ Error al crear el ticket: {result}")
             return {
-                "status":"error",
-                "reason":"error occured while creating the ticket"
+                "status": "error",
+                "reason": "Ocurrió un error al crear el ticket."
             }
 
     return package_damaged_ticket
@@ -269,6 +331,7 @@ def Make_change_delivery_address_tool(pool):
             }
         elif delivery_change_request_data.get("message") == "Not exist package":
             print(f"⚠️ Error al cambiar la direccion de entrega, el paquete no ha sido anadido a la BD en Dev aun")
+            ctx.context.location_sent = {}
             return {
                 "status":"error",
                 "reason":"Package hasn't been added to the Developer DB yet, advise the user package hasn't been added"

@@ -5,6 +5,7 @@ import json
 from handlers.main_handler import get_delivery_address
 load_dotenv()
 import time
+from datetime import datetime, timezone, timedelta
 
 zoho_refresh_token=os.environ.get("Zoho_Refresh_Token", "")
 zoho_org_id = "716348510"
@@ -60,7 +61,6 @@ _moovin_token_cache = {
     "token": None,
     "expires_at": 0  
 }
-
 
 def get_moovin_dev_token():
     url = f"{moovin_url}/moovinApiWebServices-cr/rest/api/loginEmployee"
@@ -139,7 +139,19 @@ async def change_delivery_address(idPoint:int,lat:float,lng:float):
         response = requests.post(url, headers=headers, data=json.dumps(payload))
     print (f"La respuesta de la API de MOOVIN es {response.json()}")
     return response
-##-----------------------------Moovin----------------------------##
+
+def _parse_date_cr(dt_str: str) -> datetime | None:
+    """
+    Convierte 'YYYY-MM-DD HH:MM:SS' a datetime con tz de CR.
+    Devuelve None si no se puede parsear.
+    """
+    if not dt_str or not isinstance(dt_str, str):
+        return None
+    try:
+        dt = datetime.strptime(dt_str.strip(), "%Y-%m-%d %H:%M:%S")
+        return dt.replace(tzinfo=CR_TZ)
+    except Exception:
+        return None
 
 ##----------------------------Zoho--------------------------------##
 _token_info = {
