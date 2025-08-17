@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List
 import redis.asyncio as redis
 
-SESSION_IDLE_SECONDS = 15 * 60  # 10 minutos
+SESSION_IDLE_SECONDS = 5 * 60  # 10 minutos
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)

@@ -108,7 +108,9 @@ def make_get_package_timeline_tool(pool):
         Devuelve el historial del paquete solo si el número de teléfono coincide con el del dueño.
         """
         print(f"🔍 Obteniendo timeline del paquete {package_id} para el teléfono {phone}...")
-
+        package_id = await get_id_package(pool, package_id)
+        if not package_id:
+            return {"status": "error", "message": f"Paquete {package_id} no encontrado en la base de datos."}
         try:
             historic = await get_package_historic(pool, package_id)
         except Exception as e:
@@ -214,7 +216,8 @@ def Make_send_current_delivery_address_tool(tools_pool):
                     if location_data:
                         address=location_data.get("address")
                         return {
-                            "status": "Success, message with ubication in ubication format was sent to user",
+                            "status": "Success",
+                            "reason":" Se envio el mensaje al usuario con la ubicacion en formato de Whatsapp",
                             "delivery_address":address
                         }
                     else:
@@ -236,7 +239,6 @@ def Make_send_current_delivery_address_tool(tools_pool):
     return send_current_delivery_address
 
 # Factory function para funcion que recuerda
-# --- integración en tu tool remember_more ---
 def Make_remember_tool(pool):
     from typing import Dict, Any, List
     @function_tool(
@@ -247,12 +249,12 @@ def Make_remember_tool(pool):
         print("🧠 Recordando interacciones pasadas con el usuario")
         try:
             if ctx.context.backup_memory_called:
+                print(["🧠 Ya recordó esta información"])
                 return {
                     "status":"error",
                     "reason":"You already remembered this information, and sessions haven't changed"
                 }
             last_states = await get_msgs_from_last_states(pool, ctx.context.user_id)
-            print(f"[Debug] Valor de last states en el tool {last_states}")
             memories = {}
             for i, state in enumerate(last_states, start=1):
                 fecha = state.get("fecha")
@@ -264,7 +266,7 @@ def Make_remember_tool(pool):
                     "fecha": fecha,
                     "resumen": resumen
                 }
-            print(f"[Debug] El valor de los recuerdos es {memories}")
+            ctx.context.backup_memory_called=True
             return memories
         except Exception as e:
             print(f"Error al recuperar/resumir mensajes: {e}")

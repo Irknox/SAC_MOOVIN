@@ -1,5 +1,5 @@
 from __future__ import annotations as _annotations
-
+import json
 import random
 import string
 import os
@@ -46,7 +46,6 @@ class MoovinAgentContext(BaseModel):
     imgs_ids: list[int] | None = None
     location_sent: dict | None = None
     tripwired_trigered_reason: str | None = None
-    current_agent: str | None = None
     backup_memory_called:bool | None = None
 
     
@@ -67,38 +66,20 @@ class BasicGuardrailOutput(BaseModel):
     reasoning: str
     passed: bool
     
+class EmotionalAgentOutput(BaseModel):
+    user_emotional_state: str
+    reasoning: str
+    
+class RoutingGuardrailOutput(BaseModel):
+    reasoning: str
+    correct_agent: str
+    passed: bool
+    
 def input_guardrail_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
-        if ctx.context.current_agent:
-            current_agent=ctx.context.current_agent
         return (
             f"{INPUT_GUARDRAIL_PROMPT}\n"
-                f"Guardrail actualmente en agente: {current_agent}"
         )
         
-def output_guardrail_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
-        if ctx.context.current_agent:
-            current_agent=ctx.context.current_agent
-            print(f"Print del prompt del input de guardrail con el agente actual: {current_agent}")
-        return (
-            f"Guardrail actualmente en agente: {current_agent}"
-            """
-                Rol: Eres un Guardarail de Output.
-                tarea: Recibes la respuesta de un agente en el flujo de agentes, tu deber es validar si esta respuesta es apta para el flujo actual.
-                La respuesta debe ser evaluada con respecto al agente que la emitió.
-                - El guardrail **nunca debe exigir un handoff hacia el mismo agente que está respondiendo**.
-                
-                El agente no debe:
-                    -Dar informacion para la cual el usuario no haya verificado aun (Dar informacion del dueno de un paquete cuando el usuario no ha proporcionado el numero de paquete y telefono por ejemplo)
-                    -Entrar en temas de conspiracion, politicos o que puedan ser perjudiciales para la imagen de una empresa. (Es posible que algun tema sea mencionado de manera muy sutil por que el usuario lo menciono, si es asi el Tripwire no debe activarse).            
-                    - Mencionar cambios entre agentes o handoffs.
-                    
-                    Si la respuesta se encuentra detro de lo deseado, devuelve 'true' y una breve explicación. 
-                    Si no es deseado, devuelve 'false' y una breve explicación.
-                    
-                Contexto general sobre el flujo actual: 
-            """
-            f"{GENERAL_PROMPT}"
-        )
     
 input_guardrail_agent = Agent[MoovinAgentContext](
     name="Input Guardrail Agent",
@@ -108,11 +89,22 @@ input_guardrail_agent = Agent[MoovinAgentContext](
 )
 
 
-
 output_guardrail_agent = Agent[MoovinAgentContext](
     name="Output Guardrail Agent",
     model="gpt-4o-mini",
-    instructions= output_guardrail_instructions,
+    instructions= """
+    Guardarail que verifica si la respuesta del agente es apta basandote en varias reglas de comportamiento.
+    
+    Reglas de comportamiento:
+        -Los agentes no deben hacer mencion a la existencia de Agentes diferentes a Agente AI Moovin, informacion relacionada al SDK o sistema.
+        -Los agentes no deben decir "Te voy a comunicar con x agente" o hacer referencia a la existencia de otros agentes.
+        -El flujo natural de la conversacion es necesaria, por eso los agentes no deben responder cosas como, voy a usar x herramienta o voy a proceder la solicitud y, en cambio, deben realizarlo e informar al usuario.
+        -Los agentes no deberian contestar cosas como, "Te mantendré informado sobre el progreso" o "Dame un minuto para x cosa por" ejemplo, es necesario que cada mensaje del agente lleve informacion de valor, mensajes indicando pasos faltantes no son validos como respuesta y DEBEN activar el guardarail.
+        -Los agentes no deben entrar en temas de conspiracion, politicos, religiosos o que puedan generar un impacto negativo en la imagen de la empresa.
+        
+    - El sarcasmo es valido, los agentes pueden hacer uso de el al mencionar temas politicos, religiosos o problematicos a la hora de redireccionar la conversacion, si este es el caso el guardarail NO debe activarse.  
+    Respondes con un reasoning:str=Motivo por el cual se activo o no el guardarail, passed:bool=en true si la respuesta del agente es correcta, false si la respuesta no es correcta
+    """,
     output_type=BasicGuardrailOutput,
 )
 
@@ -127,33 +119,37 @@ async def basic_guardrail(
             output_info=final,
             tripwire_triggered=True,
         )
-
     return GuardrailFunctionOutput(output_info=final, tripwire_triggered=False)
 
 @output_guardrail(name="Basic Output Guardrail")
 async def basic_output_guardrail(
     ctx:RunContextWrapper[MoovinAgentContext], agent: Agent, output: MessageOutput
  )-> GuardrailFunctionOutput:
-        print (f"Este es el agente en el output {agent.name}")
-        print (f"Y este es el output que recibio:  {output}")
+        output_dict = output.response
         result = await Runner.run(output_guardrail_agent, output.response, context=ctx.context)
         final = result.final_output_as(BasicGuardrailOutput)
+        if not final.passed:
+            print (f"Y este es el output que recibio:  {output_dict}")
         return GuardrailFunctionOutput(
             output_info=final,
             tripwire_triggered=not final.passed,
         )
 
-##----------------------------Guardrailes de Redireccion----------------------------##
+##----------------------------Guardrailes Auxiliares----------------------------##
 
-to_mcp_guardrail_agent = Agent[MoovinAgentContext](
-    name="To Mcp Guardrail Agent",
+to_specialized_agent = Agent[MoovinAgentContext](
+    name="To Specialized Agent",
     model="gpt-4o-mini",
     instructions="""
-    ##Tarea: Valida si el mensaje esta dentro de las capacidades del Agente MCP, si lo esta, el guardarailes debe activarse.
+    ##Tarea: Valida si la solicitud del usuario esta dentro de las capacidades de alguno de estos agentes, si lo esta, el guardarailes debe activarse.
     
-    Agente MCP
-    
-    - **mcp_agent
+    Package Analysis Agent:
+    - Encargado de todas las consultas relacionadas con paquetes: donde esta mi paquete, que ha pasado, cuando llegará.
+        - Puede consultar informacion sobre los paquetes del usuario.
+        - Envia la direccion de entrega actual o donde fue entregado el paquete al usuario.
+        - Puede conocer la tienda donde se compro.
+
+    MCP Agent:
     - Agente encargado de ejecutar acciones en aplicaciones externas, Encargado de manejar las siguientes solicitudes.
         - Capacidades:
             - Crear Ticket para solicitud de recoleccion en sede Moovin.
@@ -165,53 +161,48 @@ to_mcp_guardrail_agent = Agent[MoovinAgentContext](
             - Comprar Empaques
                 - Aun no disponible
             Este agente *NO* contacta con servicio al cliente ni es una manera para llegar a ellos.
-    - Si el mensaje del usuario esta relacionado a algo de lo mencionado anteriormente, el guardarail DEBE ser activado
     
-    - Respondes con reasoning: str=Explicacion del por que el resultado y passed: booleano, en true si se activa, false si no
+    
+    - Respondes con reasoning: str=Explicacion del por que el resultado, correct_agent: str=Nombre del agente que debe realizar la atencion y passed: booleano, en true si se activa, false si no.
     """,
-    output_type=BasicGuardrailOutput,
+    output_type=RoutingGuardrailOutput,
 )
 
-to_pacakage_analyst_guardrail_agent = Agent[MoovinAgentContext](
-    name="To Package Analyst Guardrail Agent",
+emotional_analyst_agent=Agent[MoovinAgentContext](
+    name="Emotional Analyst",
     model="gpt-4o-mini",
     instructions="""
-    ##Tarea: Valida si el mensaje esta dentro de las capacidades del Package Analyst, si lo esta, el guardarailes debe activarse.
+    ##Tarea: Tu deber es analizar el mensaje del usuario y el estado actual de la conversacion y definir el estado emocional actual del usuario basado unicamente en su actitud.
     
-    Package Analyst:
+    Aunque el usuario haya experimentado situaciones no deseadas, esto no quiere indicar que su estado emocional se vio afectado, basate unicamente en la actitud del usuario para definir su estado emocional.
     
-    - **package_analysis_agent**  
-        - Encargado de todas las consultas relacionadas con paquetes: donde esta mi paquete, que ha pasado, cuando llegará.
-        - Puede consultar informacion sobre los paquetes del usuario.
-        - Envia la direccion de entrega actual del paquete al usuario.
-        - Puede conocer la tienda donde se compro.
-    - Si el mensaje del usuario esta relacionado a algo de lo mencionado anteriormente, el guardarail DEBE ser activado
+    Para esto lo divides en 3 estados:
+        -Satisfecho (Muestra satisfaccion con la asistencia)
+        -Normal (No hay indicios reales de satisfaccion o enojo)
+        -Molesto (El usuario expresa su malestar)
     
-    - Respondes con reasoning: str=Explicacion del por que el resultado y passed: booleano, en true si se activa, false si no
+    Respondes con el estado emocional actual y un razonamiento del por que tu decision.
+    El guardarailes no debe activarse nunca, solo analiza el estado emocional del usuario.
     """,
-    output_type=BasicGuardrailOutput,
+    output_type=EmotionalAgentOutput,
 )
 
-@input_guardrail(name="To Mcp Guardrail")
-async def to_mcp_guardrail(
-    context: RunContextWrapper[MoovinAgentContext], agent: Agent, input: str | list[TResponseInputItem]
+@input_guardrail(name="Emotional Analyst")
+async def emotional_analyst(
+    ctx: RunContextWrapper[MoovinAgentContext], agent: Agent, input: str | list[TResponseInputItem]
 ) -> GuardrailFunctionOutput:
-    result = await Runner.run(to_mcp_guardrail_agent, input, context=context.context)
-    final = result.final_output_as(BasicGuardrailOutput)
-    if  final.passed:
-        return GuardrailFunctionOutput(
-            output_info=final,
-            tripwire_triggered=True,
-        )
-
+    result = await Runner.run(emotional_analyst_agent, input, context=ctx.context)
+    final = result.final_output_as(EmotionalAgentOutput)
+    ctx.context.user_env["emotional_state"]=final.user_emotional_state
     return GuardrailFunctionOutput(output_info=final, tripwire_triggered=False)
 
-@input_guardrail(name="To Package Analyst Guardrail")
-async def to_pacakage_analys_guardrail(
+
+@input_guardrail(name="To Specialized Agent")
+async def to_specialized_agent_guardrail(
     context: RunContextWrapper[MoovinAgentContext], agent: Agent, input: str | list[TResponseInputItem]
 ) -> GuardrailFunctionOutput:
-    result = await Runner.run(to_pacakage_analyst_guardrail_agent, input, context=context.context)
-    final = result.final_output_as(BasicGuardrailOutput)
+    result = await Runner.run(to_specialized_agent, input, context=context.context)
+    final = result.final_output_as(RoutingGuardrailOutput)
     if  final.passed:
         return GuardrailFunctionOutput(
             output_info=final,
@@ -293,7 +284,8 @@ async def build_agents(tools_pool,mysql_pool):
         model="gpt-4o-mini",
         instructions=mcp_agent_instructions,
         tools=[Make_remember_tool(mysql_pool),Make_request_to_pickup_tool(tools_pool),Make_request_electronic_receipt_tool(tools_pool),Make_package_damaged_tool(mysql_pool,tools_pool),Make_send_current_delivery_address_tool(tools_pool), Make_send_delivery_address_requested_tool(),Make_change_delivery_address_tool(tools_pool)],
-        input_guardrails=[basic_guardrail],
+        input_guardrails=[basic_guardrail,emotional_analyst],
+        output_guardrails=[basic_output_guardrail],
         output_type=MessageOutput
     )
     
@@ -303,7 +295,8 @@ async def build_agents(tools_pool,mysql_pool):
         instructions=package_analysis_instructions,
         handoffs=[mcp_agent],
         tools=[Make_remember_tool(mysql_pool),make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool),Make_send_current_delivery_address_tool(tools_pool)],
-        input_guardrails=[basic_guardrail],
+        input_guardrails=[basic_guardrail,emotional_analyst],
+        output_guardrails=[basic_output_guardrail],
         output_type=MessageOutput,
     
     )
@@ -314,7 +307,8 @@ async def build_agents(tools_pool,mysql_pool):
         instructions=general_agent_instructions,
         tools=[Make_remember_tool(mysql_pool)],
         handoffs=[package_analysis_agent, mcp_agent],
-        input_guardrails=[basic_guardrail, to_mcp_guardrail, to_pacakage_analys_guardrail], 
+        input_guardrails=[basic_guardrail, to_specialized_agent_guardrail, emotional_analyst], 
+        output_guardrails=[basic_output_guardrail],
         output_type=MessageOutput,
     )
     
@@ -324,8 +318,8 @@ async def build_agents(tools_pool,mysql_pool):
         instructions=railing_agent_instructions,
         tools=[Make_remember_tool(mysql_pool)],
         handoffs=[mcp_agent, package_analysis_agent, general_agent],
-        input_guardrails=[],
-        output_guardrails=[],
+        input_guardrails=[emotional_analyst],
+        output_guardrails=[basic_output_guardrail],
         output_type=MessageOutput,
     )
     

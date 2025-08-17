@@ -1,11 +1,10 @@
 services:
   app:
     build: .
-    container_name: moovin-app
     ports:
       - "8989:8989"
     environment:
-      REDIS_URL: ${REDIS_URL}   # toma del .env
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     depends_on:
       redis:
         condition: service_healthy
@@ -13,17 +12,15 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: redis
-    # Solo necesitas exponer 6379 si tu app corre FUERA de Docker
     ports:
       - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1", "--requirepass", "${REDIS_PASSWORD}"]
+    command: ["redis-server","--appendonly","yes","--save","60","1","--requirepass","${REDIS_PASSWORD}"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "sh", "-lc", "redis-cli -a \"$REDIS_PASSWORD\" ping | grep PONG"]
+      test: ["CMD","sh","-lc","redis-cli -a \"$REDIS_PASSWORD\" ping | grep PONG"]
       interval: 10s
       timeout: 3s
       retries: 5

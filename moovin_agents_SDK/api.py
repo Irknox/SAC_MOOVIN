@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any, Literal
+from typing import Optional, List, Dict, Any, Literal,Tuple
 import os
 import tempfile
 import requests
@@ -26,8 +26,6 @@ image_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 location_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 
 load_dotenv()
-
-
 client = OpenAI()
 
 ##----------------------------Funciones Auxiliares----------------------------##
@@ -82,11 +80,11 @@ async def build_state(request: Request, user_id: str, user_name: str, user_messa
         try:
             raw_context = state.get("context")
             restored_context = MoovinAgentContext(**raw_context)
-            user_env_data = await get_user_env(request.app.state.tools_pool, user_id, whatsapp_username=user_name)
-            restored_context.user_env = user_env_data
             if img_data_ids:
                 restored_context.imgs_ids = img_data_ids
-            restored_context.location_sent=location_data or {}
+            if location_data:
+                restored_context.location_sent=location_data or {}
+            restored_context.tripwired_trigered_reason=""
             state = {
                 "context": restored_context,
                 "input_items": state.get("input_items", []),
@@ -303,8 +301,77 @@ class InMemoryStore:
 
 store = InMemoryStore()
 
-def _get_agent_by_name(app: FastAPI, name: str):
-    return app.state.agents.get(name, app.state.agents["General Agent"])
+def _get_agent_by_name(app, name: str):
+    agents = getattr(app.state, "agents", {}) or {}
+    if not agents:
+        return None
+    if name in agents:
+        return agents[name]
+    lname = (name or "").strip().lower()
+    for k, v in agents.items():
+        if k.lower() == lname:
+            return v
+    return agents.get("Railing Agent") or agents.get("General Agent") or next(iter(agents.values()), None)
+
+
+def _extract_guardrail_info(exc) -> Tuple[str, str, Optional[str], Optional[bool]]:
+    """
+    Devuelve (guardrail_name, reasoning, correct_agent, passed) a partir de la excepción del guardrail.
+    - reasoning: explicación del porqué
+    - correct_agent: nombre sugerido por el guardrail (si aplica)
+    - passed: bool si el guardrail 'pasó' su chequeo; None si no viene
+    """
+    gr = getattr(getattr(exc, "guardrail_result", None), "guardrail", None)
+    guardrail_name = getattr(gr, "name", "") or ""
+
+    out = getattr(getattr(exc, "guardrail_result", None), "output", None)
+    info = getattr(out, "output_info", None)
+
+    reasoning: str = ""
+    correct_agent: Optional[str] = None
+    passed: Optional[bool] = None
+
+    if info is not None:
+        reasoning = getattr(info, "reasoning", "") or ""
+        correct_agent = getattr(info, "correct_agent", None)
+        passed = getattr(info, "passed", None)
+        
+        if isinstance(info, dict):
+            reasoning = info.get("reasoning", reasoning) or ""
+            correct_agent = info.get("correct_agent", correct_agent)
+            passed = info.get("passed", passed)
+    print (f"Guardarail activado: {guardrail_name}, reasoning: {reasoning}, Agente correcto:{correct_agent}")
+    return guardrail_name, reasoning, correct_agent, passed
+
+async def run_sdk(app, state, start_agent, max_hops: int = 3):
+    """
+    Ejecuta el SDK con ruteo guiado por guardrails y un fallback a el Railing Agent
+    """
+    active_agent = start_agent
+    items = state.get("input_items", [])
+    ctx = state["context"]
+
+    for _ in range(max_hops):
+        try:
+            return await Runner.run(active_agent, items, context=ctx)
+        except InputGuardrailTripwireTriggered as exc_in:
+            guardrail_name, reasoning, correct_agent, passed = _extract_guardrail_info(exc_in)
+            ctx.tripwired_trigered_reason = reasoning
+            if correct_agent:
+                print(f"🔀 Redireccionando a {correct_agent}")
+            next_name = (correct_agent or "Railing Agent").strip()
+            next_agent = _get_agent_by_name(app, next_name)
+            if next_agent is None or next_agent is active_agent:
+                next_agent = _get_agent_by_name(app, "Railing Agent")
+            active_agent = next_agent
+            continue
+        except OutputGuardrailTripwireTriggered as exc_out:
+            guardrail_name, reasoning, correct_agent, passed = _extract_guardrail_info(exc_out)
+            ctx.tripwired_trigered_reason = reasoning
+            active_agent = _get_agent_by_name(app, "Railing Agent")
+            continue
+    return await Runner.run(_get_agent_by_name(app, "Railing Agent"), items, context=ctx)
+
 
 def count_tokens(text, model="gpt-4o"):
     enc = tiktoken.encoding_for_model(model)
@@ -439,68 +506,14 @@ async def whatsapp_webhook(request: Request):
         state["input_items"].append({"role": "user", "content": user_message})
         
         
-        #Fuerzo la entrada con General agent, eliminando esto resume con el agente mas reciente, por ahora asi para probar el routing nuevo
+        #Fuerzo la entrada con General agent, eliminando esto se resumira con el ultimo agente que se interactuo
         current_agent=_get_agent_by_name(request.app, "General Agent")
         
         ##------------------Ejecucion de SDK------------------##     
         """
         Ejecucion del agente actual con el mensaje del usuario y contexto reconstruido.
-        """
-        state["context"].current_agent = current_agent.name
-        try:
-            result = await Runner.run(current_agent, state["input_items"], context=state["context"])
-            
-        except InputGuardrailTripwireTriggered as e:
-            railing_agent = _get_agent_by_name(request.app, "Railing Agent")
-            
-            guardrail_activated=e.guardrail_result.guardrail.name
-            print (f"Guardarail activado {guardrail_activated}")
-                        
-            if guardrail_activated== "To Mcp Guardrail":
-                print("🔀 Redireccionando a Agente MCP ")
-                print(f"Razon de redireccion: { e.guardrail_result.output.output_info.reasoning} \n\n")
-                current_agent=_get_agent_by_name(request.app, "MCP Agent")
-                state["context"].tripwired_trigered_reason= e.guardrail_result.output.output_info.reasoning
-                try:
-                    result = await Runner.run(current_agent, state["input_items"], context=state["context"])
-                except InputGuardrailTripwireTriggered as e:
-                    if guardrail_activated== "Basic Relevance Check":
-                        print(f"⚠️ Tripwire activado en el input, razon de guardarailes: { e.guardrail_result.output.output_info.reasoning}")
-                        railing_agent = _get_agent_by_name(request.app, "Railing Agent")
-                        state["context"].tripwired_trigered_reason = e.guardrail_result.output.output_info.reasoning
-                        result = await Runner.run(railing_agent,state["input_items"], context=state["context"])
-                
-            elif guardrail_activated== "To Package Analyst Guardrail":
-                print("🔀 Redireccionando a Agente Package Analyst ")
-                print(f"Razon de redireccion: { e.guardrail_result.output.output_info.reasoning} \n\n")
-                current_agent=_get_agent_by_name(request.app, "Package Analysis Agent")
-                state["context"].tripwired_trigered_reason= e.guardrail_result.output.output_info.reasoning
-                try:
-                    result = await Runner.run(current_agent, state["input_items"], context=state["context"])
-                except InputGuardrailTripwireTriggered as e:
-                    if guardrail_activated== "Basic Relevance Check":
-                        print(f"⚠️ Tripwire activado en el input, razon de guardarailes: { e.guardrail_result.output.output_info.reasoning}")
-                        railing_agent = _get_agent_by_name(request.app, "Railing Agent")
-                        state["context"].tripwired_trigered_reason = e.guardrail_result.output.output_info.reasoning
-                        result = await Runner.run(railing_agent,state["input_items"], context=state["context"])
-                
-            elif guardrail_activated== "Basic Relevance Check":
-                print(f"⚠️ Tripwire activado en el input, razon de guardarailes: { e.guardrail_result.output.output_info.reasoning}")
-                state["context"].tripwired_trigered_reason= e.guardrail_result.output.output_info.reasoning
-                try:
-                    print("🔀 Redireccionando a Railing Agent")
-                    result = await Runner.run(railing_agent, state["input_items"], context=state["context"])
-                except OutputGuardrailTripwireTriggered as e:
-                    railing_agent = _get_agent_by_name(request.app, "Railing Agent")
-                    print(f"⚠️ Tripwire activado en el output, razon de guardarailes: { e.guardrail_result.output.output_info.reasoning}")
-                    state["context"].tripwired_trigered_reason = e.guardrail_result.output.output_info.reasoning
-                    result = await Runner.run(railing_agent,state["input_items"], context=state["context"])
-                
-        except OutputGuardrailTripwireTriggered as e:
-            railing_agent = _get_agent_by_name(request.app, "Railing Agent")
-            print(f"⚠️ Tripwire activado en el output, razon de guardarailes: { e.guardrail_result.output.output_info.reasoning}")
-            state["context"].tripwired_trigered_reason = e.guardrail_result.output.output_info.reasoning
-            result = await Runner.run(railing_agent,state["input_items"], context=state["context"])
+        """        
+        result = await run_sdk(request.app, state, current_agent)
             
         current_agent=result._last_agent
 
@@ -511,7 +524,7 @@ async def whatsapp_webhook(request: Request):
                     text = content[0].text if isinstance(content, list) and content else str(content)
                     response_dict = json.loads(text)
                     response_text = response_dict.get("response")
-                    print(f"📤 Respuesta del {current_agent.name}: {response_text}")
+                    print(f"📤 Respuesta del {current_agent.name}: {response_text}")  
 
                 elif isinstance(item, HandoffOutputItem):
                     current_agent = item.target_agent
