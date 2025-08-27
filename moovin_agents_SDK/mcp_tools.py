@@ -170,6 +170,7 @@ def Make_package_damaged_tool(mysql_pool, tools_pool):
         last_status = str(last_event.get("status", "")).strip().upper()
         last_date_str = last_event.get("dateUser")
         last_dt = _parse_date_cr(last_date_str)
+        print (f"Último estado del paquete: {last_status} | Fecha: {last_date_str} | Fecha parseada: {last_dt}")
         now_cr = datetime.now(CR_TZ)
 
         if last_status not in DELIVERED_STATES:
@@ -271,7 +272,11 @@ def Make_send_delivery_address_requested_tool():
                             print(f"confirmation was not found in context")
                         return {
                             "status": "Success, message with ubication in ubication format was sent to user",
-                            "address pre info": address
+                            "address pre info": address,
+                            "location_data":{
+                                "latitude":lat,
+                                "longitude":lng
+                            }
                         }
         except Exception as e:
             print(f"❌ Error al enviar la direccion al usuario: {e}")

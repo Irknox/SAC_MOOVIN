@@ -142,7 +142,6 @@ def _normalize_contexto(val: Any) -> Dict:
             val = str(val)
 
     obj = val
-    # Intenta hasta 2 parseos por si está doblemente serializado
     for _ in range(2):
         if isinstance(obj, str):
             s = obj.strip()
@@ -594,31 +593,36 @@ async def get_users_last_messages(pool):
     """
     Obtiene el último mensaje de cada usuario en la tabla sac_agent_memory,
     basado en la fecha más reciente. Devuelve una lista de dicts.
+    Solo considera registros desde 2025-08-25 en adelante.
     """
+    cutoff_str = "2025-08-25 00:00:00"
+
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
-            # Paso 1: obtener los IDs de los últimos registros de cada usuario
             await cur.execute("""
-                SELECT MAX(id) as id
+                SELECT MAX(id) AS id
                 FROM sac_agent_memory
+                WHERE fecha >= %s
                 GROUP BY user_id
-                LIMIT 50
-            """)
+                LIMIT 30
+            """, (cutoff_str,))
             ids = await cur.fetchall()
 
             if not ids:
                 return []
 
-            # Paso 2: obtener los registros completos para esos IDs
             id_list = tuple(row["id"] for row in ids)
             in_clause = ",".join(["%s"] * len(id_list))
 
             await cur.execute(f"""
-                SELECT * FROM sac_agent_memory
+                SELECT * 
+                FROM sac_agent_memory
                 WHERE id IN ({in_clause})
                 ORDER BY fecha DESC
             """, id_list)
+
             return await cur.fetchall()
+
 
 async def get_last_messages_by_user(pool, user_id: str, limit: int, last_id: int = None):
     """
@@ -626,25 +630,30 @@ async def get_last_messages_by_user(pool, user_id: str, limit: int, last_id: int
     Si se proporciona `last_id`, solo devuelve mensajes con `id` < `last_id`.
     Utiliza subconsulta por IDs para evitar problemas de memoria (buffer).
     """
+    cutoff_str = "2025-08-25 00:00:00"
+
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
-            # Paso 1: obtener los IDs de los mensajes filtrados
+            # Paso 1: obtener los IDs de los mensajes filtrados (desde 25/08/2025 en adelante)
             if last_id:
                 await cur.execute("""
                     SELECT id
                     FROM sac_agent_memory
-                    WHERE user_id = %s AND id < %s
+                    WHERE user_id = %s
+                      AND fecha >= %s
+                      AND id < %s
                     ORDER BY fecha DESC
                     LIMIT %s
-                """, (user_id, last_id, limit))
+                """, (user_id, cutoff_str, last_id, limit))
             else:
                 await cur.execute("""
                     SELECT id
                     FROM sac_agent_memory
                     WHERE user_id = %s
+                      AND fecha >= %s
                     ORDER BY fecha DESC
                     LIMIT %s
-                """, (user_id, limit))
+                """, (user_id, cutoff_str, limit))
 
             rows = await cur.fetchall()
             if not rows:
@@ -666,6 +675,7 @@ async def get_last_messages_by_user(pool, user_id: str, limit: int, last_id: int
             results.sort(key=lambda x: x["fecha"], reverse=True)
 
             return results
+
 
 async def get_last_state(pool, user_id):
     async with pool.acquire() as conn:

@@ -4,8 +4,11 @@ import os
 import psycopg2
 from openai import OpenAI
 from psycopg2.extras import Json
+from dotenv import load_dotenv
 
 client = OpenAI()
+
+load_dotenv()
 
 
 async def resume_memorie_AI(client, transcript: str, lang="es") -> str:
@@ -194,7 +197,7 @@ def Make_send_current_delivery_address_tool(tools_pool):
 
         if phone_dueño.strip().lower() != phone.strip().lower():
             print(f"🟠 [WARNING] Teléfono no coincide. Proporcionado: {phone}, Dueño: {phone_dueño}")
-            return {"error": "El teléfono proporcionado no coincide con el dueño del paquete."}
+            return {"error": "El teléfono proporcionado no coincide con el dueño del paquete, solicita al usuario el telefono correcto"}
         
         delivery_address= await get_delivery_address(tools_pool,enterprise_code=package)
         lat=delivery_address.get("latitude",None)
@@ -218,7 +221,11 @@ def Make_send_current_delivery_address_tool(tools_pool):
                         return {
                             "status": "Success",
                             "reason":" Se envio el mensaje al usuario con la ubicacion en formato de Whatsapp",
-                            "delivery_address":address
+                            "delivery_address":address,
+                            "location_data":{
+                                "latitude":lat,
+                                "longitude":lng,
+                            }
                         }
                     else:
                         return {

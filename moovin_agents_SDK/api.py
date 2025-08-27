@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any, Literal,Tuple
 import os
 import tempfile
 import requests
-from handlers.main_handler import get_msgs_from_last_states, save_message, get_user_env, get_users_last_messages, get_last_messages_by_user, save_img_data, reverse_geocode_osm
+from handlers.main_handler import save_message, get_user_env, get_users_last_messages, get_last_messages_by_user, save_img_data, reverse_geocode_osm
 from config import create_mysql_pool, create_tools_pool
 from main import build_agents, MoovinAgentContext
 from agents import (Runner, MessageOutputItem, HandoffOutputItem, InputGuardrailTripwireTriggered,RunContextWrapper,OutputGuardrailTripwireTriggered)
@@ -22,6 +22,9 @@ import asyncio
 import redis.asyncio as redis
 from handlers.redis_handler import RedisSession, SESSION_IDLE_SECONDS
 
+from zoneinfo import ZoneInfo
+now_cr = datetime.now(ZoneInfo("America/Costa_Rica")).isoformat()
+
 image_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 location_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 
@@ -29,6 +32,29 @@ load_dotenv()
 client = OpenAI()
 
 ##----------------------------Funciones Auxiliares----------------------------##
+
+
+def _load_initial_prompts() -> dict:
+    """
+    Lee los .txt una sola vez al iniciar y retorna un dict con todos los prompts.
+    """
+    base_dir = os.path.join(os.path.dirname(__file__), "prompts")
+    def read(name: str) -> str:
+        path = os.path.join(base_dir, name)
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    return {
+        "General Prompt":           read("general_prompt.txt"),
+        "Package Analyst Agent":          read("package_analyst.txt"),
+        "General Agent":            read("general_agent.txt"),
+        "MCP Agent":                read("mcp_agent.txt"),
+        "Railing Agent":            read("railing_agent.txt"),
+        "Input":   read("input_guardrail_prompt.txt"),
+        "Output":  read("output_guardrail_prompt.txt"),
+    }
+    
+    
 def save_base64_audio(base64_string: str, suffix: str = ".ogg") -> str:
     """
     Guarda el audio base64 como archivo binario (.ogg por defecto).
@@ -84,7 +110,13 @@ async def build_state(request: Request, user_id: str, user_name: str, user_messa
                 restored_context.imgs_ids = img_data_ids
             if location_data:
                 restored_context.location_sent=location_data or {}
-            restored_context.tripwired_trigered_reason=""
+            for field in [
+                "input_tripwired_trigered_reason",
+                "output_tripwired_trigered_reason",
+                "handoff_from",
+                "handoff_to",
+                "handoff_reason"]:
+                setattr(restored_context, field, "")
             state = {
                 "context": restored_context,
                 "input_items": state.get("input_items", []),
@@ -133,15 +165,19 @@ async def send_text_to_whatsapp(user_id: str, user_message: str, response_text: 
         print("❌ Error al enviar mensaje a WhatsApp:", e)
         return None
 
-async def persist_session_to_mysql(mysql_pool, cid: str, session_obj: dict):
-    import json
+async def persist_session_to_mysql(app, cid: str, session_obj: dict):
+    mysql_pool = app.state.mysql_pool
+    redis_session=app.state.redis_session
+
 
     state = session_obj.get("state", {}) or {}
     # Normaliza context si es Pydantic
     ctx = state.get("context")
     if hasattr(ctx, "model_dump"):
         state["context"] = ctx.model_dump()
-
+        
+    
+    state["input_items"]=await redis_session.get_audit_items(cid)
     input_items = state.get("input_items", []) or []
 
     def extract_text_from_item(item: dict) -> str | None:
@@ -196,7 +232,6 @@ async def persist_session_to_mysql(mysql_pool, cid: str, session_obj: dict):
 
 async def session_flush_worker(app):
     redis_session: RedisSession = app.state.redis_session
-    mysql_pool = app.state.mysql_pool
     while True:
         try:
             cids = await redis_session.due_sessions()
@@ -205,9 +240,13 @@ async def session_flush_worker(app):
                 if not session_obj:
                     continue
                 try:
-                    await persist_session_to_mysql(mysql_pool, cid, session_obj)
+                    await persist_session_to_mysql(app, cid, session_obj)
+                    "Se intenta guardara la memoria"
                 finally:
+                    await redis_session.clear_audit_items(cid)
                     await redis_session.delete_session(cid)
+
+                    print(f"Se limpio la memoria del usuario {cid}")
         except Exception as e:
             print(f"[flush_worker] error: {e}")
         await asyncio.sleep(30)  # frecuencia de barrido
@@ -233,12 +272,13 @@ async def lifespan(app: FastAPI):
     try:
         mysql_pool = await create_mysql_pool()
         tools_pool = await create_tools_pool()
-
-        general_agent, package_analysis_agent, mcp_agent, railing_agent ,create_initial_context = await build_agents(tools_pool,mysql_pool)
-       
         
+        app.state.prompts = _load_initial_prompts()
+        general_agent, package_analysis_agent, mcp_agent, railing_agent ,create_initial_context = await build_agents(tools_pool,mysql_pool,app.state.prompts)
         app.state.mysql_pool = mysql_pool
         app.state.tools_pool = tools_pool
+        
+        
         app.state.agents = {
             mcp_agent.name: mcp_agent,
             general_agent.name: general_agent,
@@ -247,10 +287,7 @@ async def lifespan(app: FastAPI):
             
         }
         app.state.create_initial_context = create_initial_context
-
-        
         REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
-
         app.state.redis = redis.from_url(
             REDIS_URL,
             encoding="utf-8",
@@ -343,20 +380,30 @@ def _extract_guardrail_info(exc) -> Tuple[str, str, Optional[str], Optional[bool
     print (f"Guardarail activado: {guardrail_name}, reasoning: {reasoning}, Agente correcto:{correct_agent}")
     return guardrail_name, reasoning, correct_agent, passed
 
-async def run_sdk(app, state, start_agent, max_hops: int = 3):
+async def run_sdk(app, user_id, state, start_agent, max_hops: int = 3):
     """
     Ejecuta el SDK con ruteo guiado por guardrails y un fallback a el Railing Agent
     """
     active_agent = start_agent
     items = state.get("input_items", [])
     ctx = state["context"]
+    redis_session=app.state.redis_session
 
     for _ in range(max_hops):
         try:
             return await Runner.run(active_agent, items, context=ctx)
         except InputGuardrailTripwireTriggered as exc_in:
             guardrail_name, reasoning, correct_agent, passed = _extract_guardrail_info(exc_in)
-            ctx.tripwired_trigered_reason = reasoning
+            ctx.input_tripwired_trigered_reason = reasoning
+        
+            audit_item={
+                "action":"tripwire_triggered",
+                "guardrail":guardrail_name,
+                "reason":reasoning
+            }
+            
+            await redis_session.append_audit_items(user_id,audit_item)
+            
             if correct_agent:
                 print(f"🔀 Redireccionando a {correct_agent}")
             next_name = (correct_agent or "Railing Agent").strip()
@@ -367,7 +414,16 @@ async def run_sdk(app, state, start_agent, max_hops: int = 3):
             continue
         except OutputGuardrailTripwireTriggered as exc_out:
             guardrail_name, reasoning, correct_agent, passed = _extract_guardrail_info(exc_out)
-            ctx.tripwired_trigered_reason = reasoning
+            ctx.output_tripwired_trigered_reason = reasoning
+            
+            audit_item={
+                "action":"tripwire_triggered",
+                "guardrail":guardrail_name,
+                "reason":reasoning
+            }
+            await redis_session.append_audit_items(user_id,audit_item)
+            
+            
             active_agent = _get_agent_by_name(app, "Railing Agent")
             continue
     return await Runner.run(_get_agent_by_name(app, "Railing Agent"), items, context=ctx)
@@ -416,7 +472,6 @@ async def whatsapp_webhook(request: Request):
                         }
                 },
                 "last_seen": now,
-                
             }
 
         ## ------------------------Procesamiento de audio------------------------ ##
@@ -487,7 +542,6 @@ async def whatsapp_webhook(request: Request):
             f"📥 Recibido mensaje de: {user_name} ({user_id}) \n"
             f"✉️ Mensaje del usuario: {user_message}\n"
         )          
-        
 
         ##------------------Contexto y estado------------------##        
         state = await build_state(request, user_id, user_name, user_message, img_data_ids, location_data)
@@ -496,9 +550,13 @@ async def whatsapp_webhook(request: Request):
         
         await redis_session.upsert_state(user_id, state)
         await redis_session.append_log(user_id, role="user", content=user_message)
-
-
-        store.save(user_id, state)
+        
+        user_message_for_audit ={
+            "role":"user",
+            "content":user_message,
+            "date":now_cr,
+        }
+        await redis_session.append_audit_items(user_id, user_message_for_audit)
 
         current_agent = _get_agent_by_name(request.app, state["current_agent"])
         # if current_agent.name == "Railing Agent":
@@ -508,13 +566,12 @@ async def whatsapp_webhook(request: Request):
         
         #Fuerzo la entrada con General agent, eliminando esto se resumira con el ultimo agente que se interactuo
         current_agent=_get_agent_by_name(request.app, "General Agent")
-        
+        previous_count  = len(state.get("input_items", []))
         ##------------------Ejecucion de SDK------------------##     
         """
         Ejecucion del agente actual con el mensaje del usuario y contexto reconstruido.
-        """        
-        result = await run_sdk(request.app, state, current_agent)
-            
+        """   
+        result = await run_sdk(request.app, user_id, state, current_agent)
         current_agent=result._last_agent
 
         for item in result.new_items:
@@ -533,13 +590,38 @@ async def whatsapp_webhook(request: Request):
                 print("⚠️ Error al procesar item:", e)
 
         ##------------------Actualizar estado despues de ejecucion------------------##
-        state["input_items"] = result.to_input_list()
+        # --- estado oficial para el agente ---
+        full_list = result.to_input_list()
+        state["input_items"] = full_list
         state["current_agent"] = current_agent.name
-        
         await redis_session.upsert_state(user_id, state)
         await redis_session.append_log(user_id, role="assistant", content=response_text)
-        
-        # store.save(user_id, state)
+
+        # --- delta sencillo por longitud ---
+        # si por algún motivo previous_count es mayor que el nuevo largo, lo reponemos a 0
+        if previous_count > len(full_list):
+            previous_count = 0
+
+        new_slice = full_list[previous_count:]
+
+        # --- filtra "eco" de usuario (user sin date) ---
+        def is_user_echo(item):
+            return isinstance(item, dict) and item.get("role") == "user" and not item.get("date")
+
+        delta_items = [it for it in new_slice if not is_user_echo(it)]
+
+        # --- guarda SOLO el delta en audit_items ---
+        if delta_items:
+            await redis_session.append_audit_items(user_id, delta_items)
+
+        # --- agrega la vista humana del asistente (con fecha y nombre del agente) ---
+        agent_message_human = {
+            "role": "assistant",
+            "content": response_text,
+            "agent": current_agent.name,
+            "date": now_cr,  # tu timestamp en CR
+        }
+        await redis_session.append_audit_items(user_id, agent_message_human)
         
         ##------------------Enviar respuesta a WhatsApp------------------##
         await send_text_to_whatsapp(user_id, user_message, response_text, message_id)
@@ -563,27 +645,22 @@ async def whatsapp_webhook(request: Request):
         return {"status": "ok", "response": response_text}
 
     except Exception as e:
-        print("❌ Error procesando mensaje de WhatsApp:", e)
+        print("❌ Error procesando mensaje de WhatsApp:",e)
         traceback.print_exc()
         return {"error": str(e)}
 
-@app.post("/ManagerUI")
-async def manager_ui(request: Request):
-    try:
-        payload = await request.json()
-        print(f'payload obtenido {payload}' )
-        if payload.get('request') == 'UsersLastMessages':
-            agent_history = await get_users_last_messages(request.app.state.mysql_pool)
-            return {"history": agent_history}
-        elif payload.get('request') == 'UserHistory':
-            request_body = payload.get('request_body')
-            user_id=request_body.get('user')
-            range=request_body.get('range')
-            last_message_id=request_body.get('last_id')
-            agent_history = await get_last_messages_by_user(request.app.state.mysql_pool, user_id, limit=range,last_id=last_message_id)
-            return {"history": agent_history}
-        else:
-            return {"error": "Invalid request type."}
-    except Exception as e:
-        print("❌ Error en ManagerUI:", e)
-        return {"error": str(e)}
+
+@app.post("/promptUpdate")
+async def update_prompt_executed(request: Request):
+    payload = await request.json()
+    if (payload.get("request")=="promptUpdate"):
+        body=payload.get("body")
+        prompt_to_update=body.get("prompt")
+        new_prompt=body.get("content")
+        try:
+            request.app.state.prompts[prompt_to_update]=new_prompt
+            print(f"Prompt actualizado")
+        except Exception as e:
+            print(f"error al cambiar el prompt{e}")
+        
+    return False
