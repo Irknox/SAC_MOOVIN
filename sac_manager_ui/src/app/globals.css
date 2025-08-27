@@ -1,14 +1,10 @@
 @import "tailwindcss";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@import 'flowbite';
 
 
 :root {
   --background: #dadada;
   --foreground: #171717;
+  --color-selected: #00071aff;
 }
 
 
@@ -16,8 +12,12 @@
   :root {
     --background: #e3e3e4;
     --foreground: #ededed;
+    --color-selected: #00071aff;
+    --color-primary_blue: #000b24ff;
+    --color-primary_hover: #0b39804f;
   }
 }
+
 
 body {
   background: var(--background);
@@ -25,3 +25,12 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+
+.no-scrollbar {
+  overflow: auto;                 /* o overflow-y:auto / overflow-x:auto */
+  -ms-overflow-style: none;       /* IE y Edge Legacy */
+  scrollbar-width: none;          /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar { /* Chrome, Safari, Electron */
+  display: none;
+}

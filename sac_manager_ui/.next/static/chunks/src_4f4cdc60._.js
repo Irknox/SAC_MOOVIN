@@ -11,7 +11,7 @@ __turbopack_context__.s({
 });
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$axios$2f$lib$2f$axios$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/axios/lib/axios.js [app-client] (ecmascript)");
 ;
-const API_URL = "http://localhost:8000/ManagerUI";
+const API_URL = "http://localhost:7575/ManagerUI";
 const fetchHistoryPreview = async ()=>{
     try {
         const response = await __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$axios$2f$lib$2f$axios$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"].post(API_URL, {
@@ -115,91 +115,75 @@ const ConversationsTab = ({ onSelectUser, selectedUserId })=>{
                 width: "100%",
                 backgroundColor: "#000b24ff"
             },
-            children: [
-                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("h2", {
-                    style: {
-                        textAlign: "center",
-                        height: "35px",
-                        alignContent: "center",
-                        fontWeight: "bold",
-                        fontSize: "large",
-                        backgroundColor: "#000b24ff",
-                        borderBottom: "3px solid #ac302c"
-                    },
-                    children: "Chats"
-                }, void 0, false, {
-                    fileName: "[project]/src/components/ConversationsTab.jsx",
-                    lineNumber: 56,
-                    columnNumber: 9
-                }, this),
-                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                    style: {
-                        listStyle: "none"
-                    },
-                    children: lastMessages.map((entry)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("li", {
-                            style: {
-                                padding: "2px",
-                                cursor: "pointer",
-                                background: selectedUserId === entry.user_id ? "#010716ff" : "#000b24ff",
-                                borderBottom: "2px solid #0b39804f",
-                                height: "5.25rem",
-                                display: "flex",
-                                flexDirection: "column",
-                                justifyContent: "space-evenly",
-                                paddingLeft: "8px"
-                            },
-                            onClick: ()=>onSelectUser(entry.user_id),
-                            children: [
-                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("strong", {
-                                    style: {
-                                        fontSize: 14
-                                    },
-                                    children: entry.contexto.context.user_env.username || entry.user_id
-                                }, void 0, false, {
-                                    fileName: "[project]/src/components/ConversationsTab.jsx",
-                                    lineNumber: 87,
-                                    columnNumber: 15
-                                }, this),
-                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                    style: {
-                                        fontSize: 11,
-                                        display: "flex",
-                                        alignSelf: "center"
-                                    },
-                                    children: entry.mensaje_entrante || entry.mensaje_saliente
-                                }, void 0, false, {
-                                    fileName: "[project]/src/components/ConversationsTab.jsx",
-                                    lineNumber: 90,
-                                    columnNumber: 15
-                                }, this),
-                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                    style: {
-                                        fontSize: 9,
-                                        textAlign: "right"
-                                    },
-                                    children: [
-                                        "Recibido:",
-                                        " ",
-                                        new Date(new Date(entry.fecha).getTime() - 6 * 60 * 60 * 1000).toLocaleString()
-                                    ]
-                                }, void 0, true, {
-                                    fileName: "[project]/src/components/ConversationsTab.jsx",
-                                    lineNumber: 95,
-                                    columnNumber: 15
-                                }, this)
-                            ]
-                        }, entry.user_id, true, {
-                            fileName: "[project]/src/components/ConversationsTab.jsx",
-                            lineNumber: 71,
-                            columnNumber: 13
-                        }, this))
-                }, void 0, false, {
-                    fileName: "[project]/src/components/ConversationsTab.jsx",
-                    lineNumber: 69,
-                    columnNumber: 9
-                }, this)
-            ]
-        }, void 0, true, {
+            children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                style: {
+                    listStyle: "none"
+                },
+                children: lastMessages.map((entry)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("li", {
+                        style: {
+                            padding: "2px",
+                            cursor: "pointer",
+                            background: selectedUserId === entry.user_id ? "#010716ff" : "#000b24ff",
+                            borderBottom: "2px solid #0b39804f",
+                            height: "5.25rem",
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "space-evenly",
+                            paddingLeft: "8px"
+                        },
+                        onClick: ()=>onSelectUser(entry.user_id),
+                        children: [
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("strong", {
+                                style: {
+                                    fontSize: 14
+                                },
+                                children: entry.contexto.context.user_env.username || entry.user_id
+                            }, void 0, false, {
+                                fileName: "[project]/src/components/ConversationsTab.jsx",
+                                lineNumber: 74,
+                                columnNumber: 15
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                style: {
+                                    fontSize: 11,
+                                    display: "flex",
+                                    alignSelf: "center",
+                                    height: "2.5rem",
+                                    overflow: "hidden"
+                                },
+                                children: entry.mensaje_entrante || entry.mensaje_saliente
+                            }, void 0, false, {
+                                fileName: "[project]/src/components/ConversationsTab.jsx",
+                                lineNumber: 77,
+                                columnNumber: 15
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                style: {
+                                    fontSize: 9,
+                                    textAlign: "right"
+                                },
+                                children: [
+                                    "Recibido:",
+                                    " ",
+                                    new Date(new Date(entry.fecha).getTime() - 6 * 60 * 60 * 1000).toLocaleString()
+                                ]
+                            }, void 0, true, {
+                                fileName: "[project]/src/components/ConversationsTab.jsx",
+                                lineNumber: 82,
+                                columnNumber: 15
+                            }, this)
+                        ]
+                    }, entry.user_id, true, {
+                        fileName: "[project]/src/components/ConversationsTab.jsx",
+                        lineNumber: 58,
+                        columnNumber: 13
+                    }, this))
+            }, void 0, false, {
+                fileName: "[project]/src/components/ConversationsTab.jsx",
+                lineNumber: 56,
+                columnNumber: 9
+            }, this)
+        }, void 0, false, {
             fileName: "[project]/src/components/ConversationsTab.jsx",
             lineNumber: 48,
             columnNumber: 7
@@ -226,106 +210,162 @@ __turbopack_context__.s({
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/dist/compiled/react/jsx-dev-runtime.js [app-client] (ecmascript)");
 ;
 const ToolOutput = ({ tool, output })=>{
-    let parsedOutput = {};
-    console.log("Tipo de output usado:", typeof output);
-    parsedOutput = JSON.parse(output);
-    if (tool === "get_package_timeline" && parsedOutput.timeline) {
+    let parsedOutput = output;
+    // Si el output es un string, intenta convertirlo en JSON válido
+    if (typeof output === "string") {
+        try {
+            // Reemplaza comillas simples por dobles y None por null
+            const fixedOutput = output.replace(/None/g, "null").replace(/'/g, '"');
+            parsedOutput = JSON.parse(fixedOutput);
+            console.log("Output convertido a JSON:", parsedOutput);
+        } catch (e) {
+            console.error("Error al convertir el output en JSON:", e);
+            parsedOutput = {
+                error: "No se pudo convertir el output en JSON",
+                raw: output
+            };
+        }
+    }
+    if (tool === "get_package_timeline") {
         return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
             className: "flex-col z-1000 max-h-auto w-full rounded bg-gray-900 text-gray-200 border border-gray-700",
-            children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("table", {
-                style: {
-                    fontSize: "smaller"
-                },
-                className: "w-full text-sm text-left",
-                children: [
-                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("thead", {
-                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tr", {
-                            className: "border-b border-gray-600",
+            children: [
+                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                    children: [
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                             children: [
-                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
-                                    className: "px-1 py-1",
-                                    children: "FECHA"
-                                }, void 0, false, {
-                                    fileName: "[project]/src/components/ToolOutput.jsx",
-                                    lineNumber: 16,
-                                    columnNumber: 15
-                                }, this),
-                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
-                                    className: "px-1 py-1",
-                                    children: "ESTADO"
-                                }, void 0, false, {
-                                    fileName: "[project]/src/components/ToolOutput.jsx",
-                                    lineNumber: 17,
-                                    columnNumber: 15
-                                }, this)
+                                "Nombre en paquete: ",
+                                parsedOutput["Dueño del Paquete"]
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/ToolOutput.jsx",
-                            lineNumber: 15,
-                            columnNumber: 13
+                            lineNumber: 24,
+                            columnNumber: 11
+                        }, this),
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                            children: [
+                                "Telefono en paquete: ",
+                                parsedOutput["Numero de Telefono"]
+                            ]
+                        }, void 0, true, {
+                            fileName: "[project]/src/components/ToolOutput.jsx",
+                            lineNumber: 25,
+                            columnNumber: 11
+                        }, this),
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                            children: [
+                                "Tienda donde se compro: ",
+                                parsedOutput["Tienda donde se compro el paquete"] || "Tienda Desconocida",
+                                "  "
+                            ]
+                        }, void 0, true, {
+                            fileName: "[project]/src/components/ToolOutput.jsx",
+                            lineNumber: 26,
+                            columnNumber: 11
                         }, this)
-                    }, void 0, false, {
-                        fileName: "[project]/src/components/ToolOutput.jsx",
-                        lineNumber: 14,
-                        columnNumber: 11
-                    }, this),
-                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tbody", {
-                        children: parsedOutput.timeline.map((item, idx)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tr", {
-                                className: "border-b border-gray-800 hover:bg-gray-800",
+                    ]
+                }, void 0, true, {
+                    fileName: "[project]/src/components/ToolOutput.jsx",
+                    lineNumber: 23,
+                    columnNumber: 9
+                }, this),
+                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("table", {
+                    style: {
+                        fontSize: "smaller"
+                    },
+                    className: "w-full text-sm text-left",
+                    children: [
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("thead", {
+                            children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tr", {
+                                className: "border-b border-gray-600",
                                 children: [
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
-                                        className: "px-2 py-1 whitespace-nowrap",
-                                        children: item.dateUser
+                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
+                                        className: "px-1 py-1",
+                                        children: "FECHA"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/ToolOutput.jsx",
-                                        lineNumber: 26,
-                                        columnNumber: 17
+                                        lineNumber: 35,
+                                        columnNumber: 15
                                     }, this),
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
-                                        className: "px-2 py-1 whitespace-nowrap",
-                                        children: item.status
+                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
+                                        className: "px-1 py-1",
+                                        children: "ESTADO"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/ToolOutput.jsx",
-                                        lineNumber: 27,
-                                        columnNumber: 17
+                                        lineNumber: 36,
+                                        columnNumber: 15
                                     }, this)
                                 ]
-                            }, idx, true, {
+                            }, void 0, true, {
                                 fileName: "[project]/src/components/ToolOutput.jsx",
-                                lineNumber: 22,
-                                columnNumber: 15
-                            }, this))
-                    }, void 0, false, {
-                        fileName: "[project]/src/components/ToolOutput.jsx",
-                        lineNumber: 20,
-                        columnNumber: 11
-                    }, this)
-                ]
-            }, void 0, true, {
+                                lineNumber: 34,
+                                columnNumber: 13
+                            }, this)
+                        }, void 0, false, {
+                            fileName: "[project]/src/components/ToolOutput.jsx",
+                            lineNumber: 33,
+                            columnNumber: 11
+                        }, this),
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tbody", {
+                            children: parsedOutput.timeline.map((item, idx)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tr", {
+                                    className: "border-b border-gray-800 hover:bg-gray-800",
+                                    children: [
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
+                                            className: "px-2 py-1 whitespace-nowrap",
+                                            children: item.dateUser
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/ToolOutput.jsx",
+                                            lineNumber: 45,
+                                            columnNumber: 17
+                                        }, this),
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
+                                            className: "px-2 py-1 whitespace-nowrap",
+                                            children: item.status
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/ToolOutput.jsx",
+                                            lineNumber: 46,
+                                            columnNumber: 17
+                                        }, this)
+                                    ]
+                                }, idx, true, {
+                                    fileName: "[project]/src/components/ToolOutput.jsx",
+                                    lineNumber: 41,
+                                    columnNumber: 15
+                                }, this))
+                        }, void 0, false, {
+                            fileName: "[project]/src/components/ToolOutput.jsx",
+                            lineNumber: 39,
+                            columnNumber: 11
+                        }, this)
+                    ]
+                }, void 0, true, {
+                    fileName: "[project]/src/components/ToolOutput.jsx",
+                    lineNumber: 29,
+                    columnNumber: 9
+                }, this)
+            ]
+        }, void 0, true, {
+            fileName: "[project]/src/components/ToolOutput.jsx",
+            lineNumber: 22,
+            columnNumber: 7
+        }, this);
+    } else {
+        return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+            className: "max-h-100 max-w-auto bg-gray-900 p-2 text-gray-200 border border-gray-700 text-xs",
+            children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("pre", {
+                children: "Vista de Herramienta no disponible aun"
+            }, void 0, false, {
                 fileName: "[project]/src/components/ToolOutput.jsx",
-                lineNumber: 10,
+                lineNumber: 57,
                 columnNumber: 9
             }, this)
         }, void 0, false, {
             fileName: "[project]/src/components/ToolOutput.jsx",
-            lineNumber: 9,
+            lineNumber: 56,
             columnNumber: 7
         }, this);
     }
-    return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-        className: "max-h-100 max-w-auto bg-gray-900 p-2 text-gray-200 border border-gray-700 text-xs",
-        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("pre", {
-            children: JSON.stringify(parsedOutput, null, 2)
-        }, void 0, false, {
-            fileName: "[project]/src/components/ToolOutput.jsx",
-            lineNumber: 38,
-            columnNumber: 7
-        }, this)
-    }, void 0, false, {
-        fileName: "[project]/src/components/ToolOutput.jsx",
-        lineNumber: 37,
-        columnNumber: 5
-    }, this);
+    "TURBOPACK unreachable";
 };
 _c = ToolOutput;
 const __TURBOPACK__default__export__ = ToolOutput;
@@ -363,7 +403,6 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
             } else {
                 label = `Tool: ${action.name}`;
                 const result = getToolOutput(action.call_id);
-                console.log("Herramienta usada:", action.name, "salida de la herramienta", result);
                 extra = result && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                     className: "relative",
                     children: [
@@ -374,7 +413,7 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                             children: "Ver resultado"
                         }, void 0, false, {
                             fileName: "[project]/src/components/AgentTimeline.jsx",
-                            lineNumber: 25,
+                            lineNumber: 24,
                             columnNumber: 13
                         }, this),
                         hoveredItem === index && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -384,18 +423,18 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                                 output: result
                             }, void 0, false, {
                                 fileName: "[project]/src/components/AgentTimeline.jsx",
-                                lineNumber: 34,
+                                lineNumber: 33,
                                 columnNumber: 17
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/src/components/AgentTimeline.jsx",
-                            lineNumber: 33,
+                            lineNumber: 32,
                             columnNumber: 15
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/AgentTimeline.jsx",
-                    lineNumber: 24,
+                    lineNumber: 23,
                     columnNumber: 11
                 }, this);
             }
@@ -411,7 +450,7 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                         children: "Ver respuesta"
                     }, void 0, false, {
                         fileName: "[project]/src/components/AgentTimeline.jsx",
-                        lineNumber: 44,
+                        lineNumber: 43,
                         columnNumber: 11
                     }, this),
                     hoveredItem === index && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -419,13 +458,13 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                         children: action.content?.[0]?.text
                     }, void 0, false, {
                         fileName: "[project]/src/components/AgentTimeline.jsx",
-                        lineNumber: 52,
+                        lineNumber: 51,
                         columnNumber: 13
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/components/AgentTimeline.jsx",
-                lineNumber: 43,
+                lineNumber: 42,
                 columnNumber: 9
             }, this);
         }
@@ -447,30 +486,30 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                                     d: "M20 4a2 2 0 0 0-2-2h-2V1a1 1 0 0 0-2 0v1h-3V1a1 1 0 0 0-2 0v1H6V1a1 1 0 0 0-2 0v1H2a2 2 0 0 0-2 2v2h20V4Z"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/AgentTimeline.jsx",
-                                    lineNumber: 71,
+                                    lineNumber: 70,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/src/components/AgentTimeline.jsx",
-                                lineNumber: 65,
+                                lineNumber: 64,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/src/components/AgentTimeline.jsx",
-                            lineNumber: 64,
+                            lineNumber: 63,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                             className: "hidden sm:flex w-full bg-gray-200 h-0.5 dark:bg-gray-700"
                         }, void 0, false, {
                             fileName: "[project]/src/components/AgentTimeline.jsx",
-                            lineNumber: 74,
+                            lineNumber: 73,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/AgentTimeline.jsx",
-                    lineNumber: 63,
+                    lineNumber: 62,
                     columnNumber: 9
                 }, this),
                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -481,20 +520,20 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                             children: label
                         }, void 0, false, {
                             fileName: "[project]/src/components/AgentTimeline.jsx",
-                            lineNumber: 77,
+                            lineNumber: 76,
                             columnNumber: 11
                         }, this),
                         extra
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/AgentTimeline.jsx",
-                    lineNumber: 76,
+                    lineNumber: 75,
                     columnNumber: 9
                 }, this)
             ]
         }, index, true, {
             fileName: "[project]/src/components/AgentTimeline.jsx",
-            lineNumber: 62,
+            lineNumber: 61,
             columnNumber: 7
         }, this);
     };
@@ -506,17 +545,17 @@ const AgentTimeline = ({ actions, getToolOutput })=>{
                 children: "No hay acciones del agente"
             }, void 0, false, {
                 fileName: "[project]/src/components/AgentTimeline.jsx",
-                lineNumber: 92,
+                lineNumber: 91,
                 columnNumber: 11
             }, this)
         }, void 0, false, {
             fileName: "[project]/src/components/AgentTimeline.jsx",
-            lineNumber: 88,
+            lineNumber: 87,
             columnNumber: 7
         }, this)
     }, void 0, false, {
         fileName: "[project]/src/components/AgentTimeline.jsx",
-        lineNumber: 87,
+        lineNumber: 86,
         columnNumber: 5
     }, this);
 };
@@ -545,35 +584,16 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$AgentTi
 var _s = __turbopack_context__.k.signature();
 ;
 ;
-const AgentResponseModal = ({ entry, onClose, msg_selected })=>{
+const AgentResponseModal = ({ ctx, entry, onClose, msg_selected })=>{
     _s();
-    const [parsedContext, setParsedContext] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])({});
     const [agentRun, setAgentRun] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])([]);
     const [hoveredItem, setHoveredItem] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(null);
-    const [inputItems, setInputItems] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])([]);
     if (!entry) return null;
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
         "AgentResponseModal.useEffect": ()=>{
             try {
-                const firstParse = JSON.parse(entry.contexto);
-                const raw = JSON.parse(firstParse);
-                setParsedContext(raw);
-                const items = raw.input_items;
-                const lastIndex = items.length - 1;
-                let startIndex = lastIndex - 1;
-                while(startIndex >= 0 && items[startIndex].role !== "user"){
-                    startIndex--;
-                }
-                const inputItems = startIndex >= 0 ? items.slice(startIndex, lastIndex + 1) : [
-                    items[lastIndex]
-                ];
-                setInputItems(inputItems);
-                const filteredItems = inputItems.filter({
-                    "AgentResponseModal.useEffect.filteredItems": (action)=>{
-                        return action.type === "function_call" || action.type === "message";
-                    }
-                }["AgentResponseModal.useEffect.filteredItems"]);
-                setAgentRun(filteredItems);
+                console.log("Entry en Modal:", entry, "Context:", ctx);
+                setAgentRun(entry.steps_taken);
             } catch (e) {
                 console.error("\u274C Error al parsear el contexto:", e);
             }
@@ -581,10 +601,10 @@ const AgentResponseModal = ({ entry, onClose, msg_selected })=>{
     }["AgentResponseModal.useEffect"], [
         entry
     ]);
-    const agent = parsedContext.current_agent || "Desconocido";
-    const userEnv = parsedContext.context?.user_env || {};
+    const agent = entry.responded_by || "General Agent";
+    const userEnv = ctx || {};
     const getToolOutput = (call_id)=>{
-        const outputObj = inputItems.find((item)=>item.type === "function_call_output" && item.call_id === call_id);
+        const outputObj = agentRun.find((item)=>item.type === "function_call_output" && item.call_id === call_id);
         if (!outputObj) return null;
         try {
             return JSON.stringify(typeof outputObj.output === "string" ? JSON.parse(outputObj.output.replace(/'/g, '"')) : outputObj.output, null, 2);
@@ -602,7 +622,7 @@ const AgentResponseModal = ({ entry, onClose, msg_selected })=>{
                     children: "Detalles del Proceso"
                 }, void 0, false, {
                     fileName: "[project]/src/components/AgentResponseModal.jsx",
-                    lineNumber: 65,
+                    lineNumber: 44,
                     columnNumber: 9
                 }, this),
                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -611,7 +631,7 @@ const AgentResponseModal = ({ entry, onClose, msg_selected })=>{
                     children: "✕"
                 }, void 0, false, {
                     fileName: "[project]/src/components/AgentResponseModal.jsx",
-                    lineNumber: 66,
+                    lineNumber: 45,
                     columnNumber: 9
                 }, this),
                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -625,7 +645,7 @@ const AgentResponseModal = ({ entry, onClose, msg_selected })=>{
                                     children: "Agente que respondió"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/AgentResponseModal.jsx",
-                                    lineNumber: 77,
+                                    lineNumber: 54,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -633,13 +653,13 @@ const AgentResponseModal = ({ entry, onClose, msg_selected })=>{
                                     children: agent
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/AgentResponseModal.jsx",
-                                    lineNumber: 78,
+                                    lineNumber: 55,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/AgentResponseModal.jsx",
-                            lineNumber: 76,
+                            lineNumber: 53,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -650,7 +670,7 @@ const AgentResponseModal = ({ entry, onClose, msg_selected })=>{
                                     children: "Acciones del Agente"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/AgentResponseModal.jsx",
-                                    lineNumber: 84,
+                                    lineNumber: 59,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$AgentTimeline$2e$jsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -658,13 +678,13 @@ const AgentResponseModal = ({ entry, onClose, msg_selected })=>{
                                     getToolOutput: getToolOutput
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/AgentResponseModal.jsx",
-                                    lineNumber: 87,
+                                    lineNumber: 62,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/AgentResponseModal.jsx",
-                            lineNumber: 81,
+                            lineNumber: 58,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -675,7 +695,7 @@ const AgentResponseModal = ({ entry, onClose, msg_selected })=>{
                                     children: "Contexto del Usuario"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/AgentResponseModal.jsx",
-                                    lineNumber: 93,
+                                    lineNumber: 66,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("pre", {
@@ -683,34 +703,34 @@ const AgentResponseModal = ({ entry, onClose, msg_selected })=>{
                                     children: JSON.stringify(userEnv, null, 2)
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/AgentResponseModal.jsx",
-                                    lineNumber: 96,
+                                    lineNumber: 69,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/AgentResponseModal.jsx",
-                            lineNumber: 90,
+                            lineNumber: 65,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/AgentResponseModal.jsx",
-                    lineNumber: 73,
+                    lineNumber: 52,
                     columnNumber: 9
                 }, this)
             ]
         }, void 0, true, {
             fileName: "[project]/src/components/AgentResponseModal.jsx",
-            lineNumber: 62,
+            lineNumber: 43,
             columnNumber: 7
         }, this)
     }, void 0, false, {
         fileName: "[project]/src/components/AgentResponseModal.jsx",
-        lineNumber: 61,
+        lineNumber: 42,
         columnNumber: 5
     }, this);
 };
-_s(AgentResponseModal, "8wm8HVKBLwtduzio2IuEvdZnK9c=");
+_s(AgentResponseModal, "iPjUTxLi72bYhUxNtGE6p1cQ+c4=");
 _c = AgentResponseModal;
 const __TURBOPACK__default__export__ = AgentResponseModal;
 var _c;
@@ -740,15 +760,80 @@ const Chat = ({ userId, style })=>{
     _s();
     const containerRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRef"])(null);
     const [selectedEntry, setSelectedEntry] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(null);
+    const [selectedContext, setSelectedContext] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(null);
     const [showModal, setShowModal] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
     const [msg_idx, setMsg_idx] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(null);
-    const [message_range, setMessage_range] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(20);
-    const [user_history, setUser_history] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])([]);
+    const [message_range, setMessage_range] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(10);
+    const [session_history, set_Session_history] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])([]);
+    const format_input_items = (input_items)=>{
+        const result = [];
+        let i = 0;
+        while(i < input_items.length){
+            if (input_items[i].role === "user") {
+                const user_message = input_items[i];
+                const steps_taken = [];
+                let agent_message = null;
+                let responded_by = "General Agent";
+                let j = i + 1;
+                // Busca hasta el siguiente mensaje del usuario
+                while(j < input_items.length){
+                    const item = input_items[j];
+                    if (item.role === "user") {
+                        break;
+                    }
+                    if (item.output && item.type === "function_call_output") {
+                        try {
+                            let output = JSON.parse(item.output);
+                            if (output.assistant) {
+                                responded_by = output.assistant;
+                            }
+                        } catch  {}
+                    }
+                    // Mensaje del agente
+                    if (item.role === "assistant" && item.type === "message") {
+                        agent_message = item;
+                    } else {
+                        steps_taken.push(item);
+                    }
+                    j++;
+                }
+                if (agent_message) {
+                    result.push({
+                        user_message,
+                        agent_message,
+                        steps_taken,
+                        responded_by
+                    });
+                    i = j;
+                } else {
+                    // Si no hay respuesta del agente, solo avanza
+                    i++;
+                }
+            } else {
+                i++;
+            }
+        }
+        return result;
+    };
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
         "Chat.useEffect": ()=>{
             (0, __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$services$2f$ManagerUI_service$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["fetchUserHistory"])(userId, message_range).then({
                 "Chat.useEffect": (data)=>{
-                    setUser_history(data.reverse());
+                    let session_history = [];
+                    data.forEach({
+                        "Chat.useEffect": (session)=>{
+                            let raw_entry = session.contexto;
+                            let entry = JSON.parse(raw_entry);
+                            let input_items = format_input_items(entry.input_items);
+                            session_history.push({
+                                id: session.id,
+                                context: entry.context,
+                                fecha: session.fecha,
+                                input_items
+                            });
+                        }
+                    }["Chat.useEffect"]);
+                    set_Session_history(session_history.reverse());
                 }
             }["Chat.useEffect"]);
         }
@@ -756,21 +841,22 @@ const Chat = ({ userId, style })=>{
         userId,
         message_range
     ]);
-    const handleAgentClick = (entry, idx)=>{
+    const handleAgentClick = (ctx, entry, idx)=>{
+        setSelectedContext(ctx);
         setSelectedEntry(entry);
         setMsg_idx(idx);
         setShowModal(true);
     };
     const loadMoreMessages = async ()=>{
-        if (user_history.length === 0) return;
-        const first_id = user_history[0].id;
+        if (session_history.length === 0) return;
+        const first_id = session_history[0].id;
         const container = containerRef.current;
         const previousScrollTop = container.scrollTop;
         const previousHeight = container.scrollHeight;
         const newMessages = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$services$2f$ManagerUI_service$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["fetchUserHistory"])(userId, message_range, first_id);
         if (newMessages.length > 0) {
             const reversedNew = newMessages.reverse();
-            setUser_history((prev)=>[
+            set_Session_history((prev)=>[
                     ...reversedNew,
                     ...prev
                 ]);
@@ -799,11 +885,11 @@ const Chat = ({ userId, style })=>{
             })["Chat.useEffect"];
         }
     }["Chat.useEffect"], [
-        user_history
+        session_history
     ]);
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
         "Chat.useEffect": ()=>{
-            if (user_history.length === 0) return;
+            if (session_history.length === 0) return;
             const container = containerRef.current;
             // Solo hacer scroll al fondo si el scroll ya estaba abajo o es primera carga
             const isInitialLoad = container.scrollTop === 0 || container.scrollTop === container.scrollHeight;
@@ -816,7 +902,7 @@ const Chat = ({ userId, style })=>{
             }
         }
     }["Chat.useEffect"], [
-        user_history.length === message_range
+        session_history.length === message_range
     ]); // se ejecuta solo cuando cambia el lote inicial
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
         ref: containerRef,
@@ -826,121 +912,128 @@ const Chat = ({ userId, style })=>{
         },
         className: "p-4 flex flex-col gap-4",
         children: [
-            user_history.map((entry, idx)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+            session_history.map((entry, idx)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                     className: "flex flex-col gap-2",
-                    children: [
-                        entry.mensaje_entrante && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                            className: "flex items-start gap-2.5",
-                            children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                className: "flex flex-col w-full max-w-[320px] leading-1.5 p-4 rounded-e-xl rounded-es-xl",
-                                style: {
-                                    backgroundColor: "#ac302c"
-                                },
-                                children: [
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        className: "flex items-center justify-between",
+                    children: entry.input_items.map((item, itemIdx)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                            children: [
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                    className: "flex items-start gap-2.5",
+                                    children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                        className: "flex flex-col w-full max-w-[320px] leading-1.5 p-4 rounded-e-xl rounded-es-xl",
+                                        style: {
+                                            backgroundColor: "#ac302c"
+                                        },
                                         children: [
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                className: "text-sm font-semibold text-gray-900 dark:text-white",
-                                                children: "Usuario"
-                                            }, void 0, false, {
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                className: "flex items-center justify-between",
+                                                children: [
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: "text-sm font-semibold text-gray-900 dark:text-white",
+                                                        children: "Usuario"
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/src/components/Chat.jsx",
+                                                        lineNumber: 168,
+                                                        columnNumber: 21
+                                                    }, this),
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: "text-xs",
+                                                        children: entry.fecha ? new Date(new Date(entry.fecha).getTime() - 6 * 60 * 60 * 1000).toLocaleTimeString() : ""
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/src/components/Chat.jsx",
+                                                        lineNumber: 171,
+                                                        columnNumber: 21
+                                                    }, this)
+                                                ]
+                                            }, void 0, true, {
                                                 fileName: "[project]/src/components/Chat.jsx",
-                                                lineNumber: 94,
+                                                lineNumber: 167,
                                                 columnNumber: 19
                                             }, this),
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                className: "text-xs",
-                                                children: new Date(new Date(entry.fecha).getTime() - 6 * 60 * 60 * 1000).toLocaleTimeString()
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                className: "text-sm text-gray-900 dark:text-white mt-2",
+                                                children: item.user_message?.content
                                             }, void 0, false, {
                                                 fileName: "[project]/src/components/Chat.jsx",
-                                                lineNumber: 97,
+                                                lineNumber: 179,
                                                 columnNumber: 19
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/Chat.jsx",
-                                        lineNumber: 93,
-                                        columnNumber: 17
-                                    }, this),
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                        className: "text-sm text-gray-900 dark:text-white mt-2",
-                                        children: entry.mensaje_entrante
-                                    }, void 0, false, {
-                                        fileName: "[project]/src/components/Chat.jsx",
-                                        lineNumber: 103,
+                                        lineNumber: 163,
                                         columnNumber: 17
                                     }, this)
-                                ]
-                            }, void 0, true, {
-                                fileName: "[project]/src/components/Chat.jsx",
-                                lineNumber: 89,
-                                columnNumber: 15
-                            }, this)
-                        }, void 0, false, {
-                            fileName: "[project]/src/components/Chat.jsx",
-                            lineNumber: 88,
-                            columnNumber: 13
-                        }, this),
-                        entry.mensaje_saliente && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                            className: "flex items-start justify-end gap-3 cursor-pointer",
-                            children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                className: "flex flex-col w-full max-w-[320px] leading-1.5 p-4 rounded-s-xl rounded-ee-xl mr-6",
-                                style: {
-                                    backgroundColor: "#013544"
-                                },
-                                onClick: ()=>handleAgentClick(entry, idx),
-                                children: [
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                        className: "flex items-center justify-between ",
+                                }, void 0, false, {
+                                    fileName: "[project]/src/components/Chat.jsx",
+                                    lineNumber: 162,
+                                    columnNumber: 15
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                    className: "flex items-start justify-end gap-3 cursor-pointer",
+                                    children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                        className: "flex flex-col w-full max-w-[320px] leading-1.5 p-4 rounded-s-xl rounded-ee-xl mr-6",
+                                        style: {
+                                            backgroundColor: "#013544"
+                                        },
+                                        onClick: ()=>handleAgentClick(entry.context, item, idx),
                                         children: [
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                className: "text-sm font-semibold text-gray-900 dark:text-white",
-                                                children: "Agente"
-                                            }, void 0, false, {
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                className: "flex items-center justify-between ",
+                                                children: [
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: "text-sm font-semibold text-gray-900 dark:text-white",
+                                                        children: item.responded_by || "Agente"
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/src/components/Chat.jsx",
+                                                        lineNumber: 193,
+                                                        columnNumber: 21
+                                                    }, this),
+                                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                        className: "text-xs text-gray-500 dark:text-gray-300",
+                                                        children: entry.fecha ? new Date(new Date(entry.fecha).getTime() - 6 * 60 * 60 * 1000).toLocaleTimeString() : ""
+                                                    }, void 0, false, {
+                                                        fileName: "[project]/src/components/Chat.jsx",
+                                                        lineNumber: 196,
+                                                        columnNumber: 21
+                                                    }, this)
+                                                ]
+                                            }, void 0, true, {
                                                 fileName: "[project]/src/components/Chat.jsx",
-                                                lineNumber: 118,
+                                                lineNumber: 192,
                                                 columnNumber: 19
                                             }, this),
-                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                                className: "text-xs text-gray-500 dark:text-gray-300",
-                                                children: new Date(new Date(entry.fecha).getTime() - 6 * 60 * 60 * 1000).toLocaleTimeString()
+                                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                                                className: "text-sm text-gray-900 dark:text-white mt-2",
+                                                children: Array.isArray(item.agent_message?.content) ? JSON.parse(item.agent_message.content[0].text).response : ""
                                             }, void 0, false, {
                                                 fileName: "[project]/src/components/Chat.jsx",
-                                                lineNumber: 121,
+                                                lineNumber: 204,
                                                 columnNumber: 19
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/Chat.jsx",
-                                        lineNumber: 117,
-                                        columnNumber: 17
-                                    }, this),
-                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
-                                        className: "text-sm text-gray-900 dark:text-white mt-2",
-                                        children: entry.mensaje_saliente
-                                    }, void 0, false, {
-                                        fileName: "[project]/src/components/Chat.jsx",
-                                        lineNumber: 127,
+                                        lineNumber: 187,
                                         columnNumber: 17
                                     }, this)
-                                ]
-                            }, void 0, true, {
-                                fileName: "[project]/src/components/Chat.jsx",
-                                lineNumber: 112,
-                                columnNumber: 15
-                            }, this)
-                        }, void 0, false, {
+                                }, void 0, false, {
+                                    fileName: "[project]/src/components/Chat.jsx",
+                                    lineNumber: 186,
+                                    columnNumber: 15
+                                }, this)
+                            ]
+                        }, itemIdx, true, {
                             fileName: "[project]/src/components/Chat.jsx",
-                            lineNumber: 111,
+                            lineNumber: 160,
                             columnNumber: 13
-                        }, this)
-                    ]
-                }, idx, true, {
+                        }, this))
+                }, entry.id || idx, false, {
                     fileName: "[project]/src/components/Chat.jsx",
-                    lineNumber: 85,
+                    lineNumber: 158,
                     columnNumber: 9
                 }, this)),
             showModal && selectedEntry && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$AgentResponseModal$2e$jsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
+                ctx: selectedContext,
                 msg_selected: msg_idx,
                 entry: selectedEntry,
                 show: showModal,
@@ -952,17 +1045,17 @@ const Chat = ({ userId, style })=>{
                 }
             }, void 0, false, {
                 fileName: "[project]/src/components/Chat.jsx",
-                lineNumber: 137,
+                lineNumber: 217,
                 columnNumber: 9
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/src/components/Chat.jsx",
-        lineNumber: 79,
+        lineNumber: 152,
         columnNumber: 5
     }, this);
 };
-_s(Chat, "NhiQ4ZB2jlb8Tqu8pJf5P9lwGuc=");
+_s(Chat, "ViodKydgFTF4DScwDY2W30SIoU0=");
 _c = Chat;
 const __TURBOPACK__default__export__ = Chat;
 var _c;
@@ -995,8 +1088,8 @@ function ManagerUIPage() {
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
         style: {
             display: "grid",
-            gridTemplateRows: "70px 1fr",
-            gridTemplateColumns: "20% 1fr",
+            gridTemplateRows: "50px 1fr",
+            gridTemplateColumns: "15% 1fr",
             height: "100vh",
             width: "100vw",
             minHeight: 0
@@ -1004,34 +1097,56 @@ function ManagerUIPage() {
         children: [
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                 style: {
-                    gridRow: "1 / span 2",
+                    gridRow: "2",
                     gridColumn: "1",
-                    height: "100%",
-                    borderRight: "2px solid #ac302c"
+                    backgroundColor: "#000b24ff",
+                    display: "flex",
+                    flexDirection: "column",
+                    textAlign: "center"
                 },
-                children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ConversationsTab$2e$jsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
-                    onSelectUser: setSelectedUserId,
-                    selectedUserId: selectedUserId
-                }, void 0, false, {
-                    fileName: "[project]/src/app/ManagerUI/page.jsx",
-                    lineNumber: 28,
-                    columnNumber: 9
-                }, this)
-            }, void 0, false, {
+                children: [
+                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                            children: "Chats"
+                        }, void 0, false, {
+                            fileName: "[project]/src/app/ManagerUI/page.jsx",
+                            lineNumber: 32,
+                            columnNumber: 11
+                        }, this)
+                    }, void 0, false, {
+                        fileName: "[project]/src/app/ManagerUI/page.jsx",
+                        lineNumber: 31,
+                        columnNumber: 9
+                    }, this),
+                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
+                            children: "Prompts"
+                        }, void 0, false, {
+                            fileName: "[project]/src/app/ManagerUI/page.jsx",
+                            lineNumber: 35,
+                            columnNumber: 11
+                        }, this)
+                    }, void 0, false, {
+                        fileName: "[project]/src/app/ManagerUI/page.jsx",
+                        lineNumber: 34,
+                        columnNumber: 9
+                    }, this)
+                ]
+            }, void 0, true, {
                 fileName: "[project]/src/app/ManagerUI/page.jsx",
-                lineNumber: 20,
+                lineNumber: 21,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                 style: {
                     gridRow: "1",
-                    gridColumn: "2",
+                    gridColumn: "1/ span 2",
                     backgroundColor: "#000b24f9",
                     display: "flex",
                     flexDirection: "row",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    height: "85%",
+                    height: "100%",
                     alignSelf: "start",
                     borderRight: "2px solid #ac302c",
                     borderBottom: "2px solid #ac302c",
@@ -1055,12 +1170,12 @@ function ManagerUIPage() {
                             }
                         }, void 0, false, {
                             fileName: "[project]/src/app/ManagerUI/page.jsx",
-                            lineNumber: 58,
+                            lineNumber: 64,
                             columnNumber: 11
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/src/app/ManagerUI/page.jsx",
-                        lineNumber: 50,
+                        lineNumber: 56,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1079,61 +1194,92 @@ function ManagerUIPage() {
                             }
                         }, void 0, false, {
                             fileName: "[project]/src/app/ManagerUI/page.jsx",
-                            lineNumber: 76,
+                            lineNumber: 82,
                             columnNumber: 11
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/src/app/ManagerUI/page.jsx",
-                        lineNumber: 68,
+                        lineNumber: 74,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/app/ManagerUI/page.jsx",
-                lineNumber: 33,
+                lineNumber: 39,
                 columnNumber: 7
             }, this),
-            selectedUserId ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$Chat$2e$jsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
-                userId: selectedUserId,
-                style: {
-                    gridRow: "1 /span 2",
-                    gridColumn: "2",
-                    height: "100%",
-                    width: "100%",
-                    display: "flex",
-                    backgroundColor: "#ffffffff",
-                    flexDirection: "column",
-                    padding: 40
-                }
-            }, void 0, false, {
-                fileName: "[project]/src/app/ManagerUI/page.jsx",
-                lineNumber: 85,
-                columnNumber: 9
-            }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                 style: {
                     gridRow: "2",
-                    backgroundColor: "#ebe4eb",
                     gridColumn: "2",
-                    flex: 1,
-                    padding: 20,
-                    justifyContent: "center",
-                    alignItems: "center",
-                    display: "flex",
-                    color: "#00255a",
-                    fontSize: "larger",
-                    fontWeight: "bold"
+                    display: "grid",
+                    gridTemplateColumns: "1fr 3fr"
                 },
-                children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("h3", {
-                    children: "Selecciona una conversación"
-                }, void 0, false, {
-                    fileName: "[project]/src/app/ManagerUI/page.jsx",
-                    lineNumber: 114,
-                    columnNumber: 11
-                }, this)
-            }, void 0, false, {
+                children: [
+                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        style: {
+                            gridColumn: "1",
+                            height: "100%",
+                            borderRight: "2px solid #ac302c"
+                        },
+                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ConversationsTab$2e$jsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
+                            onSelectUser: setSelectedUserId,
+                            selectedUserId: selectedUserId
+                        }, void 0, false, {
+                            fileName: "[project]/src/app/ManagerUI/page.jsx",
+                            lineNumber: 107,
+                            columnNumber: 11
+                        }, this)
+                    }, void 0, false, {
+                        fileName: "[project]/src/app/ManagerUI/page.jsx",
+                        lineNumber: 100,
+                        columnNumber: 9
+                    }, this),
+                    selectedUserId ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$Chat$2e$jsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
+                        userId: selectedUserId,
+                        style: {
+                            gridColumn: "2",
+                            height: "100%",
+                            width: "100%",
+                            display: "flex",
+                            backgroundColor: "#ffffffff",
+                            flexDirection: "column"
+                        }
+                    }, void 0, false, {
+                        fileName: "[project]/src/app/ManagerUI/page.jsx",
+                        lineNumber: 114,
+                        columnNumber: 11
+                    }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        style: {
+                            gridRow: "2",
+                            backgroundColor: "#ebe4eb",
+                            gridColumn: "2",
+                            flex: 1,
+                            padding: 20,
+                            justifyContent: "center",
+                            alignItems: "center",
+                            display: "flex",
+                            color: "#00255a",
+                            fontSize: "larger",
+                            fontWeight: "bold"
+                        },
+                        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("h3", {
+                            children: "Selecciona una conversación"
+                        }, void 0, false, {
+                            fileName: "[project]/src/app/ManagerUI/page.jsx",
+                            lineNumber: 141,
+                            columnNumber: 13
+                        }, this)
+                    }, void 0, false, {
+                        fileName: "[project]/src/app/ManagerUI/page.jsx",
+                        lineNumber: 126,
+                        columnNumber: 11
+                    }, this)
+                ]
+            }, void 0, true, {
                 fileName: "[project]/src/app/ManagerUI/page.jsx",
-                lineNumber: 99,
-                columnNumber: 9
+                lineNumber: 92,
+                columnNumber: 7
             }, this)
         ]
     }, void 0, true, {

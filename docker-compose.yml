@@ -1,19 +1,18 @@
 services:
   app:
     build: .
-    ports:
-      - "8989:8989"
     environment:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    # En producción NO expongas el puerto (deja que sólo el gateway exponga 80/443)
+    # ports:
+    #   - "8989:8989"
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     command: ["redis-server","--appendonly","yes","--save","60","1","--requirepass","${REDIS_PASSWORD}"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -24,6 +23,42 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+    # En producción NO expongas Redis públicamente
+    # ports:
+    #   - "6379:6379"
+
+  # Backend del Front (api_manager_ui.py)
+  ui_api:
+    build: .
+    command: uvicorn api_manager_ui:app --host 0.0.0.0 --port 7575
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # En producción, mejor sin ports:
+    # ports:
+    #   - "7575:7575"
+
+  # Frontend estático (Dockerfile en sac_manager_ui/ que genera dist/ y sirve con Nginx)
+  web:
+    build: ./sac_manager_ui
+    restart: unless-stopped
+    # En producción, mejor sin ports; el gateway lo expone en /SilverAI/ManagerUI/
+    # ports:
+    #   - "3000:80"
+
+  # Reverse proxy
+  gateway:
+    image: nginx:alpine
+    depends_on:
+      - web
+      - app
+      - ui_api
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
 
 volumes:

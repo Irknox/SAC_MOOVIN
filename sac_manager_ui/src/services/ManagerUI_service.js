@@ -1,12 +1,13 @@
 import axios from "axios";
 
-const API_URL = "http://localhost:8000/ManagerUI";
+const API_URL ='/SilverAI/Manager';
 
 export const fetchHistoryPreview = async () => {
   try {
     const response = await axios.post(API_URL, {
       request: "UsersLastMessages",
     });
+
     return response.data.history;
   } catch (error) {
     console.error("Error fetching agent history:", error);
@@ -33,11 +34,38 @@ export const fetchUserHistory = async (
       request: "UserHistory",
       request_body,
     });
-    console.log("Response history", response.data.history);
-
+    //console.log("Valor de la respuesta a la sessiones desde el serivico:",response.data.history);
+    
     return response.data.history;
   } catch (error) {
     console.error("Error fetching agent history:", error);
+    throw error;
+  }
+};
+
+export const fetchPrompt = async (prompt_type) => {
+  try {
+    const response = await axios.post(API_URL, {
+      request: "Prompt",
+      request_body: { type: prompt_type },
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching prompt:", error);
+    throw error;
+  }
+};
+
+export const updatePrompt = async (prompt_owner, prompt) => {
+  try {
+    const response = await axios.post(API_URL, {
+      request: "Prompt_update",
+      request_body: { updated_prompt: prompt, prompt_owner },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching prompt:", error);
     throw error;
   }
 };
