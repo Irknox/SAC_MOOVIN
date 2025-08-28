@@ -15,13 +15,13 @@ export default async function ManagerUILayout({ children }) {
   const token = cookieStore.get("auth_token")?.value;
 
   if (!token) {
-    redirect(`/SilverAI/ManagerUI/ManagerLogin`);
+    redirect(`/ManagerLogin`);
   }
 
   try {
     await verify(token);
   } catch {
-    redirect(`/SilverAI/ManagerUI/ManagerLogin`);
+    redirect(`/ManagerLogin`);
   }
 
   return <>{children}</>;
