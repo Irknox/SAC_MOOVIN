@@ -1,15 +1,15 @@
 services:
   app:
     build: .
+    env_file:
+      - .env
     environment:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    # En producción NO expongas el puerto (deja que sólo el gateway exponga 80/443)
-    # ports:
-    #   - "8989:8989"
+
 
   redis:
     image: redis:7-alpine
@@ -24,9 +24,6 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
-    # En producción NO expongas Redis públicamente
-    # ports:
-    #   - "6379:6379"
 
   # Backend del Front (api_manager_ui.py)
   ui_api:
@@ -35,20 +32,23 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    volumes:
+      - ./moovin_agents_SDK/prompts:/app/prompts:rw
     restart: unless-stopped
-    # En producción, mejor sin ports:
-    # ports:
-    #   - "7575:7575"
 
-  # Frontend estático (Dockerfile en sac_manager_ui/ que genera dist/ y sirve con Nginx)
+  # Frontend
   web:
-    build: ./sac_manager_ui
-    restart: unless-stopped
-    # En producción, mejor sin ports; el gateway lo expone en /SilverAI/ManagerUI/
-    # ports:
-    #   - "3000:80"
+    build:
+      context: ./sac_manager_ui
+      args:
+        NEXT_PUBLIC_BASE_PATH: /SilverAI/ManagerUI
+        NEXT_PUBLIC_MANAGER_API_BASE: /SilverAI/Manager
+    env_file:
+      - ./sac_manager_ui/.env
+    environment:
+    - COOKIE_SECURE=false   # en local HTTP
+    # - COOKIE_SECURE=true  # en prod con HTTPS en el gateway
 
-  # Reverse proxy
   gateway:
     image: nginx:alpine
     depends_on:

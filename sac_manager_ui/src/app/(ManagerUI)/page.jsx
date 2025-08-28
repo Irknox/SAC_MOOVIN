@@ -49,7 +49,7 @@ export default function ManagerUIPage() {
           }}
         >
           <img
-            src="SAC-manager-Title.png"
+            src="SAC-Manager-Title.png"
             alt="Logo Moovin"
             style={{
               height: "60%",

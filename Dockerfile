@@ -8,8 +8,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY .env .env
 
-COPY moovin_agents_SDK/ .
+COPY moovin_agents_SDK/ /app/
 
 EXPOSE 8989
 
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8989"]
+CMD ["python","-m","uvicorn","api:app","--host","0.0.0.0","--port","8989"]

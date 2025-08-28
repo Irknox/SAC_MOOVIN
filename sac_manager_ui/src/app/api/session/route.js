@@ -3,6 +3,10 @@ import { SignJWT } from "jose";
 
 const alg = "HS256";
 
+const SECURE_COOKIE =
+  (process.env.COOKIE_SECURE ??
+    (process.env.NODE_ENV === "production" ? "true" : "false")) === "true";
+
 async function sign(payload) {
   const secret = new TextEncoder().encode(process.env.SAC_MANAGER_KEY);
   return await new SignJWT(payload)
@@ -18,7 +22,7 @@ export async function POST(req) {
   if (password !== process.env.SAC_MANAGER_KEY) {
     return NextResponse.json(
       { error: "Credenciales inválidas" },
-      { status: 401, valor:process.env.SAC_MANAGER_KEY }
+      { status: 401, valor: process.env.SAC_MANAGER_KEY }
     );
   }
 
@@ -27,9 +31,9 @@ export async function POST(req) {
   res.cookies.set("auth_token", token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: SECURE_COOKIE,
     path: "/",
-    maxAge: 60 * 60 * 8, 
+    maxAge: 60 * 60 * 8,
   });
   return res;
 }

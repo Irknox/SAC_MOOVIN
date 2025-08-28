@@ -1,5 +1,6 @@
-const nextConfig = {
-  basePath: '/SilverAI/ManagerUI',
-  // (opcional) assetPrefix si lo necesitas; con basePath suele bastar
-}
-export default nextConfig;
+// next.config.mjs
+export default {
+  basePath: "/SilverAI/ManagerUI",
+  assetPrefix: "/SilverAI/ManagerUI",
+  trailingSlash: true,
+};

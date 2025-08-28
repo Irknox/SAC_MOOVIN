@@ -8,22 +8,27 @@ from config import create_mysql_pool
 from handlers.main_handler import get_users_last_messages, get_last_messages_by_user
 import traceback
 import os, httpx
+from pathlib import Path
 
-prompts_paths={
-    "General Agent":"prompts/general_agent.txt",
-    "General Prompt":"prompts/general_prompt.txt",
-    "MCP Agent":"prompts/mcp_agent.txt",
-    "Package Analyst Agent":"prompts/package_analyst.txt",
-    "Railing Agent":"prompts/railing_agent.txt",
-    "Input":"prompts/input_guardrail_prompt.txt",
-    "Output":"prompts/output_guardrail_prompt.txt",
+BASE_DIR = Path(__file__).resolve().parent
+PROMPTS_DIR = BASE_DIR / "prompts"
+
+
+prompts_paths = {
+    "General Agent":         str(PROMPTS_DIR / "general_agent.txt"),
+    "General Prompt":        str(PROMPTS_DIR / "general_prompt.txt"),
+    "MCP Agent":             str(PROMPTS_DIR / "mcp_agent.txt"),
+    "Package Analyst Agent": str(PROMPTS_DIR / "package_analyst.txt"),
+    "Railing Agent":         str(PROMPTS_DIR / "railing_agent.txt"),
+    "Input":                 str(PROMPTS_DIR / "input_guardrail_prompt.txt"),
+    "Output":                str(PROMPTS_DIR / "output_guardrail_prompt.txt"),
 }
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         mysql_pool = await create_mysql_pool()
-        app.state.mysql_pool = mysql_pool  # <-- Agrega esto
+        app.state.mysql_pool = mysql_pool 
         yield
         mysql_pool.close()
         await mysql_pool.wait_closed()
@@ -41,11 +46,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/Manager")
+@app.post("/Handler")
 async def manager_ui(request: Request):
     try:
         payload = await request.json()
-        print(f'payload obtenido {payload}' )
         if payload.get('request') == 'UsersLastMessages':
             agent_history = await get_users_last_messages(request.app.state.mysql_pool)
             return {"history": agent_history}
@@ -71,7 +75,6 @@ async def manager_ui(request: Request):
             request_body = payload.get('request_body')
             new_prompt = request_body.get('updated_prompt')
             prompt_owner = request_body.get('prompt_owner')
-            print(f"Nuevo prompt recibido: {new_prompt}")
             try:
                 prompt_type = request_body.get('type')
                 with open(prompts_paths[prompt_owner], 'w', encoding='utf-8') as file:
