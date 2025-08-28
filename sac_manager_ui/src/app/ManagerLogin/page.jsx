@@ -39,7 +39,7 @@ function LoginInner() {
   return (
     <main className="relative min-h-screen flex items-center justify-center px-4">
       <img
-        src="LoginBackground.svg"
+        src="/SilverAI/ManagerUI/LoginBackground.svg"
         alt="Background"
         className="fixed inset-0 -z-50 h-screen w-screen object-cover"
       />
