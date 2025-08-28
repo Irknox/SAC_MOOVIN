@@ -18,7 +18,7 @@ function LoginInner() {
     setLoading(true);
     setErr("");
     try {
-      const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
+      const base = process.env.NEXT_PUBLIC_BASE_PATH || '/SilverAI/ManagerUI';
       const res = await fetch(`${base}/api/session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

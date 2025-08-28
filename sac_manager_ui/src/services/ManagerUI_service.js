@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_URL ='/SilverAI/Manager';
+const API_URL = "/SilverAI/Manager/Handler";
 
 export const fetchHistoryPreview = async () => {
   try {
@@ -35,7 +35,7 @@ export const fetchUserHistory = async (
       request_body,
     });
     //console.log("Valor de la respuesta a la sessiones desde el serivico:",response.data.history);
-    
+
     return response.data.history;
   } catch (error) {
     console.error("Error fetching agent history:", error);
@@ -49,6 +49,7 @@ export const fetchPrompt = async (prompt_type) => {
       request: "Prompt",
       request_body: { type: prompt_type },
     });
+    console.log("response.data es:", response.data);
 
     return response.data;
   } catch (error) {
