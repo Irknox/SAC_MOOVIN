@@ -236,7 +236,6 @@ async def get_msgs_from_last_states(pool, user_id: str, states: int = 3) -> List
         ctx_dict = _normalize_contexto(ctx)
         input_items = ctx_dict.get("input_items") or []
         msgs = extract_user_and_assistant_messages(input_items)
-        # formatea fecha a str si viene datetime
         fecha_val = s["fecha"]
         if hasattr(fecha_val, "strftime"):
             fecha_val = fecha_val.strftime("%Y-%m-%d %H:%M:%S")
@@ -572,6 +571,9 @@ async def get_delivery_date(pool, enterprise_code: str) -> dict:
             "SLA": "No hay días de entrega programados para esta ruta"
         }
 
+
+
+
 #--------------------Funciones de chat_history--------------------#
 async def get_agent_history(pool):
     """
@@ -634,7 +636,6 @@ async def get_last_messages_by_user(pool, user_id: str, limit: int, last_id: int
 
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
-            # Paso 1: obtener los IDs de los mensajes filtrados (desde 25/08/2025 en adelante)
             if last_id:
                 await cur.execute("""
                     SELECT id
@@ -659,7 +660,6 @@ async def get_last_messages_by_user(pool, user_id: str, limit: int, last_id: int
             if not rows:
                 return []
 
-            # Paso 2: obtener los registros completos por ID
             id_list = tuple(row["id"] for row in rows)
             in_clause = ",".join(["%s"] * len(id_list))
 

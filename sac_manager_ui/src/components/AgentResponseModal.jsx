@@ -34,9 +34,13 @@ const AgentResponseModal = ({ ctx, entry, onClose, msg_selected }) => {
   const userEnv = ctx.user_env || {};
 
   const getToolOutput = (call_id) => {
+    console.log("Valor de agent Run",agentRun);
+    
     const outputObj = agentRun.find(
       (item) => item.type === "function_call_output" && item.call_id === call_id
     );
+    console.log("Output Obj en el getToolOutput",outputObj);
+    
     if (!outputObj) return null;
     try {
       return JSON.stringify(

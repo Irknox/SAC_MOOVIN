@@ -4,52 +4,64 @@ import ToolOutput from "./ToolOutput";
 const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
   const [hoveredItem, setHoveredItem] = useState(null);
   console.log("actions recibidas", actions);
-
   const renderTimelineItem = (action, index) => {
     let label = null;
     let extra = null;
     if (action.type === "function_call") {
       const isHandoff = action.name?.startsWith("transfer_to_");
-      if (isHandoff) {
-        label = `Handoff: ${action.name.replace("transfer_to_", "")}`;
-      } else {
-        label = `${action.name}`;
+      label = isHandoff
+        ? `Handoff: ${action.name.replace("transfer_to_", "")}`
+        : `${action.name}`;
 
-        const result = getToolOutput(action.call_id);
-        let parsedOutput = result;
-        if (typeof result === "string") {
-          try {
-            const fixedOutput = result
-              .replace(/None/g, "null")
-              .replace(/'/g, '"');
-            parsedOutput = JSON.parse(fixedOutput);
-          } catch (e) {
-            parsedOutput = {
-              raw: result,
-            };
-          }
-        }
-        let call_arguments = action.arguments || {};
-        if (typeof call_arguments === "string") {
-          try {
-            const fixedOutput = call_arguments
-              .replace(/None/g, "null")
-              .replace(/'/g, '"');
-            call_arguments = JSON.parse(fixedOutput);
-          } catch (e) {
-            call_arguments = {
-              raw: action.arguments || {},
-            };
-          }
-        }
+      const result = getToolOutput(action.call_id);
+      console.log("Is handoff?", isHandoff, "action es", action);
 
-        extra = parsedOutput && (
+      let parsedOutput = result;
+      if (typeof result === "string") {
+        try {
+          const fixedOutput = result
+            .replace(/None/g, "null")
+            .replace(/'/g, '"');
+          parsedOutput = JSON.parse(fixedOutput);
+        } catch (e) {
+          parsedOutput = {
+            raw: result,
+          };
+        }
+      }
+      console.log("Valor del parsed output es", parsedOutput);
+
+      label = isHandoff ? `Handoff` : label;
+      let call_arguments = action.arguments || {};
+      if (typeof call_arguments === "string") {
+        try {
+          const fixedOutput = call_arguments
+            .replace(/None/g, "null")
+            .replace(/'/g, '"');
+          call_arguments = JSON.parse(fixedOutput);
+        } catch (e) {
+          call_arguments = {
+            raw: action.arguments || {},
+          };
+        }
+      }
+
+      extra = parsedOutput && (
+        <div
+          className="relative flex justify-center"
+          onMouseEnter={() => setHoveredItem(index)}
+          onMouseLeave={() => setHoveredItem(null)}
+        >
           <div
-            className="relative flex justify-center"
-            onMouseEnter={() => setHoveredItem(index)}
-            onMouseLeave={() => setHoveredItem(null)}
+            className={
+              isHandoff
+                ? "text-sm text-gray-400 mt-1 flex justify-center"
+                : "text-sm text-gray-400 mt-1 cursor-pointer hover:text-blue-400 flex justify-center"
+            }
           >
-            <div className="text-sm text-gray-400 mt-1 cursor-pointer hover:text-blue-400 flex justify-center">
+            {isHandoff ? (
+              <p className="w-full h-6">{parsedOutput.assistant}</p>
+            ) : (
               <svg
                 className="w-6 h-6 text-gray-800 dark:text-white"
                 aria-hidden="true"
@@ -68,11 +80,12 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
                   d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
                 />
               </svg>
-            </div>
-            <div
-              className={
-                parsedOutput.error
-                  ? `absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+            )}
+          </div>
+          <div
+            className={
+              parsedOutput.error
+                ? `absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
                   w-[28rem] max-w-[calc(100vw-4rem)]
                   max-h-[60vh] overflow-auto
                   bg-white dark:bg-gray-800 rounded shadow
@@ -81,7 +94,9 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
                   transition-opacity duration-150 z-[1000]                   ${
                     hoveredItem === index ? "opacity-100" : "opacity-0"
                   }`
-                  : `absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+                : isHandoff
+                ? "none"
+                : `absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
                   w-[28rem] max-w-[calc(100vw-4rem)]
                   max-h-[60vh] overflow-auto
                   bg-white dark:bg-gray-800 rounded shadow
@@ -90,19 +105,24 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
                   transition-opacity duration-150 z-[1000]                   ${
                     hoveredItem === index ? "opacity-100" : "opacity-0"
                   }`
-              }
-              style={{ pointerEvents: hoveredItem === index ? "auto" : "none" }}
-            >
+            }
+            style={
+              isHandoff
+                ? { pointerEvents: null }
+                : { pointerEvents: hoveredItem === index ? "auto" : "none" }
+            }
+          >
+            {isHandoff ? null : (
               <ToolOutput
                 tool={action.name}
                 output={parsedOutput}
                 visible={hoveredItem === index}
                 call={call_arguments}
               />
-            </div>
+            )}
           </div>
-        );
-      }
+        </div>
+      );
     } else if (action.agent) {
       label = "Agente";
       extra = (
@@ -404,7 +424,6 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
                 </svg>
               )}
             </div>
-
             {action.agent ? (
               <></>
             ) : (
