@@ -1,7 +1,6 @@
 import axios from "axios";
 
 const API_URL = "/SilverAI/Manager/Handler";
-
 export const fetchHistoryPreview = async () => {
   try {
     const response = await axios.post(API_URL, {

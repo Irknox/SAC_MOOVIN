@@ -5,7 +5,7 @@ import "leaflet/dist/leaflet.css"; // ok en cliente
 import ChangeDeliveryOutputView from "./ChangeDeliveryOutputView";
 
 const ToolOutput = ({ tool, output, visible = false,call }) => {
-  console.log("Llamada recibida", call);
+  console.log("output recibido", output);
 
   // --- Refs y coords ---
   const mapContainerRef = useRef(null);
@@ -96,7 +96,7 @@ const ToolOutput = ({ tool, output, visible = false,call }) => {
             </tr>
           </thead>
           <tbody>
-            {output.timeline.map((item, idx) => (
+            {Array.isArray(output?.timeline) && output.timeline.map((item, idx) => (
               <tr
                 key={idx}
                 className="border-b border-gray-800 hover:bg-gray-800"
