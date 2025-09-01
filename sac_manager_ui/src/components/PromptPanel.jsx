@@ -81,7 +81,7 @@ const PromptPanel = ({ value, prompt }) => {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr 25%",
+        gridTemplateColumns: "1fr 35%",
         backgroundColor: "white",
         height: "100%",
         maxHeight: "100%",
@@ -175,7 +175,7 @@ const PromptPanel = ({ value, prompt }) => {
         style={{
           gridColumn: "2",
           display: "grid",
-          gridTemplateRows: "minmax(9rem, 26vh) 1fr",
+          gridTemplateRows: "minmax(9rem, 26.5vh) 1fr",
           color: "white",
           height: "100%",
           maxHeight: "100%",
@@ -201,8 +201,8 @@ const PromptPanel = ({ value, prompt }) => {
           </h1>
           <p
             style={{
-              fontSize: "clamp(0.1rem, 0.2rem + 0.3vw, 0.8rem)",
-              textAlign: "center",
+              fontSize: "clamp(0.1rem, 0.3rem + 0.3vw, 0.8rem)",
+              textAlign: "left",
               padding: "0.2rem",
             }}
           >
@@ -217,10 +217,8 @@ const PromptPanel = ({ value, prompt }) => {
             <br />
             Todos los agentes obtienen:
             <br />
-            1 Funcion Remember
-            <br />
-            Obtiene un resumen de cada una de las ultimas 3 sesiones en caso de
-            existir.
+            1 Funcion Remember: Obtiene un resumen de cada una de las ultimas 3
+            sesiones en caso de existir.
             <br />
             2 El general prompt es enviado a todos para que compartan un
             contexto.
@@ -231,16 +229,8 @@ const PromptPanel = ({ value, prompt }) => {
             3.1 Si no tiene paquetes, Nombre en Whatsapp y numero de telefono.
           </p>
           <hr />
-          <p
-            style={{
-              textAlign: "center",
-              fontSize: "clamp(0.2rem, 0.2rem + 0.4vw, 1rem)",
-            }}
-          >
-            {" "}
-            Descripcion
-          </p>
         </div>
+
         <div
           style={{
             gridRow: "2",
@@ -249,6 +239,15 @@ const PromptPanel = ({ value, prompt }) => {
             padding: "5px",
           }}
         >
+          <p
+            style={{
+              textAlign: "center",
+              fontSize: "clamp(0.2rem, 0.2rem + 0.4vw, 1rem)",
+            }}
+          >
+            Descripcion
+          </p>
+
           <AgentDescription agent={prompt} />
         </div>
       </div>
