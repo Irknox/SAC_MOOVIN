@@ -16,12 +16,39 @@ const PromptNav = ({ handlePromptSelect }) => {
           backgroundColor: "#f2f2f2ff",
           width: "100%",
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: "1fr 1fr 1fr",
           borderBottom: "2px solid #0b39804f",
         }}
       >
+        <div style={{
+          display:"flex",
+          justifyContent:"center"
+        }}>
+          <button
+            type="button"
+            onClick={() => window.open("https://drive.google.com/drive/folders/1usu7dq_ZwyCvJ-1iPnzdRUX5_hsHBDYF", "_blank")}
+            style={{
+              display: "flex",
+              justifyContent: "space-evenly",
+              alignContent: "center",
+              alignSelf: "center",
+              overflow: "hidden",
+            }}
+            className="bg-blue-700 hover:bg-blue-800 focus:ring-4 w-20 h-6 focus:outline-none focus:ring-blue-300 rounded-xs dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800 flex items-center justify-evenly"
+          >
+            <img
+              src="imgi_349_14776765.png"
+              alt="Drive Icon"
+              style={{
+                height: "20px",
+                width: "20px",
+              }}
+            />
 
-        
+            <p className="text-center text-xs">Prompts</p>
+          </button>
+        </div>
+
         <form
           className="max-w-sm w-150 mx-auto"
           style={{
@@ -46,9 +73,6 @@ const PromptNav = ({ handlePromptSelect }) => {
             <option value="guardrail">Guardarail</option>
           </select>
         </form>
-
-
-
 
         {selectedType === "agent" ? (
           <form

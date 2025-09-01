@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Literal,Tuple
-import os
+import re, os, glob
 import tempfile
 import requests
 from handlers.main_handler import save_message, get_user_env, get_users_last_messages, get_last_messages_by_user, save_img_data, reverse_geocode_osm
@@ -33,25 +33,67 @@ client = OpenAI()
 
 ##----------------------------Funciones Auxiliares----------------------------##
 
+##----------------------------Prompts----------------------------##
+SEMVER_RE = re.compile(r"_v(\d+\.\d+\.\d+\.\d+)\.txt$")
+prompt_bases = {
+    "General Prompt":           "general_prompt",
+    "Package Analyst Agent":    "package_analyst",
+    "General Agent":            "general_agent",
+    "MCP Agent":                "mcp_agent",
+    "Railing Agent":            "railing_agent",
+    "Input":                    "input_guardrail_prompt",
+    "Output":                   "output_guardrail_prompt",
+}
+def _parse_semver_tuple(v: str) -> Tuple[int,int,int,int]:
+    return tuple(int(x) for x in v.split("."))  # "1.0.0.7" -> (1,0,0,7)
+
+def _extract_version_from_name(filename: str) -> Optional[Tuple[int,int,int,int]]:
+    m = SEMVER_RE.search(filename)
+    if m:
+        return _parse_semver_tuple(m.group(1))
+    return None
+
+def _find_latest_versioned_file(base_dir: str, slug: str) -> Optional[str]:
+    """
+    Busca el .txt con mayor versión para un slug dado dentro de base_dir.
+    Formato esperado: slug_vX.Y.Z.W.txt
+    """
+    pattern = os.path.join(base_dir, f"{slug}_v*.txt")
+    candidates = glob.glob(pattern)
+    if not candidates:
+        return None
+
+    best_path = None
+    best_ver = None
+    for path in candidates:
+        ver = _extract_version_from_name(os.path.basename(path))
+        if ver is None:
+            continue
+        if best_ver is None or ver > best_ver:
+            best_ver = ver
+            best_path = path
+    return best_path
 
 def _load_initial_prompts() -> dict:
     """
-    Lee los .txt una sola vez al iniciar y retorna un dict con todos los prompts.
+    Lee .txt versionados (ultimo disponible) o, si no hay, los .txt planos.
     """
     base_dir = os.path.join(os.path.dirname(__file__), "prompts")
-    def read(name: str) -> str:
-        path = os.path.join(base_dir, name)
-        with open(path, "r", encoding="utf-8") as f:
+
+    def read_best(slug: str, fallback_plain: str) -> str:
+        latest = _find_latest_versioned_file(base_dir, slug)
+        target = latest or os.path.join(base_dir, fallback_plain)
+        with open(target, "r", encoding="utf-8") as f:
             return f.read()
 
     return {
-        "General Prompt":           read("general_prompt.txt"),
-        "Package Analyst Agent":          read("package_analyst.txt"),
-        "General Agent":            read("general_agent.txt"),
-        "MCP Agent":                read("mcp_agent.txt"),
-        "Railing Agent":            read("railing_agent.txt"),
-        "Input":   read("input_guardrail_prompt.txt"),
-        "Output":  read("output_guardrail_prompt.txt"),
+        "General Prompt":        read_best(prompt_bases["General Prompt"],        "general_prompt.txt"),
+        "Package Analyst Agent": read_best(prompt_bases["Package Analyst Agent"], "package_analyst.txt"),
+        "General Agent":         read_best(prompt_bases["General Agent"],         "general_agent.txt"),
+        "MCP Agent":             read_best(prompt_bases["MCP Agent"],             "mcp_agent.txt"),
+        "Railing Agent":         read_best(prompt_bases["Railing Agent"],         "railing_agent.txt"),
+        "Input":                 read_best(prompt_bases["Input"],                 "input_guardrail_prompt.txt"),
+        "Output":                read_best(prompt_bases["Output"],                "output_guardrail_prompt.txt"),
     }
     
     
@@ -597,29 +639,25 @@ async def whatsapp_webhook(request: Request):
         await redis_session.upsert_state(user_id, state)
         await redis_session.append_log(user_id, role="assistant", content=response_text)
 
-        # --- delta sencillo por longitud ---
-        # si por algún motivo previous_count es mayor que el nuevo largo, lo reponemos a 0
+
         if previous_count > len(full_list):
             previous_count = 0
 
         new_slice = full_list[previous_count:]
 
-        # --- filtra "eco" de usuario (user sin date) ---
         def is_user_echo(item):
             return isinstance(item, dict) and item.get("role") == "user" and not item.get("date")
 
         delta_items = [it for it in new_slice if not is_user_echo(it)]
 
-        # --- guarda SOLO el delta en audit_items ---
         if delta_items:
             await redis_session.append_audit_items(user_id, delta_items)
 
-        # --- agrega la vista humana del asistente (con fecha y nombre del agente) ---
         agent_message_human = {
             "role": "assistant",
             "content": response_text,
             "agent": current_agent.name,
-            "date": now_cr,  # tu timestamp en CR
+            "date": now_cr,
         }
         await redis_session.append_audit_items(user_id, agent_message_human)
         
