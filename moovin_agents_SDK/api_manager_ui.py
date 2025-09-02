@@ -110,10 +110,13 @@ def update_drive_file(drive, file_id: str, local_path: str) -> dict:
 
 
 
-
 BASE_DIR = Path(__file__).resolve().parent
 PROMPTS_DIR = BASE_DIR / "prompts"
 BACKUP_DIR = BASE_DIR / "prompts_backup"
+
+PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
 
 SEMVER_RE = re.compile(r"_v(\d+\.\d+\.\d+\.\d+)\.txt$")
 
@@ -159,6 +162,21 @@ def write_atomic(path: Path, content: str):
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(content, encoding="utf-8")
     tmp.replace(path) 
+
+def purge_slug_files(dir_path: Path, slug: str, keep: set[str] | None = None):
+    """
+    Elimina todos los archivos {slug}_v*.txt en dir_path,
+    excepto los cuyo nombre esté en 'keep'.
+    """
+    keep = keep or set()
+    for p in dir_path.glob(f"{slug}_v*.txt"):
+        if p.name in keep:
+            continue
+        try:
+            p.unlink()
+        except FileNotFoundError:
+            pass
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -220,10 +238,20 @@ async def manager_ui(request: Request):
                 new_ver = next_version_tuple(current_ver)
                 new_name = f"{slug}_v{semver_str(new_ver)}.txt"
                 new_path = PROMPTS_DIR / new_name
+
+                backup_prev_name = None
                 if current_path:
                     curr_file = Path(current_path)
-                    backup_path = BACKUP_DIR / curr_file.name 
-                    shutil.copy2(curr_file, backup_path)
+
+                    purge_slug_files(BACKUP_DIR, slug)
+                    shutil.move(str(curr_file), str(BACKUP_DIR / curr_file.name))
+                    backup_prev_name = curr_file.name
+
+                    purge_slug_files(PROMPTS_DIR, slug, keep={new_name})
+
+                else:
+                    purge_slug_files(PROMPTS_DIR, slug)
+                    purge_slug_files(BACKUP_DIR, slug)
                 write_atomic(new_path, new_prompt)
                 notify_payload = {
                     "request": "promptUpdate",
