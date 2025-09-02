@@ -1,6 +1,5 @@
 from dotenv import load_dotenv
 load_dotenv()
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -9,12 +8,9 @@ from handlers.main_handler import get_users_last_messages, get_last_messages_by_
 import traceback
 import os, httpx,re, shutil,json
 from pathlib import Path
-
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-
-
 
 ##-------------------Drive-------------------##
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
@@ -28,16 +24,15 @@ def _get_service_account_credentials():
     if not (proj and email and pkey):
         raise RuntimeError("Credenciales de Drive no configuradas (JSON o ENV).")
 
-    # La private_key necesita saltos de línea reales
     pkey = pkey.replace("\\n", "\n")
 
     info = {
         "type": "service_account",
         "project_id": proj,
-        "private_key_id": "dummy",  # opcional
+        "private_key_id": "dummy",
         "private_key": pkey,
         "client_email": email,
-        "client_id": "dummy",       # opcional
+        "client_id": "dummy",
         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
         "token_uri": "https://oauth2.googleapis.com/token",
         "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
@@ -47,11 +42,9 @@ def _get_service_account_credentials():
 
 def get_drive_service():
     creds = _get_service_account_credentials()
-    # cache_discovery=False para evitar warnings en algunos entornos
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 def ensure_subfolder(drive, parent_id: str, folder_name: str) -> str:
-    # Busca carpeta hijo con nombre exacto bajo parent_id
     q = (
         f"mimeType = 'application/vnd.google-apps.folder' and "
         f"name = '{folder_name}' and "
@@ -82,7 +75,6 @@ def upload_version_file(drive, folder_id: str, local_path: str) -> dict:
     return created
 
 def find_file_in_folder(drive, parent_id: str, filename: str) -> str | None:
-    # Busca un archivo por nombre dentro de la carpeta raíz
     q = (
         f"name = '{filename}' and "
         f"'{parent_id}' in parents and trashed = false"
@@ -96,7 +88,6 @@ def find_file_in_folder(drive, parent_id: str, filename: str) -> str | None:
     return files[0]["id"] if files else None
 
 def update_drive_file(drive, file_id: str, local_path: str) -> dict:
-    # Sube como revisión del mismo archivo
     media = MediaFileUpload(local_path, mimetype="text/plain", resumable=True)
     updated = drive.files().update(
         fileId=file_id,
@@ -104,12 +95,10 @@ def update_drive_file(drive, file_id: str, local_path: str) -> dict:
         fields="id,name,webViewLink"
     ).execute()
     return updated
-
-
 ##-------------------Fin Drive-------------------##
 
 
-
+##-------------------Inicio de Archivos en Disco-------------------##
 BASE_DIR = Path(__file__).resolve().parent
 PROMPTS_DIR = BASE_DIR / "prompts"
 BACKUP_DIR = BASE_DIR / "prompts_backup"
@@ -176,8 +165,11 @@ def purge_slug_files(dir_path: Path, slug: str, keep: set[str] | None = None):
             p.unlink()
         except FileNotFoundError:
             pass
+##-------------------Fin de Archivos en Disco-------------------##
 
 
+
+##-------------------Inicio de Lifespan-------------------##
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -189,9 +181,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print("🔥 Error al iniciar FastAPI:", e)
         raise e
-        
 app = FastAPI(lifespan=lifespan)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -199,7 +189,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+##-------------------Fin de Lifespan-------------------##
 
+
+##-------------------Inicio de Endpoint-------------------##
 @app.post("/Handler")
 async def manager_ui(request: Request):
     try:
@@ -309,4 +302,4 @@ async def manager_ui(request: Request):
         traceback.print_exc()
         return {"error": str(e)}
     
-    
+##-------------------Fin de Endpoint-------------------##
