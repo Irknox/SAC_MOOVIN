@@ -34,7 +34,6 @@ class RedisSession:
         if raw:
             obj = json.loads(raw)
             
-            # Estructura base
             obj.setdefault("state", {})
             obj.setdefault("pending_log", [])
             obj.setdefault("last_seen", utcnow().isoformat())

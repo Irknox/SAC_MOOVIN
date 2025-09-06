@@ -3,7 +3,6 @@ import ToolOutput from "./ToolOutput";
 
 const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
   const [hoveredItem, setHoveredItem] = useState(null);
-  console.log("actions recibidas", actions);
   const renderTimelineItem = (action, index) => {
     let label = null;
     let extra = null;
@@ -14,8 +13,6 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
         : `${action.name}`;
 
       const result = getToolOutput(action.call_id);
-      console.log("Is handoff?", isHandoff, "action es", action);
-
       let parsedOutput = result;
       if (typeof result === "string") {
         try {
@@ -29,7 +26,6 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
           };
         }
       }
-      console.log("Valor del parsed output es", parsedOutput);
 
       label = isHandoff ? `Handoff` : label;
       let call_arguments = action.arguments || {};
@@ -56,30 +52,32 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
             className={
               isHandoff
                 ? "text-sm text-gray-400 mt-1 flex justify-center"
-                : "text-sm text-gray-400 mt-1 cursor-pointer hover:text-blue-400 flex justify-center"
+                : "text-sm text-gray-400 mt-1 cursor-pointer hover:text-blue-400 flex-column"
             }
           >
             {isHandoff ? (
-              <p className="w-full h-6">{parsedOutput.assistant}</p>
+              <p className="w-auto text-xs">{parsedOutput.assistant}</p>
             ) : (
-              <svg
-                className="w-6 h-6 text-gray-800 dark:text-white"
-                aria-hidden="true"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  d="M21 12c0 1.2-4.03 6-9 6s-9-4.8-9-6c0-1.2 4.03-6 9-6s9 4.8 9 6Z"
-                />
-                <path
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
-                />
-              </svg>
+              <>
+                <svg
+                  className="w-5 h-5 text-gray-900 dark:text-white"
+                  aria-hidden="true"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    d="M21 12c0 1.2-4.03 6-9 6s-9-4.8-9-6c0-1.2 4.03-6 9-6s9 4.8 9 6Z"
+                  />
+                  <path
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+                  />
+                </svg>
+              </>
             )}
           </div>
           <div
@@ -97,7 +95,7 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
                 : isHandoff
                 ? "none"
                 : `absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-                  w-[28rem] max-w-[calc(100vw-4rem)]
+                  w-[20rem] max-w-[calc(100vw-4rem)]
                   max-h-[60vh] overflow-auto
                   bg-white dark:bg-gray-800 rounded shadow
                   text-xs text-gray-700 dark:text-gray-300
@@ -139,7 +137,7 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
             onMouseLeave={() => setHoveredItem(null)}
           >
             <svg
-              className="w-6 h-6 text-gray-800 dark:text-white"
+              className="w-5 h-5 text-gray-800 dark:text-white"
               aria-hidden="true"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -159,7 +157,7 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
           </div>
           <div
             className={`absolute top-8 left-1/2 -translate-x-1/2 w-80 
-                  bg-white dark:bg-gray-800 rounded shadow text-xs
+                  g-[var(--color-selected)] dark:bg-[var(--color-selected)] p-3 rounded shadow text-xs
                   text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700
                   transition-opacity duration-150 pointer-events-none
                   ${hoveredItem === index ? "opacity-100" : "opacity-0"}`}
@@ -187,7 +185,7 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
             onMouseLeave={() => setHoveredItem(null)}
           >
             <svg
-              className="w-6 h-6 text-gray-800 dark:text-white"
+              className="w-5 h-5  text-gray-800 dark:text-white"
               aria-hidden="true"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -207,9 +205,9 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
           </div>
           <div
             className={`absolute top-8 left-1/2 -translate-x-1/2 w-80 
-                  bg-white dark:bg-gray-800 rounded shadow text-xs
+                  bg-white dark:bg-gray-900 rounded shadow text-xs
                   text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700
-                  transition-opacity duration-150 pointer-events-none
+                  transition-opacity duration-150 pointer-events-none p-2
                   ${hoveredItem === index ? "opacity-100" : "opacity-0"}`}
           >
             {action.reason}
@@ -235,7 +233,7 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
             onMouseLeave={() => setHoveredItem(null)}
           >
             <svg
-              className="w-6 h-6 text-gray-800 dark:text-white"
+              className="w-5 h-5 text-gray-800 dark:text-white"
               aria-hidden="true"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -255,7 +253,7 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
           </div>
           <div
             className={`absolute top-8 left-1/2 -translate-x-1/2 w-80 
-                  bg-white dark:bg-gray-800 rounded shadow text-xs
+                  bg-white dark:bg-gray-900 rounded shadow text-xs p-2
                   text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700
                   transition-opacity duration-150 pointer-events-none
                   ${hoveredItem === index ? "opacity-100" : "opacity-0"}`}
@@ -285,7 +283,7 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
             onMouseLeave={() => setHoveredItem(null)}
           >
             <svg
-              className="w-6 h-6 text-gray-800 dark:text-white"
+              className="w-5 h-5  text-gray-800 dark:text-white"
               aria-hidden="true"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -305,7 +303,7 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
           </div>
           <div
             className={`absolute top-8 left-1/2 -translate-x-1/2 w-80 
-                  bg-white dark:bg-gray-800 rounded shadow text-xs
+                  g-[var(--color-selected)] dark:bg-[var(--color-selected)] p-3 rounded shadow text-xs
                   text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700
                   transition-opacity duration-150 pointer-events-none
                   ${hoveredItem === index ? "opacity-100" : "opacity-0"}`}
@@ -336,7 +334,6 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
             width: "100%",
           }}
         >
-          {" "}
           <div
             style={{
               gridRow: "1",
@@ -346,21 +343,23 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
             }}
           >
             {action.role == "user" ? (
-              <></>
+              <div className="hidden sm:flex w-full" />
             ) : (
-              <div className="hidden sm:flex w-full bg-gray-200 h-0.5 dark:bg-gray-700"></div>
+              <div className="hidden sm:flex w-full bg-gray-200 h-0.5 dark:bg-green-500"></div>
             )}
+
             <div
               style={{
                 minWidth: "2.5rem",
                 minHeight: "2.5rem",
-                padding: "3px",
+                padding: "5px",
                 display: "flex",
                 justifyContent: "right",
               }}
-              className="z-10 bg-blue-100 rounded-full ring-0 ring-white dark:bg-blue-900 sm:ring-8 dark:ring-gray-900"
+              className="z-10 bg-blue-100 rounded-full ring-0 ring-white dark:bg-blue-900 sm:ring-3 dark:ring-green-500"
             >
-              {action.type === "function_call" ? (
+              {action.type === "function_call" &&
+              action.name?.startsWith("transfer_to_") ? (
                 <svg
                   aria-hidden="true"
                   xmlns="http://www.w3.org/2000/svg"
@@ -369,10 +368,20 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
                 >
                   <path
                     stroke="currentColor"
+                    strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth="2"
-                    d="M7.58209 8.96025 9.8136 11.1917l-1.61782 1.6178c-1.08305-.1811-2.23623.1454-3.07364.9828-1.1208 1.1208-1.32697 2.8069-.62368 4.1363.14842.2806.42122.474.73509.5213.06726.0101.1347.0133.20136.0098-.00351.0666-.00036.1341.00977.2013.04724.3139.24069.5867.52125.7351 1.32944.7033 3.01552.4971 4.13627-.6237.8375-.8374 1.1639-1.9906.9829-3.0736l4.8107-4.8108c1.0831.1811 2.2363-.1454 3.0737-.9828 1.1208-1.1208 1.3269-2.80688.6237-4.13632-.1485-.28056-.4213-.474-.7351-.52125-.0673-.01012-.1347-.01327-.2014-.00977.0035-.06666.0004-.13409-.0098-.20136-.0472-.31386-.2406-.58666-.5212-.73508-1.3294-.70329-3.0155-.49713-4.1363.62367-.8374.83741-1.1639 1.9906-.9828 3.07365l-1.7788 1.77875-2.23152-2.23148-1.41419 1.41424Zm1.31056-3.1394c-.04235-.32684-.24303-.61183-.53647-.76186l-1.98183-1.0133c-.38619-.19746-.85564-.12345-1.16234.18326l-.86321.8632c-.3067.3067-.38072.77616-.18326 1.16235l1.0133 1.98182c.15004.29345.43503.49412.76187.53647l1.1127.14418c.3076.03985.61628-.06528.8356-.28461l.86321-.8632c.21932-.21932.32446-.52801.2846-.83561l-.14417-1.1127ZM19.4448 16.4052l-3.1186-3.1187c-.7811-.781-2.0474-.781-2.8285 0l-.1719.172c-.7811.781-.7811 2.0474 0 2.8284l3.1186 3.1187c.7811.781 2.0474.781 2.8285 0l.1719-.172c.7811-.781.7811-2.0474 0-2.8284Z"
+                    d="m16 10 3-3m0 0-3-3m3 3H5v3m3 4-3 3m0 0 3 3m-3-3h14v-3"
                   />
+                </svg>
+              ) : action.type === "function_call" ? (
+                <svg
+                  aria-hidden="true"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M8.4 6.763c-.251.1-.383.196-.422.235L6.564 5.584l2.737-2.737c1.113-1.113 3.053-1.097 4.337.187l1.159 1.159a1 1 0 0 1 1.39.022l4.105 4.105a1 1 0 0 1 .023 1.39l1.345 1.346a1 1 0 0 1 0 1.415l-2.052 2.052a1 1 0 0 1-1.414 0l-1.346-1.346a1 1 0 0 1-1.323.039L11.29 8.983a1 1 0 0 1 .04-1.324l-.849-.848c-.18-.18-.606-.322-1.258-.25a3.271 3.271 0 0 0-.824.202Zm1.519 3.675L3.828 16.53a1 1 0 0 0 0 1.414l2.736 2.737a1 1 0 0 0 1.414 0l6.091-6.091-4.15-4.15Z" />
                 </svg>
               ) : action.action === "tripwire_triggered" &&
                 action.guardrail === "To Specialized Agent" ? (
@@ -424,23 +433,22 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
                 </svg>
               )}
             </div>
+
             {action.agent ? (
-              <></>
+              <div className="hidden sm:flex w-full" />
             ) : (
-              <div className="hidden sm:flex w-full bg-gray-200 h-0.5 dark:bg-gray-700"></div>
+              <div className="hidden sm:flex w-full bg-gray-200 h-0.5 dark:bg-green-500"></div>
             )}
           </div>
+
           <div
             style={{
               gridRow: "2",
               display: "flex",
               flexDirection: "column",
-              alignItems: action.agent
-                ? "end"
-                : action.role === "user"
-                ? "start"
-                : "center",
+              alignItems: "center",
               width: "100%",
+              height: "60px",
               textAlign: "center",
             }}
           >
@@ -448,10 +456,12 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
               style={{
                 display: "flex",
                 flexDirection: "column",
+                alignContent: "center",
+                maxHeight: "auto",
+                padding: "auto",
               }}
             >
-              {" "}
-              <h4 className="text-base text-gray-900 dark:text-white">
+              <h4 className="text-xs text-gray-900 dark:text-white pr-2 pl-2">
                 {label}
               </h4>
               {extra}
@@ -463,8 +473,22 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
   };
 
   return (
-    <div className="flex justify-center h-full">
-      <ol className="sm:flex" style={{ width: "80%" }}>
+    <div
+      style={{
+        height: "80%",
+        maxHeight: "100%",
+        display: "flex",
+        justifyItems: "center",
+      }}
+    >
+      <ol
+        className="sm:flex"
+        style={{
+          minWidth: "70em",
+          maxWidth: "70em",
+          justifySelf: "center",
+        }}
+      >
         {actions.length ? (
           actions.map(renderTimelineItem)
         ) : (

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import AgentResponseModal from "./AgentResponseModal";
 import { fetchUserHistory } from "../services/ManagerUI_service";
 import JSON5 from "json5";
-
+import SesionTimeline from "./SesionTimeline";
+import SesionDataPanel from "./SesionDataPanel";
 function formatDate(date) {
   const dias = [
     "Domingo",
@@ -51,6 +52,7 @@ const Chat = ({ userId, style }) => {
   const [was_oldest_session_called, setWas_oldest_session_called] =
     useState(false);
   const [is_loading_more, setIs_loading_more] = useState(false);
+  const [openId, setOpenId] = useState(null);
 
   const format_input_items = (input_items) => {
     const result = [];
@@ -153,7 +155,6 @@ const Chat = ({ userId, style }) => {
       });
 
       set_Session_history(session_history.reverse());
-      console.log("Valor de la session ", session_history);
     });
   }, [userId, session_range]);
 
@@ -198,8 +199,8 @@ const Chat = ({ userId, style }) => {
             input_items: format_input_items(entry.input_items),
           };
         })
-        .filter(Boolean) // quita nulos
-        .reverse(); // mantén orden como antes
+        .filter(Boolean)
+        .reverse();
 
       set_Session_history((prev) => [...mapped, ...prev]);
 
@@ -250,41 +251,92 @@ const Chat = ({ userId, style }) => {
     >
       {session_history.map((entry, idx) => (
         <div key={entry.id || idx} className="flex flex-col gap-2">
-          <div
-            style={{
-              fontSize: "medium",
-              color: "black",
-              display: "flex",
-              alignSelf: "center",
-              width: "35rem",
-              border: "1px solid #000b244e",
-              backgroundColor: "#f2f2f2ff",
-              borderRadius: "5px",
-              justifyContent: "center",
-              color: "#000b24ff",
-            }}
-          >
-            <p
-              style={{
-                display: "flex",
-                justifyContent: "right",
-                textAlign: "right",
-                paddingRight: "0.2rem",
-              }}
-            >
-              Inicio Sesion
-            </p>
-            <p
-              style={{
-                display: "flex",
-                justifyContent: "left",
-                textAlign: "left",
-                paddingLeft: "0.2rem",
-              }}
-            >
-              {formatDate(entry.fecha)}
-            </p>
+          <div>
+            {(() => {
+              const panelId = `accordion-body-${entry.id ?? idx}`;
+              const headingId = `accordion-heading-${entry.id ?? idx}`;
+              const isOpen = openId === panelId;
+
+              return (
+                <div data-accordion="collapse">
+                  <h2 id={headingId}>
+                    <button
+                      type="button"
+                      onClick={() => setOpenId(isOpen ? null : panelId)}
+                      className={
+                        isOpen
+                          ? "flex items-center justify-center w-full p-1 border-b-0 border-gray-200 rounded-t-xl focus:ring-4 focus:ring-blue-200 dark:focus:ring-[var(--color-primary_button)] dark:border-gray-700 gap-3"
+                          : "flex items-center justify-center w-full p-1 border-b-0 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-200 dark:focus:ring-[var(--color-primary_button)] dark:border-gray-700 gap-3"
+                      }
+                      aria-expanded={isOpen}
+                      aria-controls={panelId}
+                      style={{
+                        backgroundColor: "#23c0c0",
+                        width: "30%",
+                        maxWidth: "50%",
+                        justifySelf: "center",
+                        color: "white",
+                        fontFamily: "AvocadoFont, Arial",
+                      }}
+                    >
+                      <p>{formatDate(entry.fecha)}</p>
+
+                      <svg
+                        className={`w-3 h-3 shrink-0 transition-transform ${
+                          isOpen ? "rotate-180" : ""
+                        }`}
+                        aria-hidden="true"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 10 6"
+                      >
+                        <path
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M9 5 5 1 1 5"
+                        />
+                      </svg>
+                    </button>
+                  </h2>
+
+                  <div
+                    id={panelId}
+                    aria-labelledby={headingId}
+                    className={isOpen ? "" : "hidden"}
+                  >
+                    <div className="p-5  border border-b-0 border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                      <p className="mb-2 text-gray-500 dark:text-gray-400">
+                        Actividad en esta sesión
+                      </p>
+                      <div
+                        style={{
+                          padding: "5px",
+                          display: "grid",
+                          gridTemplateColumns: "30% 1fr",
+                        }}
+                      >
+                        <SesionTimeline session={entry} />
+                        <div
+                          style={{
+                            gridColumn: "2",
+                            height: "300px",
+                            maxHeight: "auto",
+                            display: "grid",
+                            gridTemplate: " 1fr 1fr 1fr / 1fr 1fr 1fr",
+                          }}
+                        >
+                          <SesionDataPanel session={entry} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
+
           {Array.isArray(entry.input_items) &&
             entry.input_items.map((item, itemIdx) => (
               <div key={itemIdx}>

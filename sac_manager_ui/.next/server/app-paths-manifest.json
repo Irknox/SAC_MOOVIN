@@ -1,6 +1,4 @@
 {
   "/(ManagerUI)/page": "app/(ManagerUI)/page.js",
-  "/ManagerLogin/page": "app/ManagerLogin/page.js",
-  "/_not-found/page": "app/_not-found/page.js",
-  "/api/session/route": "app/api/session/route.js"
+  "/_not-found/page": "app/_not-found/page.js"
 }

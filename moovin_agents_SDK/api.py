@@ -25,6 +25,9 @@ from handlers.redis_handler import RedisSession, SESSION_IDLE_SECONDS
 from zoneinfo import ZoneInfo
 now_cr = datetime.now(ZoneInfo("America/Costa_Rica")).isoformat()
 
+def now_cr_iso() -> str:
+    return datetime.now(ZoneInfo("America/Costa_Rica")).isoformat()
+
 image_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 location_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 
@@ -596,7 +599,7 @@ async def whatsapp_webhook(request: Request):
         user_message_for_audit ={
             "role":"user",
             "content":user_message,
-            "date":now_cr,
+            "date": now_cr_iso(),
         }
         await redis_session.append_audit_items(user_id, user_message_for_audit)
 
@@ -657,7 +660,7 @@ async def whatsapp_webhook(request: Request):
             "role": "assistant",
             "content": response_text,
             "agent": current_agent.name,
-            "date": now_cr,
+            "date":  now_cr_iso(),
         }
         await redis_session.append_audit_items(user_id, agent_message_human)
         

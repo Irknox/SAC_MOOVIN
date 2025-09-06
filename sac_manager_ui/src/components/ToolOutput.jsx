@@ -4,9 +4,7 @@ import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css"; // ok en cliente
 import ChangeDeliveryOutputView from "./ChangeDeliveryOutputView";
 
-const ToolOutput = ({ tool, output, visible = false,call }) => {
-  console.log("output recibido", output);
-
+const ToolOutput = ({ tool, output, visible = false, call }) => {
   // --- Refs y coords ---
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -96,15 +94,18 @@ const ToolOutput = ({ tool, output, visible = false,call }) => {
             </tr>
           </thead>
           <tbody>
-            {Array.isArray(output?.timeline) && output.timeline.map((item, idx) => (
-              <tr
-                key={idx}
-                className="border-b border-gray-800 hover:bg-gray-800"
-              >
-                <td className="px-2 py-1 whitespace-nowrap">{item.dateUser}</td>
-                <td className="px-2 py-1 whitespace-nowrap">{item.status}</td>
-              </tr>
-            ))}
+            {Array.isArray(output?.timeline) &&
+              output.timeline.map((item, idx) => (
+                <tr
+                  key={idx}
+                  className="border-b border-gray-800 hover:bg-gray-800"
+                >
+                  <td className="px-2 py-1 whitespace-nowrap">
+                    {item.dateUser}
+                  </td>
+                  <td className="px-2 py-1 whitespace-nowrap">{item.status}</td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
@@ -136,7 +137,10 @@ const ToolOutput = ({ tool, output, visible = false,call }) => {
     );
   } else if (tool === "send_delivery_address_requested") {
     return (
-      <div className="max-h-100 max-w-auto bg-gray-900 p-2 text-gray-200 border border-gray-700 text-xs">
+      <div
+        style={{ zIndex: "10000" }}
+        className="fixed max-h-100 z-[1000] max-w-auto bg-gray-900 p-2 text-gray-200 border border-gray-700 text-xs"
+      >
         <pre>{output["address pre info"]}</pre>
         <div
           id="map_container"
@@ -161,6 +165,51 @@ const ToolOutput = ({ tool, output, visible = false,call }) => {
       <div className="max-h-100 max-w-auto bg-gray-900 p-2 text-gray-200 border border-gray-700 text-xs">
         <pre>{output.delivery_address}</pre>
         <ChangeDeliveryOutputView output={output} />
+      </div>
+    );
+  } else if (tool === "remember_more") {
+    const raw = output ?? {};
+
+    const sessions = Object.entries(raw)
+      .filter(([k, v]) => k.startsWith("sesion_") && v)
+      .map(([id, v]) => ({ id, ...v }));
+
+    sessions.sort(
+      (a, b) =>
+        new Date(b.fecha.replace(" ", "T")) -
+        new Date(a.fecha.replace(" ", "T"))
+    );
+
+    const session_count = sessions.length;
+
+    return (
+      <div className="max-h-100 max-w-auto bg-gray-900 p-2 text-gray-200 border border-gray-700 text-xs">
+        {session_count === 0 ? (
+          <p>No hay sesiones para mostrar.</p>
+        ) : (
+          sessions.map(({ id, cuando, fecha, resumen }) => (
+            <div key={id} className="mb-3">
+              <h1 className="font-semibold">{cuando}</h1>
+              <h2 className="text-gray-400">Fecha: {fecha}</h2>
+              <p className="mt-1">{resumen}</p>
+            </div>
+          ))
+        )}
+      </div>
+    );
+  } else if (tool === "package_damaged_ticket") {
+    return (
+      <div className="max-h-100 max-w-auto bg-gray-900 p-2 text-gray-200 border border-gray-700 text-xs">
+        {output.status === "success" ? (
+          <>
+            <p className="text-sm">Ticket creado</p>
+            <p  className="text-xs text-gray-400">Numero: {output.TicketNumber}</p>
+          </>
+        ) : (
+          <>
+            <p>Ticket no fue creado con exito</p>
+          </>
+        )}
       </div>
     );
   } else {

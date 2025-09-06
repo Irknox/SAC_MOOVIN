@@ -5,3 +5,6 @@
 **node_modules/
 .next/
 docker-compose.yml
+
+prompts/
+prompts_backup/
