@@ -6,7 +6,7 @@ const DEV_URL = "http://localhost:7575/Handler";
 
 export const fetchHistoryPreview = async () => {
   try {
-    const response = await axios.post(DEV_URL, {
+    const response = await axios.post(API_URL, {
       request: "UsersLastMessages",
     });
 
@@ -32,7 +32,7 @@ export const fetchUserHistory = async (
       request_body.last_id = last_id;
     }
 
-    const response = await axios.post(DEV_URL, {
+    const response = await axios.post(API_URL, {
       request: "UserHistory",
       request_body,
     });
@@ -47,7 +47,7 @@ export const fetchUserHistory = async (
 
 export const fetchPrompt = async (prompt_type) => {
   try {
-    const response = await axios.post(DEV_URL, {
+    const response = await axios.post(API_URL, {
       request: "Prompt",
       request_body: { type: prompt_type },
     });
@@ -62,7 +62,7 @@ export const fetchPrompt = async (prompt_type) => {
 
 export const updatePrompt = async (prompt_owner, prompt) => {
   try {
-    const response = await axios.post(DEV_URL, {
+    const response = await axios.post(API_URL, {
       request: "Prompt_update",
       request_body: { updated_prompt: prompt, prompt_owner },
     });
