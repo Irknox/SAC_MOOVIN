@@ -31,9 +31,7 @@ const ConversationsTab = ({ onSelectUser, selectedUserId }) => {
           }
         });
       setHistory(history);
-      setLastMessages(lastMessages);
-      console.log("Last messages es:",lastMessages);
-      
+      setLastMessages(lastMessages);      
     };
 
     fetchAndSet();

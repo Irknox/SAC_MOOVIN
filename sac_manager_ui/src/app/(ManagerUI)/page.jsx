@@ -14,9 +14,9 @@ export default function ManagerUIPage() {
       style={{
         display: "grid",
         gridTemplateRows: "50px 1fr",
-        gridTemplateColumns: "12% 15% 1fr", 
-        height: "99vh",
-        maxHeight: "98%",
+        gridTemplateColumns: "15% 15% 1fr", 
+        height: "100vh",
+        maxHeight: "99%",
         width: "100vw",
         minHeight: "100%",
         overflow: "hidden",
@@ -121,7 +121,7 @@ export default function ManagerUIPage() {
                   height: "100%",
                   width: "100%",
                   display: "flex",
-                  backgroundColor: "#ffffffff",
+                  backgroundColor: "white",
                   flexDirection: "column",
                 }}
               />

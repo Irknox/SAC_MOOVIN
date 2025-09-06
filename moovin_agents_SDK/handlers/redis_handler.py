@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List, Union
 import redis.asyncio as redis
 
-SESSION_IDLE_SECONDS = 10  * 60  # 10 minutos
+SESSION_IDLE_SECONDS = 1  * 60  # 10 minutos
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -34,7 +34,6 @@ class RedisSession:
         if raw:
             obj = json.loads(raw)
             
-            # Estructura base
             obj.setdefault("state", {})
             obj.setdefault("pending_log", [])
             obj.setdefault("last_seen", utcnow().isoformat())

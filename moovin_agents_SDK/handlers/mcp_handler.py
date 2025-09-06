@@ -5,7 +5,11 @@ import json
 from handlers.main_handler import get_delivery_address
 load_dotenv()
 import time
-from datetime import datetime, timezone, timedelta
+
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+CR_TZ = ZoneInfo("America/Costa_Rica")
 
 zoho_refresh_token=os.environ.get("Zoho_Refresh_Token", "")
 zoho_org_id = "716348510"
@@ -46,7 +50,6 @@ def upload_attachments_to_ticket(ticket_id: str, images: list[bytes]) -> list[di
                 data = resp.json()
                 results.append({"status": "ok", "attachment_id": data.get("id")})
                 print(f"✅ Imagen {i+1} subida correctamente")
-                print(f"Respuesta {resp}")
             else:
                 print(f"❌ Error subiendo imagen {i+1}: {resp.status_code}")
                 print(f"Error: {resp.json()}")
@@ -142,16 +145,35 @@ async def change_delivery_address(idPoint:int,lat:float,lng:float):
 
 def _parse_date_cr(dt_str: str) -> datetime | None:
     """
-    Convierte 'YYYY-MM-DD HH:MM:SS' a datetime con tz de CR.
-    Devuelve None si no se puede parsear.
+    Convierte varias variantes de fecha a datetime con tz de CR.
+    Acepta:
+      - "YYYY-MM-DD HH:MM:SS"
+      - "YYYY-MM-DD HH:MM:SS.%f"
+      - ISO con o sin 'T' y con/ sin offset, p.ej. "YYYY-MM-DDTHH:MM:SS.ssssss-06:00"
     """
     if not dt_str or not isinstance(dt_str, str):
         return None
+    s = dt_str.strip()
+
     try:
-        dt = datetime.strptime(dt_str.strip(), "%Y-%m-%d %H:%M:%S")
-        return dt.replace(tzinfo=CR_TZ)
+        iso = s.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(iso)
+        return dt if dt.tzinfo else dt.replace(tzinfo=CR_TZ)
     except Exception:
-        return None
+        pass
+
+    try:
+        return datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(tzinfo=CR_TZ)
+    except Exception:
+        pass
+
+    try:
+        return datetime.strptime(s, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=CR_TZ)
+    except Exception:
+        pass
+
+    return None
+
 
 ##----------------------------Zoho--------------------------------##
 _token_info = {
@@ -323,12 +345,14 @@ def create_pickup_ticket(email: str, phone: str,
         response.raise_for_status()
         ticket_data = response.json()
         ticket_number = ticket_data.get("ticketNumber", "DESCONOCIDO")
+        TicketURL=ticket_data.get("webUrl","No disponible")
         
         print(f"🎫 Ticket creado: {ticket_number}")
         
         return {
             "ticket_number": ticket_number,
-            "message": "Ticket creado exitosamente"
+            "message": "Ticket creado exitosamente",
+            "webUrl":TicketURL
         }
     except Exception as e:
         return {
@@ -481,6 +505,7 @@ def report_package_damaged(owner: dict, package_id: str, description: str, img_d
         ticket_data = response.json()
         ticket_id= ticket_data.get("id", "DESCONOCIDO")
         ticketNumber=ticket_data.get("ticketNumber","DESCONOCIDO")
+        TicketURL=ticket_data.get("webUrl","No disponible")
         
         attachment_results = []
         if img_data:
@@ -491,6 +516,7 @@ def report_package_damaged(owner: dict, package_id: str, description: str, img_d
             "status": "ok",
             "message": f"Ticket de daño creado para el paquete {package_id}",
             "Numero de Ticket": ticketNumber,
+            "webUrl":TicketURL,
             "attachments": attachment_results
         } 
         

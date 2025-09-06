@@ -175,7 +175,7 @@ const PromptPanel = ({ value, prompt }) => {
         style={{
           gridColumn: "2",
           display: "grid",
-          gridTemplateRows: "minmax(9rem, 26.5vh) 1fr",
+          gridTemplateRows: "minmax(9rem, 30vh) 1fr",
           color: "white",
           height: "100%",
           maxHeight: "100%",
@@ -188,47 +188,66 @@ const PromptPanel = ({ value, prompt }) => {
             gridRow: "1",
             maxHeight: "100%",
             overflow: "hidden",
-            padding: "5px",
+            fontSize: "clamp(0.1rem, 0.3rem + 0.3vw, 0.8rem)",
+            textAlign: "left",
+            padding: "0.5rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "1px",
           }}
         >
           <h1
             style={{
-              fontSize: "clamp(0.2rem, 0.2rem + 0.4vw, 1rem)",
               textAlign: "center",
             }}
+            class=" text-xs text-center text-white"
           >
             Indicaciones Generales
           </h1>
-          <p
-            style={{
-              fontSize: "clamp(0.1rem, 0.3rem + 0.3vw, 0.8rem)",
-              textAlign: "left",
-              padding: "0.2rem",
-            }}
-          >
+
+          <p class="text-gray-300 text-center ">
             Es importante que las instrucciones referentes a una herramiente de
             un agente lleven el nombre explicito de la herramienta.
-            <br />
+          </p>
+          <p class="text-gray-300 text-center">
             Las instrucciones deben ser claras y concisas, evitando ambigüedades
             que puedan complicar el razonamiento de la IA.
-            <br />
+          </p>
+          <p class="text-gray-300 text-center">
             El nuevo prompt se tomara en cuenta una vez haya sido actualizado,
             actualiza el prompt para que surja efecto
-            <br />
-            Todos los agentes obtienen:
-            <br />
-            1 Funcion Remember: Obtiene un resumen de cada una de las ultimas 3
-            sesiones en caso de existir.
-            <br />
-            2 El general prompt es enviado a todos para que compartan un
-            contexto.
-            <br />
-            3 Si el usuario tiene paquetes con nosotros los ultimos 3 y sus
-            estados actualizados, ademas del nombre, y correo del usuario en
-            nuestro sistema. <br />
-            3.1 Si no tiene paquetes, Nombre en Whatsapp y numero de telefono.
           </p>
-          <hr />
+          <h2 class=" text-xs text-center text-white">
+            Todos los agentes obtienen
+          </h2>
+          <ul class="max-w-md space-y-1 text-gray-300 list-disc list-inside dark:text-gray-300">
+            <li>
+              Funcion Remember: Obtiene un resumen de cada una de las ultimas 3
+              sesiones en caso de existir.
+            </li>
+            <li>
+              El general prompt es enviado a todos para que compartan un
+              contexto.
+            </li>
+            <li>
+              Si el usuario tiene paquetes con nosotros los ultimos 3 y sus
+              estados actualizados, ademas del nombre, y correo del usuario en
+              nuestro sistema.
+            </li>
+            <li>
+              Si no tiene paquetes, nombre en Whatsapp y numero de telefono.
+            </li>
+          </ul>
+          <div
+            style={{
+              width: "70%",
+              height: "1px",
+              display: "flex",
+              alignSelf: "center",
+              marginTop: "auto",
+            }}
+            className="bg-gray-700"
+          />
         </div>
 
         <div
@@ -239,14 +258,7 @@ const PromptPanel = ({ value, prompt }) => {
             padding: "5px",
           }}
         >
-          <p
-            style={{
-              textAlign: "center",
-              fontSize: "clamp(0.2rem, 0.2rem + 0.4vw, 1rem)",
-            }}
-          >
-            Descripcion
-          </p>
+          <p className="text-center text-xs ">Descripcion</p>
 
           <AgentDescription agent={prompt} />
         </div>

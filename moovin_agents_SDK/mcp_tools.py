@@ -1,6 +1,9 @@
 from agents import function_tool,RunContextWrapper
 from handlers.main_handler import get_package_historic, get_id_package, get_img_data,get_delivery_address,reverse_geocode_osm,send_location_to_whatsapp
 from handlers.mcp_handler import _parse_date_cr,create_pickup_ticket,request_electronic_receipt, report_package_damaged,change_delivery_address as change_delivery_address_request
+
+
+
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -56,7 +59,7 @@ def Make_request_to_pickup_tool(pool):
                 "tracking": str(package_id),
                 "package_found": True,
                 "status": "error",
-                "response": ", ".join(blockers)
+                "message": ", ".join(blockers)
             }
 
         print(f"🛠️ Creando ticket de recogida para {package_id}...  Tipo de dato: {type(package_id)}")
@@ -65,11 +68,6 @@ def Make_request_to_pickup_tool(pool):
         owner_name  = package_historic.get("nombre_dueño_paquete", "")
         owner_mail  = package_historic.get("email_dueño_paquete", "")
 
-        print(
-            f"📞 Dueño del paquete: {owner_name} - Teléfono: {owner_phone} "
-            f"- Email: {owner_mail} - Descripción: {description}"
-        )
-
         result = create_pickup_ticket(
             email=owner_mail,
             phone=owner_phone,
@@ -77,7 +75,18 @@ def Make_request_to_pickup_tool(pool):
             package_id=str(package_id),
             description=description
         )
-        return result
+        
+        Ticket=result.get("ticket_number","Desconocido")
+        TicketURL=result.get("webUrl","Desconocido")
+        
+        response={
+            "status":"success",
+            "TicketNumber":Ticket,
+            "DevURL":TicketURL
+        }
+        
+        
+        return response
 
     return pickup_ticket
 
@@ -111,9 +120,10 @@ def Make_request_electronic_receipt_tool(pool):
         
         if not inmoovin_encontrado:
             return {
+                "status":"error",
                 "tracking": package_id,
                 "package_found": True,
-                "response": "Paquete aún no ha llegado a nuestras instalaciones. Una vez llegue, la solicitud podrá ser realizada."
+                "message": "Paquete aún no ha llegado a nuestras instalaciones. Una vez llegue, la solicitud podrá ser realizada."
             }
             
         print(f"🎫 Creando ticket para solicitud de factura electronica para {package_id}...")
@@ -177,7 +187,7 @@ def Make_package_damaged_tool(mysql_pool, tools_pool):
             return {
                 "tracking": str(package_id),
                 "package_found": True,
-                "response": "Este ticket solo puede generarse 48 horas después de la entrega. "
+                "response": "Este ticket solo puede en las primeras 48 horas después de la entrega."
             }
         if not last_dt:
             return {
@@ -187,12 +197,12 @@ def Make_package_damaged_tool(mysql_pool, tools_pool):
             }
 
         hours_since = (now_cr - last_dt).total_seconds() / 3600.0
-        if hours_since <= 48:
+        if hours_since >= 48:
             return {
                 "tracking": str(package_id),
                 "package_found": True,
                 "response": (
-                    f"Este ticket solo puede generarse 48 horas después de la entrega. "
+                    f"Este ticket solo puede en las primeras 48 horas después de la entrega. "
                     f"Última entrega: {last_date_str} (hace ~{int(hours_since)} horas)."
                 )
             }
@@ -226,7 +236,8 @@ def Make_package_damaged_tool(mysql_pool, tools_pool):
             ctx.context.imgs_ids = []
             return {
                 "status": "success",
-                "TicketNumber": result.get("'Numero de Ticket")
+                "TicketNumber": result.get("Numero de Ticket"),
+                "DevURL":result.get("webUrl","Desconocido")
             }
         else:
             print(f"❌ Error al crear el ticket: {result}")
@@ -271,7 +282,8 @@ def Make_send_delivery_address_requested_tool():
                         else:
                             print(f"confirmation was not found in context")
                         return {
-                            "status": "Success, message with ubication in ubication format was sent to user",
+                            "status": "success",
+                            "message":"Message with Ubication was sent and received by the User",
                             "address pre info": address,
                             "location_data":{
                                 "latitude":lat,
@@ -280,7 +292,10 @@ def Make_send_delivery_address_requested_tool():
                         }
         except Exception as e:
             print(f"❌ Error al enviar la direccion al usuario: {e}")
-            return "[Error al enviar direccion al usuario]"
+            return {
+                "status":"error",
+                "message":"An error has ocurred while sending the location"
+            }
         
         
         
@@ -299,9 +314,9 @@ def Make_change_delivery_address_tool(pool):
         
         new_address=ctx.context.location_sent
         if new_address.get("is_is_request_confirmed_by_user") == False:
-            return { "error":"User hasn't confirmed he wants to change the current address yet, confirm with the user using the proper tool and try again"}
+            return { "status":"error", "reason":"User hasn't confirmed he wants to change the current address yet, confirm with the user using the proper tool and try again"}
         if new_address.get("is_new_address_confirmed") == False:
-            return { "error":"User hasn't confirmed the new address, confirm it with the user using the proper tool and try again"}
+            return { "status":"error", "reason":"User hasn't confirmed the new address, confirm it with the user using the proper tool and try again"}
         
         package_id = await get_id_package(pool, package)
         if not package_id:
@@ -320,7 +335,7 @@ def Make_change_delivery_address_tool(pool):
         id_point=package_info.get("idPoint")
         if not id_point:
             print (f"No se obtuvo el id point f{package_info}")
-            return {"status": "error", "reason": "No se encontró el punto de entrega para este paquete."}
+            return {"status": "error", "message": "No se encontró el punto de entrega para este paquete."}
         
         
         lat=new_address.get("latitude")
@@ -332,19 +347,19 @@ def Make_change_delivery_address_tool(pool):
             print (f"Se limpio el contexto, su valor ahora es {ctx.context.location_sent}")
             return {
                 "status": "success",
-                "reason":"Delivery address changed"
+                "message":"Delivery address changed"
             }
         elif delivery_change_request_data.get("message") == "Not exist package":
             print(f"⚠️ Error al cambiar la direccion de entrega, el paquete no ha sido anadido a la BD en Dev aun")
             ctx.context.location_sent = {}
             return {
                 "status":"error",
-                "reason":"Package hasn't been added to the Developer DB yet, advise the user package hasn't been added"
+                "message":"Package hasn't been added to the Developer DB yet, advise the user package hasn't been added"
             }
         else:
             print(f"⚠️ Error al cambiar la direccion de entrega")
             return {
                 "status":"error",
-                "reason":"An error ocurred when changing the delivery address"
+                "message":"An error ocurred when changing the delivery address"
             }
     return change_delivery_address
