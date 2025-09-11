@@ -572,8 +572,6 @@ async def get_delivery_date(pool, enterprise_code: str) -> dict:
         }
 
 
-
-
 #--------------------Funciones de chat_history--------------------#
 async def get_agent_history(pool):
     """
@@ -625,7 +623,6 @@ async def get_users_last_messages(pool):
 
             return await cur.fetchall()
 
-
 async def get_last_messages_by_user(pool, user_id: str, limit: int, last_id: int = None):
     """
     Devuelve los últimos `limit` mensajes de un usuario específico.
@@ -675,7 +672,6 @@ async def get_last_messages_by_user(pool, user_id: str, limit: int, last_id: int
             results.sort(key=lambda x: x["fecha"], reverse=True)
 
             return results
-
 
 async def get_last_state(pool, user_id):
     async with pool.acquire() as conn:

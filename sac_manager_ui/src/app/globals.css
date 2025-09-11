@@ -16,24 +16,10 @@
     --color-primary_blue: #000b24ff;
     --color-primary_hover: #0b39804f;
     --color-primary_button: #19a8a8;
+    --color-primary_button_hovered: #046767;
   }
 }
 
-@font-face {
-  font-family: "AvocadoFont";
-  src: url("/sac_manager_ui/public/fonts/LTAvocado-Regular.ttf") format("truetype");
-  font-weight: 400; /* para font-normal */
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "AvocadoFont";
-  src: url("/sac_manager_ui/public/fonts/LTAvocado-Bold.ttf") format("truetype");
-  font-weight: 500; /* para font-medium (si ese bold realmente luce como 500) */
-  font-style: normal;
-  font-display: swap;
-}
 
 body {
   background: var(--background);

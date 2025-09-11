@@ -424,12 +424,14 @@ def request_electronic_receipt(owner: dict, package_id: str,legal_name:str, lega
         response.raise_for_status()
         ticket_data = response.json()
         ticket_number = ticket_data.get("ticketNumber", "DESCONOCIDO")
+        TicketURL=ticket_data.get("webUrl","No disponible")
         
         print(f"🎫 Ticket creado: {ticket_number}")
         
         return {
-            "ticket_number": ticket_number,
-            "message": "Ticket creado exitosamente"
+            "TicketNumber": ticket_number,
+            "message": "Ticket creado exitosamente",
+            "DevURL":TicketURL
         }
     except Exception as e:
         return {

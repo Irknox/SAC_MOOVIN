@@ -216,7 +216,6 @@ async def persist_session_to_mysql(app, cid: str, session_obj: dict):
 
 
     state = session_obj.get("state", {}) or {}
-    # Normaliza context si es Pydantic
     ctx = state.get("context")
     if hasattr(ctx, "model_dump"):
         state["context"] = ctx.model_dump()
@@ -653,6 +652,8 @@ async def whatsapp_webhook(request: Request):
 
         delta_items = [it for it in new_slice if not is_user_echo(it)]
 
+        
+        
         if delta_items:
             await redis_session.append_audit_items(user_id, delta_items)
 
@@ -662,6 +663,7 @@ async def whatsapp_webhook(request: Request):
             "agent": current_agent.name,
             "date":  now_cr_iso(),
         }
+        
         await redis_session.append_audit_items(user_id, agent_message_human)
         
         ##------------------Enviar respuesta a WhatsApp------------------##

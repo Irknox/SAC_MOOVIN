@@ -52,30 +52,62 @@ def convert_timeline_to_text(timeline_data: list) -> str:
     for entry in timeline_data:
         fecha = entry.get("dateUser", "Fecha desconocida")
         estado = entry.get("status", "Estado desconocido")
-        responsable = entry.get("fullName", "Desconocido")
-        lines.append(f"{fecha} - {estado} (por {responsable})")
+        lines.append(f"{fecha} - {estado})")
 
     return "\n".join(lines)
 
-def retrieve_similar_timelines(embedding: list, top_k: int = 5) -> list:
+def retrieve_similar_timelines(embedding: list, top_k: int = 3) -> list:
+    """
+    Devuelve los 'top_k' timelines más similares como una lista de dicts:
+      {
+        "package_id": <int|str>,
+        "last_status": <str>,
+        "date_last_update": <str>,
+        "timeline": <str>
+      }
+    """
+    import json as _json
     conn = psycopg2.connect(os.environ["SUPABASE_URL"])
     cur = conn.cursor()
     embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
+
+    # Seleccionamos también metadata para construir la respuesta
     cur.execute("""
-        SELECT content
+        SELECT content, metadata
         FROM (
-            SELECT content, embedding
+            SELECT content, embedding, metadata
             FROM public.sac_moovin_package_status_kb
             ORDER BY insert_date DESC
-            LIMIT 30
+            LIMIT 200
         ) AS recent
         ORDER BY embedding <#> %s::vector
         LIMIT %s
     """, (embedding_str, top_k))
+
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    return [row[0] for row in rows]
+
+    out = []
+    for content, metadata in rows:
+        # psycopg2 puede devolver metadata como dict o como str JSON: robustecemos
+        if isinstance(metadata, str):
+            try:
+                metadata = _json.loads(metadata)
+            except Exception:
+                metadata = {}
+        elif metadata is None:
+            metadata = {}
+
+        out.append({
+            "package_id": metadata.get("package_id"),
+            "last_status": metadata.get("last_status"),
+            "date_last_update": metadata.get("date_last_update"),
+            "timeline": content,  # tal cual está guardado
+        })
+
+    return out
+
 
 def insert_timeline_to_vectorstore(content: str, embedding: list, metadata: dict):
     conn = psycopg2.connect(os.environ["SUPABASE_URL"])
@@ -118,18 +150,19 @@ def make_get_package_timeline_tool(pool):
             historic = await get_package_historic(pool, package_id)
         except Exception as e:
             print(f"🔴 [ERROR] Fallo al obtener el histórico del paquete {package_id}: {e}")
-            return {"error": "Hubo un problema al obtener el historial del paquete."}
+            return {"status":"error","message":"Hubo un problema al obtener el historial del paquete."}
 
         phone_dueño = historic.get("telefono_dueño")
         if not phone_dueño:
             print(f"🔴 [ERROR] No se encontró el teléfono del dueño del paquete en los datos: {historic}")
-            return {"error": "No se encontró el teléfono del dueño del paquete."}
+            return {"status":"error","message": "No se encontró el teléfono del dueño del paquete."}
 
         if phone_dueño.strip().lower() != phone.strip().lower():
             print(f"🟠 [WARNING] Teléfono no coincide. Proporcionado: {phone}, Dueño: {phone_dueño}")
-            return {"error": "El teléfono proporcionado no coincide con el dueño del paquete."}
+            return {"status":"error","message": "El teléfono proporcionado no coincide con el dueño del paquete."}
         
         return {
+            "status":"success",
             "timeline": historic.get("timeline","Dato no fue encontrado"),
             "Numero de Telefono": phone_dueño,
             "Dueño del Paquete": historic.get("nombre_dueño_paquete","Dato no fue encontrado"),
@@ -141,34 +174,43 @@ def make_get_package_timeline_tool(pool):
 # Factory function for get_likely_package_timelines tool
 def make_get_likely_package_timelines_tool(pool):
     @function_tool(
-    name_override="get_likely_package_timelines",
-    description_override="Obtiene timelines parecidos al del usuario apartir del tracking o numero de seguimiento, usala para obtener contexto unicamente." 
+        name_override="get_likely_package_timelines",
+        description_override="Obtiene timelines parecidos al del usuario apartir del tracking o numero de seguimiento; devuelve 3 paquetes con su último estado y su timeline."
     )
-    async def get_likely_package_timelines(package_id: str) -> str:
+    async def get_likely_package_timelines(package_id: str) -> dict:
         print(f"🔍 Buscando timelines similares para el paquete {package_id}...")
-        package= await get_id_package(pool, enterprise_code=package_id)
+
+        # 1) timeline base del paquete del usuario → embedding
+        package = await get_id_package(pool, enterprise_code=package_id)
         raw_data = await get_package_historic(pool, package)
         timeline_str = convert_timeline_to_text(raw_data["timeline"])
         embedding = get_embedding(timeline_str)
-        similar_timelines = retrieve_similar_timelines(embedding, top_k=5)
 
-        timeline_array=raw_data["timeline"]        
-        last_state = timeline_array[len(timeline_array) - 1]
-        last_status = last_state["status"]
-        date=last_state["dateUser"]
-        metadata = {
-            "package_id": package,
-            "last_status":last_status,
-            "date_last_update":date
+        # 2) similaridad → 3 mejores coincidencias con metadata + timeline
+        similar_items = retrieve_similar_timelines(embedding, top_k=3)
+        print(f"🧭 Similares (3): {similar_items}")
+
+        # 3) opcional: indexar el propio timeline en la vector store (como ya hacías)
+        try:
+            timeline_array = raw_data["timeline"]
+            last_state = timeline_array[-1] if timeline_array else {}
+            last_status = last_state.get("status")
+            date = last_state.get("dateUser")
+            metadata = {
+                "package_id": package,
+                "last_status": last_status,
+                "date_last_update": date
             }
-        insert_timeline_to_vectorstore(timeline_str, embedding, metadata)
+            insert_timeline_to_vectorstore(timeline_str, embedding, metadata)
+        except Exception as e:
+            print(f"⚠️ No se pudo indexar el timeline base: {e}")
 
-        response = (
-            f"Timeline del paquete {package_id}"
-            f"Timelines similares encontrados:\n- " + "\n- ".join(similar_timelines)
-        )
-
-        return response
+        # 4) respuesta nueva con 3 paquetes estructurados
+        return {
+            "status": "success",
+            "package": package_id,
+            "similares": similar_items  # lista de 3 dicts: package_id, last_status, date_last_update, timeline
+        }
 
     return get_likely_package_timelines
 
@@ -188,16 +230,16 @@ def Make_send_current_delivery_address_tool(tools_pool):
             historic = await get_package_historic(tools_pool, package)
         except Exception as e:
             print(f"🔴 [ERROR] Fallo al obtener el histórico del paquete {package}: {e}")
-            return {"error": "Hubo un problema al obtener el historial del paquete."}
+            return {"status":"error","message": "Hubo un problema al obtener el historial del paquete."}
 
         phone_dueño = historic.get("telefono_dueño")
         if not phone_dueño:
             print(f"🔴 [ERROR] No se encontró el teléfono del dueño del paquete en los datos: {historic}")
-            return {"error": "No se encontró el teléfono del dueño del paquete."}
+            return{"status":"error","message": "No se encontró el teléfono del dueño del paquete."}
 
         if phone_dueño.strip().lower() != phone.strip().lower():
             print(f"🟠 [WARNING] Teléfono no coincide. Proporcionado: {phone}, Dueño: {phone_dueño}")
-            return {"error": "El teléfono proporcionado no coincide con el dueño del paquete, solicita al usuario el telefono correcto"}
+            return{"status":"error","message":"El teléfono proporcionado no coincide con el dueño del paquete, solicita al usuario el telefono correcto"}
         
         delivery_address= await get_delivery_address(tools_pool,enterprise_code=package)
         lat=delivery_address.get("latitude",None)
@@ -230,16 +272,17 @@ def Make_send_current_delivery_address_tool(tools_pool):
                     else:
                         return {
                             "status":"error",
-                            "reason":"error ocurred while sending the ubication through whatsapp"
+                            "message":"error ocurred while sending the ubication through whatsapp"
                         }
             else:
                 return {
                     "status","error",
-                    "reason","an error ocurred while finding the address name"
+                    "message","an error ocurred while finding the address name"
                 }
         except Exception as e:
             print(f"❌ Error al enviar la direccion al usuario: {e}")
-            return "[Error al enviar direccion al usuario]"
+            return {"status":"error",
+                    "message":"Error al enviar la direccion al usuario"}
         
         
         
@@ -277,5 +320,5 @@ def Make_remember_tool(pool):
             return memories
         except Exception as e:
             print(f"Error al recuperar/resumir mensajes: {e}")
-            return {"error": "No se pudo generar el resumen"}
+            return {"status":"error","message": "No se pudo generar el resumen"}
     return remember

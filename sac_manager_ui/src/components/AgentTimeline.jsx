@@ -3,32 +3,66 @@ import ToolOutput from "./ToolOutput";
 
 const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
   const [hoveredItem, setHoveredItem] = useState(null);
+
+  function pyishToJson(str) {
+    let s = str
+      .replace(/\bNone\b/g, "null")
+      .replace(/\bTrue\b/g, "true")
+      .replace(/\bFalse\b/g, "false");
+
+    let out = "";
+    let inSingle = false;
+    let inDouble = false;
+
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      const prev = s[i - 1];
+
+      if (ch === '"' && prev !== "\\" && !inSingle) {
+        inDouble = !inDouble;
+        out += ch;
+        continue;
+      }
+      if (ch === "'" && prev !== "\\" && !inDouble) {
+        inSingle = !inSingle;
+        out += '"'; // abrimos/cerramos como doble
+        continue;
+      }
+      out += ch;
+    }
+    return out;
+  }
+
   const renderTimelineItem = (action, index) => {
     let label = null;
     let extra = null;
+
+    //---------------Funcion y Handoff---------------//
     if (action.type === "function_call") {
       const isHandoff = action.name?.startsWith("transfer_to_");
       label = isHandoff
         ? `Handoff: ${action.name.replace("transfer_to_", "")}`
         : `${action.name}`;
-
       const result = getToolOutput(action.call_id);
       let parsedOutput = result;
+
       if (typeof result === "string") {
+        const raw = result.trim();
         try {
-          const fixedOutput = result
-            .replace(/None/g, "null")
-            .replace(/'/g, '"');
-          parsedOutput = JSON.parse(fixedOutput);
-        } catch (e) {
-          parsedOutput = {
-            raw: result,
-          };
+          parsedOutput = JSON.parse(raw);
+        } catch {
+          try {
+            const normalized = pyishToJson(raw);
+            parsedOutput = JSON.parse(normalized);
+          } catch {
+            parsedOutput = result;
+          }
         }
       }
 
       label = isHandoff ? `Handoff` : label;
       let call_arguments = action.arguments || {};
+
       if (typeof call_arguments === "string") {
         try {
           const fixedOutput = call_arguments
@@ -41,6 +75,7 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
           };
         }
       }
+
 
       extra = parsedOutput && (
         <div
@@ -121,7 +156,9 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
           </div>
         </div>
       );
-    } else if (action.agent) {
+    }
+    //---------------Mensage del Agente---------------//
+    else if (action.agent) {
       label = "Agente";
       extra = (
         <div
@@ -159,14 +196,16 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
             className={`absolute top-8 left-1/2 -translate-x-1/2 w-80 
                   g-[var(--color-selected)] dark:bg-[var(--color-selected)] p-3 rounded shadow text-xs
                   text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700
-                  transition-opacity duration-150 pointer-events-none
+                  transition-opacity duration-150 pointer-events-none mt-2 whitespace-pre-wrap break-words
                   ${hoveredItem === index ? "opacity-100" : "opacity-0"}`}
           >
             {action.content}
           </div>
         </div>
       );
-    } else if (
+    }
+    //---------------Redireccion---------------//
+    else if (
       action.action === "tripwire_triggered" &&
       action.guardrail === "To Specialized Agent"
     ) {
@@ -214,7 +253,9 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
           </div>
         </div>
       );
-    } else if (
+    }
+    //---------------Guardarail---------------//
+    else if (
       action.guardrail === "Basic Relevance Check" ||
       action.guardrail === "Basic Output Guardrail"
     ) {
@@ -262,7 +303,9 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
           </div>
         </div>
       );
-    } else if (action.role === "user") {
+    }
+    //---------------Mensaje del usuario---------------//
+    else if (action.role === "user") {
       label = "Usuario";
       extra = (
         <div
@@ -316,6 +359,7 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
 
     if (!label) return null;
 
+    //---------------Render del timeline---------------//
     return (
       <li
         key={index}
@@ -324,7 +368,8 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          width: "100%",
+          width: "25vw",
+          minWidth: "5vw",
         }}
       >
         <div
@@ -332,14 +377,16 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
             display: "grid",
             gridTemplateRows: "70% 30%",
             width: "100%",
+            maxWidth: "auto",
           }}
         >
           <div
             style={{
               gridRow: "1",
               display: "flex",
-              width: "100%",
+              width: "auto",
               alignItems: "center",
+              maxWidth: "auto",
             }}
           >
             {action.role == "user" ? (
@@ -448,7 +495,8 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
               flexDirection: "column",
               alignItems: "center",
               width: "100%",
-              height: "60px",
+              height: "auto",
+              minHeight: "65px",
               textAlign: "center",
             }}
           >
@@ -461,9 +509,24 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
                 padding: "auto",
               }}
             >
-              <h4 className="text-xs text-gray-900 dark:text-white pr-2 pl-2">
+              <h4
+                className="
+                    px-2 text-[clamp(0.7rem,0.25vw+0.65rem,0.9rem)]
+                    leading-snug text-center
+                    break-words sm:break-normal
+                    md:max-w-[18ch] sm:max-w-[16ch] max-w-[14ch]
+                    overflow-hidden
+                  "
+                style={{
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  wordBreak: "break-word",
+                }}
+              >
                 {label}
               </h4>
+
               {extra}
             </div>
           </div>
@@ -478,14 +541,15 @@ const AgentTimeline = ({ actions, getToolOutput, agent_response }) => {
         height: "80%",
         maxHeight: "100%",
         display: "flex",
-        justifyItems: "center",
+        justifyContent: "center",
       }}
     >
       <ol
         className="sm:flex"
         style={{
-          minWidth: "70em",
-          maxWidth: "70em",
+          display: "flex",
+          width: "35%",
+          maxWidth: "80%",
           justifySelf: "center",
         }}
       >
