@@ -318,6 +318,8 @@ async def lifespan(app: FastAPI):
         tools_pool = await create_tools_pool()
         
         app.state.prompts = _load_initial_prompts()
+        
+        
         general_agent, package_analysis_agent, mcp_agent, railing_agent ,create_initial_context = await build_agents(tools_pool,mysql_pool,app.state.prompts)
         app.state.mysql_pool = mysql_pool
         app.state.tools_pool = tools_pool
