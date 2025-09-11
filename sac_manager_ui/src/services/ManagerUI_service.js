@@ -9,6 +9,7 @@ export const fetchHistoryPreview = async () => {
     const response = await axios.post(API_URL, {
       request: "UsersLastMessages",
     });
+    //console.log("Respuesta a history preview", response.data.history || "No disponible" );
 
     return response.data.history;
   } catch (error) {
@@ -36,7 +37,7 @@ export const fetchUserHistory = async (
       request: "UserHistory",
       request_body,
     });
-    //console.log("Valor de la respuesta a la sessiones desde el serivico:",response.data.history);
+    //console.log(   "Valor de la respuesta a la sessiones desde el servicio:", response.data.history || "No disponible" );
 
     return response.data.history;
   } catch (error) {
@@ -51,7 +52,7 @@ export const fetchPrompt = async (prompt_type) => {
       request: "Prompt",
       request_body: { type: prompt_type },
     });
-   // console.log("response.data es:", response.data);
+    // console.log("response.data es:", response.data);
 
     return response.data;
   } catch (error) {

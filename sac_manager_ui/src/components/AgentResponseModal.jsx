@@ -53,7 +53,7 @@ const AgentResponseModal = ({ ctx, entry, onClose, msg_selected }) => {
 
   return (
     <div className="fixed inset-0 bg-gray/10 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 max-w-[80vw] w-[80vw] rounded-lg max-h-[65vh] h-[65vh] p-6 shadow-xl relative  flex flex-col justify-center items-center">
+      <div className="bg-white dark:bg-gray-800 max-w-[80vw] w-[80vw] rounded-lg max-h-[80vh] h-[75vh] p-6 shadow-xl relative  flex flex-col justify-center items-center">
         <h2 className="text-xl font-semibold mb-4">Detalles del Proceso</h2>
         <button
           className="absolute top-4 right-6 text-gray-500 hover:text-red-600 cursor-pointer"
@@ -76,12 +76,13 @@ const AgentResponseModal = ({ ctx, entry, onClose, msg_selected }) => {
           </svg>
         </button>
 
-        <div className="grid grid-cols-[30%_40%_30%] grid-rows-[50%_50%] h-full w-full">
+        <div className="grid grid-cols-[30%_40%_30%] grid-rows-[45%_1fr] h-full w-full">
           <div className="col-start-1 col-end-2 row-start-1 row-end-2 flex-col text-center">
             <h2 className="font-semibold text-lg">Mensaje del Usuario</h2>
             <p className="text-sm">{entry.user_message.content}</p>
           </div>
-          <div className="col-start-2 col-end-3 row-start-1 row-end-2 flex-col text-center">
+
+          <div className="col-start-3 col-end-4 row-start-1 row-end-2 flex-col text-center">
             <h2 className="font-semibold text-lg">Agente que respondió</h2>
             <p className="text-sm">{entry.agent_message.agent}</p>
           </div>
@@ -104,12 +105,13 @@ const AgentResponseModal = ({ ctx, entry, onClose, msg_selected }) => {
             style={{
               overflow: "hidden",
               display: "grid",
-              gridTemplate: "10% 15% 15% 1fr / 1fr 1fr",
+              gridTemplate: "10% 10% 10% 1fr / 1fr 1fr",
+              padding:"5px"
             }}
-            className="col-start-3 col-end-4 row-start-1 row-end-1 flex-col bg-gray-700 rounded-md"
+            className="col-start-2 col-end-3 row-start-1 row-end-1 flex-col bg-gray-900 rounded-md m-3"
           >
             <h1
-              className="text-gray-400 text-bold text-center"
+              className="text-gray-400 text-bold text-center text-[clamp(0.7rem,0.05vw+0.65rem,0.9rem)]"
               style={{ gridRow: "1", gridColumn: "1/3" }}
             >
               Datos pre-cargados
@@ -137,7 +139,9 @@ const AgentResponseModal = ({ ctx, entry, onClose, msg_selected }) => {
                   clipRule="evenodd"
                 />
               </svg>
-              <p className="text-sm">{userEnv.username}</p>
+              <p className=" text-[clamp(0.7rem,0.05vw+0.65rem,0.9rem)]">
+                {userEnv.username}
+              </p>
             </div>
 
             <div
@@ -159,7 +163,9 @@ const AgentResponseModal = ({ ctx, entry, onClose, msg_selected }) => {
               >
                 <path d="M7.978 4a2.553 2.553 0 0 0-1.926.877C4.233 6.7 3.699 8.751 4.153 10.814c.44 1.995 1.778 3.893 3.456 5.572 1.68 1.679 3.577 3.018 5.57 3.459 2.062.456 4.115-.073 5.94-1.885a2.556 2.556 0 0 0 .001-3.861l-1.21-1.21a2.689 2.689 0 0 0-3.802 0l-.617.618a.806.806 0 0 1-1.14 0l-1.854-1.855a.807.807 0 0 1 0-1.14l.618-.62a2.692 2.692 0 0 0 0-3.803l-1.21-1.211A2.555 2.555 0 0 0 7.978 4Z" />
               </svg>
-              <p className="text-sm">{userEnv.phone}</p>
+              <p className=" text-[clamp(0.7rem,0.05vw+0.65rem,0.9rem)]">
+                {userEnv.phone}
+              </p>
             </div>
 
             <div
@@ -186,10 +192,17 @@ const AgentResponseModal = ({ ctx, entry, onClose, msg_selected }) => {
                 />
               </svg>
 
-              <p className="text-sm">{userEnv.emotional_state}</p>
+              <p className=" text-[clamp(0.7rem,0.05vw+0.65rem,0.9rem)]">
+                {userEnv.emotional_state}
+              </p>
             </div>
             <div
-              style={{ gridRow: "4", gridColumn: "1/3", fontSize: "x-small" }}
+              style={{
+                gridRow: "4",
+                gridColumn: "1/3",
+                fontSize: "x-small",
+                alignContent: "center",
+              }}
             >
               {Array.isArray(userEnv.paquetes) ? (
                 userEnv.paquetes.map((paquete, index) => (
@@ -243,7 +256,9 @@ const AgentResponseModal = ({ ctx, entry, onClose, msg_selected }) => {
                         />
                       </svg>
 
-                      <p className="text-gray-400">{paquete.estado}</p>
+                      <p className="text-gray-400 text-[clamp(0.3rem,0.02vw+0.55rem,0.9rem)]">
+                        {paquete.estado}
+                      </p>
                       <svg
                         className="w-4 h-4 text-gray-800 dark:text-white"
                         aria-hidden="true"
@@ -257,7 +272,12 @@ const AgentResponseModal = ({ ctx, entry, onClose, msg_selected }) => {
                           clipRule="evenodd"
                         />
                       </svg>
-                      <p className="text-gray-400" style={{ textAlign: "center" }}>{paquete.fecha}</p>
+                      <p
+                        className="text-gray-400 text-[clamp(0.3rem,0.02vw+0.55rem,0.9rem)]"
+                        style={{ textAlign: "center" }}
+                      >
+                        {paquete.fecha}
+                      </p>
                     </div>
                   </React.Fragment>
                 ))

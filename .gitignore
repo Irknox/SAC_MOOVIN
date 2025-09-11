@@ -6,5 +6,6 @@
 .next/
 docker-compose.yml
 
-prompts/
-prompts_backup/
+moovin_agents_SDK/prompts
+
+moovin_agents_SDK/prompts_backup

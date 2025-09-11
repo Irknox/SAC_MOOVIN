@@ -51,6 +51,9 @@ const SesionTimeline = ({ session }) => {
               {/* Mensaje del usuario */}
               <li className="ms-4">
                 <div className="absolute w-3 h-3 bg-gray-200 rounded-full mt-1.5 -start-1.5 border border-white dark:border-gray-900 dark:bg-blue-700" />
+                <time className="text-xs leading-none text-gray-400 dark:text-gray-500">
+                  {formatDateTime(interaction?.user_message?.date)}
+                </time>
                 <div
                   className="relative"
                   style={{
@@ -100,9 +103,6 @@ const SesionTimeline = ({ session }) => {
                     {interaction.user_message.content}
                   </div>
                 </div>
-                <time className="text-xs leading-none text-gray-400 dark:text-gray-500">
-                  {formatDateTime(interaction?.user_message?.date)}
-                </time>
               </li>
 
               {/* Pasos / herramientas */}
@@ -244,9 +244,6 @@ const SesionTimeline = ({ session }) => {
                     {interaction.agent_message.content}
                   </div>
                 </div>{" "}
-                <time className="text-xs leading-none text-gray-400 dark:text-gray-500">
-                  {formatDateTime(interaction?.agent_message?.date)}
-                </time>
               </li>
             </React.Fragment>
           ))

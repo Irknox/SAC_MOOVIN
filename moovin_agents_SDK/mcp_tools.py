@@ -344,7 +344,6 @@ def Make_change_delivery_address_tool(pool):
         delivery_change_request_data=delivery_address_request.json() 
         if delivery_change_request_data.get("status") == "SUCCESS":
             ctx.context.location_sent = {}
-            print (f"Se limpio el contexto, su valor ahora es {ctx.context.location_sent}")
             return {
                 "status": "success",
                 "message":"Delivery address changed"
@@ -354,7 +353,7 @@ def Make_change_delivery_address_tool(pool):
             ctx.context.location_sent = {}
             return {
                 "status":"error",
-                "message":"Package hasn't been added to the Developer DB yet, advise the user package hasn't been added"
+                "message":"El paquete no ha sido anadido a la Base de datos de Desarrollo, informa al usuario de este error."
             }
         else:
             print(f"⚠️ Error al cambiar la direccion de entrega")
