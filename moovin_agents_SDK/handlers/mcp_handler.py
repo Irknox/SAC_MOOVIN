@@ -426,13 +426,14 @@ def request_electronic_receipt(owner: dict, package_id: str,legal_name:str, lega
         ticket_number = ticket_data.get("ticketNumber", "DESCONOCIDO")
         TicketURL=ticket_data.get("webUrl","No disponible")
         
-        print(f"🎫 Ticket creado: {ticket_number}")
+        print(f"🎫 Ticket creado: {ticket_number} URL del Ticket {TicketURL}")
         
         return {
             "TicketNumber": ticket_number,
             "message": "Ticket creado exitosamente",
             "DevURL":TicketURL
         }
+        
     except Exception as e:
         return {
             "error": "Error general al crear ticket",

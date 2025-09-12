@@ -3,7 +3,7 @@ import json
 import random
 import string
 import os
-from pydantic import BaseModel
+from pydantic import BaseModel,Field
 from agents import (
     Agent,
     handoff,
@@ -28,7 +28,7 @@ load_dotenv()
 class MoovinAgentContext(BaseModel):
     user_id: str | None = None
     package_id: str | None = None
-    issue_ticket_id: str | None = None
+    issued_tickets_info: list[dict] = Field(default_factory=list) 
     user_env: dict | None = None
     imgs_ids: list[int] | None = None
     location_sent: dict | None = None
