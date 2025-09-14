@@ -499,6 +499,7 @@ def count_tokens(text, model="gpt-4o"):
 @app.post("/ask")
 async def whatsapp_webhook(request: Request):
     payload = await request.json()
+    print(f"Payload recibido: {payload}")
     try:
         data_item = payload["data"]
         message_data = data_item["message"]
@@ -673,10 +674,8 @@ async def whatsapp_webhook(request: Request):
         
         
         if delta_items:
-            print(f"Este es el valor de delta items: {delta_items}")
             ctx = state.get("context", None)
 
-            # 1) Construir un índice TicketNumber -> DevURL desde el contexto
             ticket_url_map = {}
             if getattr(ctx, "issued_tickets_info", None):
                 for t in ctx.issued_tickets_info:
@@ -685,7 +684,6 @@ async def whatsapp_webhook(request: Request):
                     if tn and url:
                         ticket_url_map[str(tn)] = url
 
-            # 2) Enriquecer el delta correcto: buscar function_call_output con TicketNumber
             enriched_any = False
             for it in delta_items:
                 if it.get("type") == "function_call_output" and "output" in it:
@@ -695,25 +693,20 @@ async def whatsapp_webhook(request: Request):
 
                     tn = parsed.get("TicketNumber")
                     if tn is None:
-                        # fallback por si viniera con otra key
                         tn = parsed.get("ticket") or parsed.get("ticket_number")
 
                     if tn is not None:
                         tn_str = str(tn)
                         if tn_str in ticket_url_map:
                             dev_url = ticket_url_map[tn_str]
-                            # Agregar URL al dict parseado
                             parsed["DevURL"] = dev_url
-                            # Opcional: agrega también un campo plano para inspección rápida
                             it["ticket_url"] = dev_url
-                            # Volver a string (JSON) para mantener el formato del 'output'
                             it["output"] = json.dumps(parsed, ensure_ascii=False)
                             enriched_any = True
 
             if ctx and getattr(ctx, "issued_tickets_info", None):
                 print(f"Informacion del ticket: {ctx.issued_tickets_info}")
 
-            # 3) Guardar en audit items (ya enriquecidos)
             await redis_session.append_audit_items(user_id, delta_items)
             
         agent_message_human = {
