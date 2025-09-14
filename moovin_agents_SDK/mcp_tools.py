@@ -2,8 +2,6 @@ from agents import function_tool,RunContextWrapper
 from handlers.main_handler import get_package_historic, get_id_package, get_img_data,get_delivery_address,reverse_geocode_osm,send_location_to_whatsapp
 from handlers.mcp_handler import _parse_date_cr,create_pickup_ticket,request_electronic_receipt, report_package_damaged,change_delivery_address as change_delivery_address_request
 
-
-
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -20,6 +18,7 @@ def Make_request_to_pickup_tool(pool):
         description_override="Crea un ticket de solicitud para retiro en sede de un paquete a partir de su Tracking o número de seguimiento. Si el paquete existe y no ha sido entregado ni presenta retornos/fallas, solicita número de seguimiento y descripción del motivo."
     )
     async def pickup_ticket(
+        ctx: RunContextWrapper,
         package: str,
         description: str
     ) -> dict:
@@ -75,17 +74,18 @@ def Make_request_to_pickup_tool(pool):
             package_id=str(package_id),
             description=description
         )
-        
-        Ticket=result.get("ticket_number","Desconocido")
-        TicketURL=result.get("webUrl","Desconocido")
+
+        ticketNumber=result.get("ticket_number")
+        DevURL=result.get("webUrl","Desconocido")
+        if ctx.context.issued_tickets_info is None:
+            ctx.context.issued_tickets_info = []
+        ctx.context.issued_tickets_info.insert(0,{"TicketNumber":ticketNumber,"DevURL":DevURL})
         
         response={
             "status":"success",
-            "TicketNumber":Ticket,
-            "DevURL":TicketURL
-        }
-        
-        
+            "TicketNumber":ticketNumber,
+            "message":"Ticket creado exitosamente",
+        }        
         return response
 
     return pickup_ticket
@@ -96,6 +96,7 @@ def Make_request_electronic_receipt_tool(pool):
         description_override="Crea un ticket de solicitud de factura electronica a partir de su Tracking o numero de seguimiento. Si el paquete existe y ha llegado a nuestras instalaciones, los parametros necesarios son: Numero de seguimiento, Cedula Juridica, Nombre Juridico, Direccion Completa y descripcion del motivo del ticket."
     )
     async def request_electronic_receipt_ticket(
+        ctx: RunContextWrapper,
         package: str,
         reason: str,
         legal_name: str,
@@ -141,7 +142,25 @@ def Make_request_electronic_receipt_tool(pool):
                                     full_address=full_address,
                                     owner=owner_info
                                     )
-        return result
+        try:
+            result_data=result
+            ticketNumber=result_data.get("TicketNumber")
+            DevURL=result_data.get("DevURL","Desconocido")
+            if ctx.context.issued_tickets_info is None:
+                ctx.context.issued_tickets_info = []
+
+            new_ticket = {"TicketNumber": ticketNumber, "DevURL": DevURL}
+            ctx.context.issued_tickets_info.insert(0, new_ticket)
+            
+            response ={
+                "status":"success",
+                "TicketNumber":ticketNumber,
+                "message":"Ticket creado exitosamente",
+            }
+            return response
+        except Exception as e:
+            print(f"⚠️ Error al crear ticket para factura electronica")
+            return {"status":"error","message":"An error ocurred while creating the ticket"}
 
     return request_electronic_receipt_ticket
 
@@ -234,10 +253,15 @@ def Make_package_damaged_tool(mysql_pool, tools_pool):
         if result.get("status") == "ok":
             print("✅ Ticket creado con éxito")
             ctx.context.imgs_ids = []
+            ticketNumber=result.get("Numero de Ticket")
+            DevURL=result.get("webUrl","Desconocido")
+            if ctx.context.issued_tickets_info is None:
+                ctx.context.issued_tickets_info = []
+            ctx.context.issued_tickets_info.insert(0,{"TicketNumber":ticketNumber,"DevURL":DevURL})
             return {
                 "status": "success",
-                "TicketNumber": result.get("Numero de Ticket"),
-                "DevURL":result.get("webUrl","Desconocido")
+                "TicketNumber": ticketNumber,
+                "message":"Ticket creado exitosamente",
             }
         else:
             print(f"❌ Error al crear el ticket: {result}")

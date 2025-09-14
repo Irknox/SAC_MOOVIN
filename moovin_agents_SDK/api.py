@@ -6,11 +6,11 @@ from typing import Optional, List, Dict, Any, Literal,Tuple
 import re, os, glob
 import tempfile
 import requests
-from handlers.main_handler import save_message, get_user_env, get_users_last_messages, get_last_messages_by_user, save_img_data, reverse_geocode_osm
+from handlers.main_handler import save_message, get_user_env, save_img_data, reverse_geocode_osm
 from config import create_mysql_pool, create_tools_pool
 from main import build_agents, MoovinAgentContext
 from agents import (Runner, MessageOutputItem, HandoffOutputItem, InputGuardrailTripwireTriggered,RunContextWrapper,OutputGuardrailTripwireTriggered)
-import json
+import json, ast
 from datetime import datetime, timedelta, timezone
 import traceback
 import base64
@@ -21,6 +21,7 @@ from collections import OrderedDict
 import asyncio
 import redis.asyncio as redis
 from handlers.redis_handler import RedisSession, SESSION_IDLE_SECONDS
+
 
 from zoneinfo import ZoneInfo
 now_cr = datetime.now(ZoneInfo("America/Costa_Rica")).isoformat()
@@ -98,7 +99,6 @@ def _load_initial_prompts() -> dict:
         "Input":                 read_best(prompt_bases["Input"],                 "input_guardrail_prompt.txt"),
         "Output":                read_best(prompt_bases["Output"],                "output_guardrail_prompt.txt"),
     }
-    
     
 def save_base64_audio(base64_string: str, suffix: str = ".ogg") -> str:
     """
@@ -295,7 +295,24 @@ async def session_flush_worker(app):
             print(f"[flush_worker] error: {e}")
         await asyncio.sleep(30)  # frecuencia de barrido
 
+##----------------------------Prompts----------------------------##
 
+def _parse_output_dict(s: str) -> dict | None:
+    """Intenta parsear el 'output' que viene como string.
+       Primero JSON, si falla probamos literal_eval (formato Python).
+    """
+    if not isinstance(s, str):
+        return None
+    try:
+        return json.loads(s)
+    except Exception:
+        try:
+            parsed = ast.literal_eval(s)
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            return None
+        
+        
 class AgentEvent(BaseModel):
     id: str
     type: Literal["handoff", "tool_call", "tool_output"]
@@ -482,6 +499,7 @@ def count_tokens(text, model="gpt-4o"):
 @app.post("/ask")
 async def whatsapp_webhook(request: Request):
     payload = await request.json()
+    print(f"Payload recibido: {payload}")
     try:
         data_item = payload["data"]
         message_data = data_item["message"]
@@ -653,12 +671,44 @@ async def whatsapp_webhook(request: Request):
             return isinstance(item, dict) and item.get("role") == "user" and not item.get("date")
 
         delta_items = [it for it in new_slice if not is_user_echo(it)]
-
         
         
         if delta_items:
-            await redis_session.append_audit_items(user_id, delta_items)
+            ctx = state.get("context", None)
 
+            ticket_url_map = {}
+            if getattr(ctx, "issued_tickets_info", None):
+                for t in ctx.issued_tickets_info:
+                    tn = (t or {}).get("TicketNumber")
+                    url = (t or {}).get("DevURL")
+                    if tn and url:
+                        ticket_url_map[str(tn)] = url
+
+            enriched_any = False
+            for it in delta_items:
+                if it.get("type") == "function_call_output" and "output" in it:
+                    parsed = _parse_output_dict(it["output"])
+                    if not isinstance(parsed, dict):
+                        continue
+
+                    tn = parsed.get("TicketNumber")
+                    if tn is None:
+                        tn = parsed.get("ticket") or parsed.get("ticket_number")
+
+                    if tn is not None:
+                        tn_str = str(tn)
+                        if tn_str in ticket_url_map:
+                            dev_url = ticket_url_map[tn_str]
+                            parsed["DevURL"] = dev_url
+                            it["ticket_url"] = dev_url
+                            it["output"] = json.dumps(parsed, ensure_ascii=False)
+                            enriched_any = True
+
+            if ctx and getattr(ctx, "issued_tickets_info", None):
+                print(f"Informacion del ticket: {ctx.issued_tickets_info}")
+
+            await redis_session.append_audit_items(user_id, delta_items)
+            
         agent_message_human = {
             "role": "assistant",
             "content": response_text,
