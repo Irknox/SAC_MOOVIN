@@ -24,6 +24,20 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
+  
+  realtime:
+    build: .
+    command: python -m realtime_service
+    env_file:
+      - .env
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      PYTHONUNBUFFERED: "1"
+    # montamos prompts igual que el ui_api para que el Realtime lea los mismos
+    volumes:
+      - ./moovin_agents_SDK/prompts:/app/prompts:ro
+    restart: unless-stopped
+
 
   # Backend del Front (api_manager_ui.py)
   ui_api:
