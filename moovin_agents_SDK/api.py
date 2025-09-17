@@ -184,7 +184,7 @@ async def send_text_to_whatsapp(user_id: str, user_message: str, response_text: 
     """
     Envía un mensaje de texto a un número de WhatsApp mediante Evolution API.
     """
-    url = f"{os.environ.get('Whatsapp_URL')}/message/sendText/SAC-Moovin"
+    url = f"{os.environ.get('Whatsapp_URL')}/message/sendText/Silver AI"
     payload = {
         "number": user_id.replace("@s.whatsapp.net", ""),
         "text": response_text,
@@ -204,6 +204,7 @@ async def send_text_to_whatsapp(user_id: str, user_message: str, response_text: 
 
     try:
         response = requests.post(url, json=payload, headers=headers)
+        print(f"response es {response.json()}")
         print("📤 Enviado a WhatsApp ✔️")
         return response
     except Exception as e:
@@ -499,7 +500,6 @@ def count_tokens(text, model="gpt-4o"):
 @app.post("/ask")
 async def whatsapp_webhook(request: Request):
     payload = await request.json()
-    print(f"Payload recibido: {payload}")
     try:
         data_item = payload["data"]
         message_data = data_item["message"]

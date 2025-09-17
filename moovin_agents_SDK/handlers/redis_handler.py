@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List, Union
 import redis.asyncio as redis
 
-
 SESSION_IDLE_SECONDS = 10  * 60  # 10 minutos
 
 
