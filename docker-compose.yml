@@ -38,10 +38,13 @@ services:
       - ./moovin_agents_SDK/prompts:/app/prompts:ro
     restart: unless-stopped
 
-
   # Backend del Front (api_manager_ui.py)
   ui_api:
     build: .
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     command: uvicorn api_manager_ui:app --host 0.0.0.0 --port 7575
     depends_on:
       redis:
