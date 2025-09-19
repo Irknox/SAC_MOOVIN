@@ -204,7 +204,6 @@ async def send_text_to_whatsapp(user_id: str, user_message: str, response_text: 
 
     try:
         response = requests.post(url, json=payload, headers=headers)
-        print(f"response es {response.json()}")
         print("📤 Enviado a WhatsApp ✔️")
         return response
     except Exception as e:
@@ -505,6 +504,7 @@ async def whatsapp_webhook(request: Request):
         message_data = data_item["message"]
         user_name = data_item.get("pushName", "Desconocido")
         user_id = data_item["key"]["remoteJid"]
+        print(f"User id es: {user_id}")
         message_id = data_item["key"]["id"]
         
         img_data_ids= []

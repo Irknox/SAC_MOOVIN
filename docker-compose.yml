@@ -63,7 +63,7 @@ services:
     env_file:
       - ./sac_manager_ui/.env
     environment:
-    - COOKIE_SECURE=false   # en local HTTP
+      - COOKIE_SECURE=false   # en local HTTP
     # - COOKIE_SECURE=true  # en prod con HTTPS en el gateway
 
   gateway:

@@ -274,7 +274,7 @@ async def send_location_to_whatsapp(user_id: str, latitude: float, longitude: fl
     """
     Envía una ubicación por WhatsApp mediante Evolution API.
     """
-    url = f"{os.environ.get('Whatsapp_URL')}/message/sendLocation/SAC-Moovin"
+    url = f"{os.environ.get('Whatsapp_URL')}/message/sendLocation/Silver AI"
     payload = {
         "number": user_id.replace("@s.whatsapp.net", ""),
         "name": name,
