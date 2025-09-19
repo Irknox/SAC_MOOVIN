@@ -10,6 +10,16 @@ client = OpenAI()
 
 load_dotenv()
 
+admins={
+    "50671474099@s.whatsapp.net": "Milagro Fallas",
+    "50662587119@s.whatsapp.net": "Alejandro Carmona"
+}
+
+def is_admin(user_id)->bool:
+    if admins.get(user_id):
+        return True
+    else:
+        return False
 
 async def resume_memorie_AI(client, transcript: str, lang="es") -> str:
     """
@@ -138,11 +148,15 @@ def make_get_package_timeline_tool(pool):
         name_override="get_package_timeline",
         description_override="Obtiene el historico del paquete del usuario a partir de su Tracking o número de seguimiento y su número de teléfono."
     )
-    async def get_package_timeline(package_id: str, phone: str) -> dict:
+    async def get_package_timeline(ctx: RunContextWrapper, package_id: str, phone: str) -> dict:
         """
         Devuelve el historial del paquete solo si el número de teléfono coincide con el del dueño.
         """
         print(f"🔍 Obteniendo timeline del paquete {package_id} para el teléfono {phone}...")
+        user_id=ctx.context.user_id
+        admin=is_admin(user_id)
+        admin and print(f"Admin {admins.get(user_id,"Default Admin")} consultando, Algunas prubeas no seran realizadas")
+        
         package_id = await get_id_package(pool, package_id)
         if not package_id:
             return {"status": "error", "message": f"Paquete {package_id} no encontrado en la base de datos."}
@@ -154,10 +168,10 @@ def make_get_package_timeline_tool(pool):
 
         phone_dueño = historic.get("telefono_dueño")
         if not phone_dueño:
-            print(f"🔴 [ERROR] No se encontró el teléfono del dueño del paquete en los datos: {historic}")
-            return {"status":"error","message": "No se encontró el teléfono del dueño del paquete."}
+            print(f"🔴 [ERROR] Telefono no disponible en la Base de Datos {historic}")
+            return {"status":"error","message": "Paquete no tiene telefono asociado en la Base de datos."}
 
-        if phone_dueño.strip().lower() != phone.strip().lower():
+        if phone_dueño.strip().lower() != phone.strip().lower() and not admin:
             print(f"🟠 [WARNING] Teléfono no coincide. Proporcionado: {phone}, Dueño: {phone_dueño}")
             return {"status":"error","message": "El teléfono proporcionado no coincide con el dueño del paquete."}
         
@@ -179,18 +193,13 @@ def make_get_likely_package_timelines_tool(pool):
     )
     async def get_likely_package_timelines(package_id: str) -> dict:
         print(f"🔍 Buscando timelines similares para el paquete {package_id}...")
-
-        # 1) timeline base del paquete del usuario → embedding
         package = await get_id_package(pool, enterprise_code=package_id)
         raw_data = await get_package_historic(pool, package)
         timeline_str = convert_timeline_to_text(raw_data["timeline"])
         embedding = get_embedding(timeline_str)
 
-        # 2) similaridad → 3 mejores coincidencias con metadata + timeline
         similar_items = retrieve_similar_timelines(embedding, top_k=3)
-        print(f"🧭 Similares (3): {similar_items}")
 
-        # 3) opcional: indexar el propio timeline en la vector store (como ya hacías)
         try:
             timeline_array = raw_data["timeline"]
             last_state = timeline_array[-1] if timeline_array else {}
@@ -205,11 +214,10 @@ def make_get_likely_package_timelines_tool(pool):
         except Exception as e:
             print(f"⚠️ No se pudo indexar el timeline base: {e}")
 
-        # 4) respuesta nueva con 3 paquetes estructurados
         return {
             "status": "success",
             "package": package_id,
-            "similares": similar_items  # lista de 3 dicts: package_id, last_status, date_last_update, timeline
+            "similares": similar_items
         }
 
     return get_likely_package_timelines
@@ -226,6 +234,11 @@ def Make_send_current_delivery_address_tool(tools_pool):
         phone: str
     ) -> dict:
         print (f"🌎 Buscando la direcion de entrega para el paquete {package} con telefono {phone}")
+        package = await get_id_package(tools_pool, package)
+        user_id=ctx.context.user_id
+        admin=is_admin(user_id)
+        admin and print(f"Admin {admins.get(user_id,"Default Admin")} consultando, Algunas prubeas no seran realizadas")
+        
         try:
             historic = await get_package_historic(tools_pool, package)
         except Exception as e:
@@ -237,7 +250,7 @@ def Make_send_current_delivery_address_tool(tools_pool):
             print(f"🔴 [ERROR] No se encontró el teléfono del dueño del paquete en los datos: {historic}")
             return{"status":"error","message": "No se encontró el teléfono del dueño del paquete."}
 
-        if phone_dueño.strip().lower() != phone.strip().lower():
+        if phone_dueño.strip().lower() != phone.strip().lower() and not admin:
             print(f"🟠 [WARNING] Teléfono no coincide. Proporcionado: {phone}, Dueño: {phone_dueño}")
             return{"status":"error","message":"El teléfono proporcionado no coincide con el dueño del paquete, solicita al usuario el telefono correcto"}
         
@@ -247,7 +260,6 @@ def Make_send_current_delivery_address_tool(tools_pool):
         try:
             address_response =reverse_geocode_osm(lat, lng)
             address_data=address_response.get("address",{})
-            user_id=ctx.context.user_id
             if address_data:
                 town_name=address_data.get("road") or address_data.get("county") or None
                 if not town_name:

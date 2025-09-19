@@ -1,12 +1,17 @@
 from agents import function_tool,RunContextWrapper
 from handlers.main_handler import get_package_historic, get_id_package, get_img_data,get_delivery_address,reverse_geocode_osm,send_location_to_whatsapp
 from handlers.mcp_handler import _parse_date_cr,create_pickup_ticket,request_electronic_receipt, report_package_damaged,change_delivery_address as change_delivery_address_request
-
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+from tools import is_admin
 
 CR_TZ = ZoneInfo("America/Costa_Rica")
 
+
+admins={
+    "50671474099@s.whatsapp.net": "Milagro Fallas",
+    "50662587119@s.whatsapp.net": "Alejandro Carmona"
+}
 
 DELIVERED_STATES= {"DELIVERED", "DELIVEREDCOMPLETE"}
 RETURN_STATES= {"RETURN"}
@@ -280,7 +285,7 @@ def Make_send_delivery_address_requested_tool():
     async def send_delivery_address_requested(
         ctx: RunContextWrapper,
     ) -> dict:
-        print (f"🌎 Enviando la direcciona que desea cambiar el usuario como confirmacion....")
+        print (f"🌎 Enviando la direccion que desea cambiar el usuario como confirmacion....")
         print (f"Contexto que esta siendo usado {ctx.context}")
         cordinates_info=ctx.context.location_sent       
         lat=cordinates_info.get("latitude")
