@@ -30,15 +30,18 @@ def Make_request_to_pickup_tool(pool):
         if not package or not description:
             return {
                 "status": "error",
-                "message": "Faltan datos: provee el número de seguimiento y una descripción del motivo."
-            }
+                "message": "Faltan datos, para crear la solicitud, por favor revisa los datos proporcionados",
+                "next_step":"Informa al usuario del error inmediatamente."
+                }
+            
 
         package_id = await get_id_package(pool, package)
         if not package_id:
             return {
                 "status": "error",
-                "message": f"Paquete {package} no encontrado en la base de datos."
-            }
+                "message": f"Paquete {package} no encontrado en la base de datos, estas seguro esta es el paquete correcto?",
+                "next_step":"Informa al usuario del error inmediatamente."      
+                }
 
         package_historic = await get_package_historic(pool, package_id)
         timeline = package_historic.get("timeline", []) or []
@@ -63,7 +66,8 @@ def Make_request_to_pickup_tool(pool):
                 "tracking": str(package_id),
                 "package_found": True,
                 "status": "error",
-                "message": ", ".join(blockers)
+                "message": "Solciitud no puede ser procesada, ya que el paquete se encuentra en estado: ".join(blockers),
+                "next_step":"Informa al usuario del error inmediatamente."                    
             }
 
         print(f"🛠️ Creando ticket de recogida para {package_id}...  Tipo de dato: {type(package_id)}")
@@ -110,10 +114,20 @@ def Make_request_electronic_receipt_tool(pool):
         
     ) -> dict:
         if not package or not reason or not legal_name or not legal_id or not full_address:
-            return {"status": "error", "message": "Faltan datos necesarios para crear el ticket. Por favor, proporciona los datos faltantes"}
+            
+            return {
+                    "status": "error", 
+                    "message": "Faltan datos necesarios para crear el ticket, revisa los datos enviados.",
+                    "next_step":"Informa al usuario del error inmediatamente."
+                    }
+            
         package_id = await get_id_package(pool, package)
         if not package_id:
-            return {"status": "error", "message": f"Paquete {package} no encontrado en la base de datos."}
+            return {
+                    "status": "error",
+                    "message": f"El Paquete {package} no encontrado en la base de datos, estas seguro este es el numero de paquete?",
+                    "next_step":"Informa al usuario del error inmediatamente."
+                    }
         
 
         package_historic = await get_package_historic(pool, package_id)
@@ -129,7 +143,8 @@ def Make_request_electronic_receipt_tool(pool):
                 "status":"error",
                 "tracking": package_id,
                 "package_found": True,
-                "message": "Paquete aún no ha llegado a nuestras instalaciones. Una vez llegue, la solicitud podrá ser realizada."
+                "message": "Paquete aún no ha llegado a nuestras instalaciones. Una vez llegue, la solicitud podrá ser realizada",
+                "next_step":"Informa al usuario del error inmediatamente."
             }
             
         print(f"🎫 Creando ticket para solicitud de factura electronica para {package_id}...")
@@ -165,7 +180,11 @@ def Make_request_electronic_receipt_tool(pool):
             return response
         except Exception as e:
             print(f"⚠️ Error al crear ticket para factura electronica")
-            return {"status":"error","message":"An error ocurred while creating the ticket"}
+            return {
+                    "status":"error",
+                    "message":"Ocurrio un error al crear el ticket",
+                    "next_step":"Informa al usuario del error inmediatamente."
+                    }
 
     return request_electronic_receipt_ticket
 
@@ -184,51 +203,64 @@ def Make_package_damaged_tool(mysql_pool, tools_pool):
         if not package or not description or not ctx.context.imgs_ids:
             return {
                 "status": "error",
-                "message": "Faltan datos para crear el ticket. Proporciona tracking, descripción del daño y al menos 1 imagen."
-            }
+                "message": "Faltan datos para crear el ticket. Asegurate de proporcionar el tracking, descripción del daño y al menos 1 imagen.",
+                "next_step":" Informa al usuario del error inmediatamente."                    
+                }
 
         package_id = await get_id_package(tools_pool, package)
         if not package_id:
-            return {"status": "error", "message": f"Paquete {package} no encontrado en la base de datos."}
+            return {
+                    "status": "error", 
+                    "message": f"Paquete {package} no encontrado en la base de datos. Estas seguro este es el paquete correcto?",
+                    "next_step":"Informa al usuario del error inmediatamente."
+                    }
 
         package_historic = await get_package_historic(tools_pool, package_id)
         timeline = package_historic.get("timeline", []) or []
         if not timeline:
             return {
+                "status": "error", 
                 "tracking": str(package_id),
                 "package_found": True,
-                "response": "No hay historial de estados para este paquete."
+                "message": "No hay historial de estados para este paquete.",
+                "next_step":" Informa al usuario del error inmediatamente." 
             }
 
         last_event = timeline[0]
         last_status = str(last_event.get("status", "")).strip().upper()
         last_date_str = last_event.get("dateUser")
         last_dt = _parse_date_cr(last_date_str)
-        print (f"Último estado del paquete: {last_status} | Fecha: {last_date_str} | Fecha parseada: {last_dt}")
         now_cr = datetime.now(CR_TZ)
 
         if last_status not in DELIVERED_STATES:
             return {
+                "status":"error",
                 "tracking": str(package_id),
                 "package_found": True,
-                "response": "Este ticket solo puede en las primeras 48 horas después de la entrega."
+                "message": "Este ticket solo puede en las primeras 48 horas después de la entrega.",
+                "next_step":" Informa al usuario del error inmediatamente." 
             }
+            
         if not last_dt:
             return {
+                "status":"error",
                 "tracking": str(package_id),
                 "package_found": True,
-                "response": "No se pudo validar la fecha de entrega del paquete."
+                "message": "No se pudo validar la fecha de entrega del paquete.",
+                "next_step":" Informa al usuario del error inmediatamente." 
             }
 
         hours_since = (now_cr - last_dt).total_seconds() / 3600.0
         if hours_since >= 48:
             return {
+                "status":"error",                
                 "tracking": str(package_id),
                 "package_found": True,
-                "response": (
+                "message": (
                     f"Este ticket solo puede en las primeras 48 horas después de la entrega. "
                     f"Última entrega: {last_date_str} (hace ~{int(hours_since)} horas)."
-                )
+                ),
+                "next_step":" Informa al usuario del error inmediatamente." 
             }
 
         owner_info = {
@@ -272,7 +304,8 @@ def Make_package_damaged_tool(mysql_pool, tools_pool):
             print(f"❌ Error al crear el ticket: {result}")
             return {
                 "status": "error",
-                "reason": "Ocurrió un error al crear el ticket."
+                "message": "Ocurrió un error al crear el ticket.",
+                "next_step":" Informa al usuario del error inmediatamente." 
             }
 
     return package_damaged_ticket
@@ -323,10 +356,9 @@ def Make_send_delivery_address_requested_tool():
             print(f"❌ Error al enviar la direccion al usuario: {e}")
             return {
                 "status":"error",
-                "message":"An error has ocurred while sending the location"
+                "message":"Ocurrio un error al enviar la ubicacion solicitada",
+                "next_step":"Informa al usuario del error inmediatamente"
             }
-        
-        
         
     return send_delivery_address_requested
 
@@ -342,14 +374,26 @@ def Make_change_delivery_address_tool(pool):
         print (f"🧭 Cambiando direccion de paquete para paquete {package}...") 
         
         new_address=ctx.context.location_sent
-        if new_address.get("is_is_request_confirmed_by_user") == False:
-            return { "status":"error", "reason":"User hasn't confirmed he wants to change the current address yet, confirm with the user using the proper tool and try again"}
+        if new_address.get("is_request_confirmed_by_user") == False:
+            return {
+                "status":"error",
+                "message":"Debo enviarte la ubicacion actual para confirmar si realmente deseas confirmar la direccion",
+                "next_step":"Envia la ubicacion actual usando la herramienta send_current_delivery_address"
+                }
         if new_address.get("is_new_address_confirmed") == False:
-            return { "status":"error", "reason":"User hasn't confirmed the new address, confirm it with the user using the proper tool and try again"}
+            return {
+                "status":"error", 
+                "message":"No he confirmado la nueva direccion que deseas añadir a tu paquete",
+                "next_step":"Envia la ubicacion actual usando la herramienta send_delivery_address_requested"
+                }
         
         package_id = await get_id_package(pool, package)
         if not package_id:
-            return {"status": "error", "message": f"Paquete {package} no encontrado en la base de datos."}
+            return {
+                    "status": "error",
+                    "message": f"Paquete {package} no encontrado en la base de datos. Estas seguro es el paquete correcto?",
+                    "next_step":"Informa al Usuario del error inmediatamente"
+                    }
 
         package_historic = await get_package_historic(pool, package_id)
         timeline=package_historic.get("timeline", [])
@@ -364,7 +408,11 @@ def Make_change_delivery_address_tool(pool):
         id_point=package_info.get("idPoint")
         if not id_point:
             print (f"No se obtuvo el id point f{package_info}")
-            return {"status": "error", "message": "No se encontró el punto de entrega para este paquete."}
+            return {
+                    "status": "error", 
+                    "message": "No se encontró el punto de entrega para este paquete.",
+                    "next_step":"Informa al Usuario del error inmediatamente"
+                    }
         
         
         lat=new_address.get("latitude")
@@ -382,12 +430,14 @@ def Make_change_delivery_address_tool(pool):
             ctx.context.location_sent = {}
             return {
                 "status":"error",
-                "message":"El paquete no ha sido anadido a la Base de datos de Desarrollo, informa al usuario de este error."
+                "message":"El paquete no ha sido añadido a la Base de datos de Desarrollo",
+                "next_step":"Informa al Usuario del error inmediatamente"
             }
         else:
             print(f"⚠️ Error al cambiar la direccion de entrega")
             return {
                 "status":"error",
-                "message":"An error ocurred when changing the delivery address"
+                "message":"Un error ocurrio al cambiar la direccion de Entrega",
+                "next_step":"Informa al Usuario del error inmediatamente"
             }
     return change_delivery_address
