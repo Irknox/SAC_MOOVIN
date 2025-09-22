@@ -11,15 +11,19 @@ from agents import (
     Runner,
     TResponseInputItem,
     GuardrailFunctionOutput,
-    input_guardrail,output_guardrail
+    input_guardrail,output_guardrail,
+    FunctionToolResult,
+    function_tool,
 )
+from agents.agent import ToolsToFinalOutputResult
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from tools import Make_remember_tool,make_get_package_timeline_tool, make_get_SLA_tool,make_get_likely_package_timelines_tool, Make_send_current_delivery_address_tool
 from dotenv import load_dotenv
 from mcp_tools import Make_request_to_pickup_tool,Make_request_electronic_receipt_tool,Make_package_damaged_tool, Make_send_delivery_address_requested_tool,Make_change_delivery_address_tool
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 load_dotenv()
 from agents.realtime import RealtimeAgent, RealtimeRunner
+from agents.model_settings import ModelSettings
 
 
 # =========================
@@ -47,6 +51,39 @@ def create_initial_context() -> MoovinAgentContext:
 
 class MessageOutput(BaseModel):
     response: str
+
+# =========================
+# Tool Behavior Custom
+# =========================
+
+def stop_tools_after_two_errors(
+    ctx: RunContextWrapper[Any],
+    tool_results: List[FunctionToolResult]
+) -> ToolsToFinalOutputResult:
+    """
+    Si en ESTA pasada hay 2+ resultados con status='error',
+    se detiene el turno y se responde con el 'message' de la tool que falló más recientemente.
+    """
+    errors = 0
+    last_error_msg = None
+
+    for r in tool_results:
+        out = getattr(r, "output", None)
+        if isinstance(out, dict) and out.get("status") == "error":
+            errors += 1
+            last_error_msg = (
+                out.get("message")
+                or out.get("reason")
+                or "Ocurrió un error al ejecutar la herramienta."
+            )
+            if errors > 2:
+
+                return ToolsToFinalOutputResult(
+                    is_final_output=True,
+                    final_output=last_error_msg
+                )
+
+    return ToolsToFinalOutputResult(is_final_output=False, final_output=None)
 
 
 # =========================
@@ -176,7 +213,8 @@ def debug_context_info(ctx: RunContextWrapper[MoovinAgentContext], label: str = 
 # AGENTES
 # =========================
 
-async def build_agents(tools_pool,mysql_pool,prompts):     
+async def build_agents(tools_pool,mysql_pool,prompts):
+         
     ##--------Instrucciones--------##               
     def input_guardrail_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
         return (
@@ -305,7 +343,9 @@ async def build_agents(tools_pool,mysql_pool,prompts):
         instructions=mcp_agent_instructions,
         tools=[Make_remember_tool(mysql_pool),Make_request_to_pickup_tool(tools_pool),Make_request_electronic_receipt_tool(tools_pool),Make_package_damaged_tool(mysql_pool,tools_pool),Make_send_current_delivery_address_tool(tools_pool), Make_send_delivery_address_requested_tool(),Make_change_delivery_address_tool(tools_pool)],
         input_guardrails=[basic_guardrail,emotional_analyst],
-        output_type=MessageOutput
+        # output_guardrails=[basic_output_guardrail],
+        output_type=MessageOutput,               
+        tool_use_behavior=stop_tools_after_two_errors  
     )
     
     package_analysis_agent = Agent[MoovinAgentContext](
@@ -315,8 +355,8 @@ async def build_agents(tools_pool,mysql_pool,prompts):
         handoffs=[mcp_agent],
         tools=[Make_remember_tool(mysql_pool),make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool),Make_send_current_delivery_address_tool(tools_pool)],
         input_guardrails=[basic_guardrail,emotional_analyst],
-        output_type=MessageOutput,
-    
+        output_type=MessageOutput,               
+        tool_use_behavior=stop_tools_after_two_errors  
     )
 
     general_agent = Agent[MoovinAgentContext](

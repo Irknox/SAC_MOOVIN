@@ -12,7 +12,6 @@ load_dotenv()
 
 admins={
     "50671474099@s.whatsapp.net": "Milagro Fallas",
-    "50662587119@s.whatsapp.net": "Alejandro Carmona"
 }
 
 def is_admin(user_id)->bool:
@@ -118,7 +117,6 @@ def retrieve_similar_timelines(embedding: list, top_k: int = 3) -> list:
 
     return out
 
-
 def insert_timeline_to_vectorstore(content: str, embedding: list, metadata: dict):
     conn = psycopg2.connect(os.environ["SUPABASE_URL"])
     cur = conn.cursor()
@@ -159,21 +157,37 @@ def make_get_package_timeline_tool(pool):
         
         package_id = await get_id_package(pool, package_id)
         if not package_id:
-            return {"status": "error", "message": f"Paquete {package_id} no encontrado en la base de datos."}
+            return {
+                "status": "error", 
+                "message": f"Paquete {package_id} no encontrado en la base de datos, estas seguro es este el paquete correcto?",
+                "next_step":"Informa al usuario del error inmediatamente y verifica el numero de paquete"
+                }
         try:
             historic = await get_package_historic(pool, package_id)
         except Exception as e:
             print(f"🔴 [ERROR] Fallo al obtener el histórico del paquete {package_id}: {e}")
-            return {"status":"error","message":"Hubo un problema al obtener el historial del paquete."}
+            return {
+                    "status":"error",
+                    "message":"Hubo un problema al obtener el historial del paquete",
+                    "next_step":"Informa al usuario del error inmediatamente"
+                    }
 
         phone_dueño = historic.get("telefono_dueño")
         if not phone_dueño:
             print(f"🔴 [ERROR] Telefono no disponible en la Base de Datos {historic}")
-            return {"status":"error","message": "Paquete no tiene telefono asociado en la Base de datos."}
+            return {
+                    "status":"error",
+                    "message": "Paquete no tiene telefono asociado en la Base de datos. en este caso no podre realizar la consulta",
+                    "next_step":"Informa al usuario del error inmediatamente"
+                    }
 
         if phone_dueño.strip().lower() != phone.strip().lower() and not admin:
             print(f"🟠 [WARNING] Teléfono no coincide. Proporcionado: {phone}, Dueño: {phone_dueño}")
-            return {"status":"error","message": "El teléfono proporcionado no coincide con el dueño del paquete."}
+            return {
+                    "status":"error",
+                    "message": "El teléfono proporcionado no coincide con el dueño del paquete, podrias verificar el numero correcto",
+                    "next_step":"Informa al usuario del error inmediatamente y solicita el dato correcto"
+                    }
         
         return {
             "status":"success",
@@ -238,21 +252,33 @@ def Make_send_current_delivery_address_tool(tools_pool):
         user_id=ctx.context.user_id
         admin=is_admin(user_id)
         admin and print(f"Admin {admins.get(user_id,"Default Admin")} consultando, Algunas prubeas no seran realizadas")
-        
+        print(f"Location sent es {ctx.context.location_sent}")
         try:
             historic = await get_package_historic(tools_pool, package)
         except Exception as e:
             print(f"🔴 [ERROR] Fallo al obtener el histórico del paquete {package}: {e}")
-            return {"status":"error","message": "Hubo un problema al obtener el historial del paquete."}
+            return {
+                "status":"error",
+                "message": "Hubo un problema al obtener el historial del paquete",
+                "next_step":"Informa al usuario del error inmediatamente"
+                }
 
         phone_dueño = historic.get("telefono_dueño")
         if not phone_dueño:
             print(f"🔴 [ERROR] No se encontró el teléfono del dueño del paquete en los datos: {historic}")
-            return{"status":"error","message": "No se encontró el teléfono del dueño del paquete."}
+            return{
+                    "status":"error",
+                    "message": "No se encontró el teléfono en nuestra Base de datos para el paquete",
+                    "next_step":"Informa al usuario del error inmediatamente"
+                   }
 
         if phone_dueño.strip().lower() != phone.strip().lower() and not admin:
             print(f"🟠 [WARNING] Teléfono no coincide. Proporcionado: {phone}, Dueño: {phone_dueño}")
-            return{"status":"error","message":"El teléfono proporcionado no coincide con el dueño del paquete, solicita al usuario el telefono correcto"}
+            return{
+                    "status":"error",
+                    "message":"El teléfono proporcionado no coincide con el dueño del paquete, verifica el numero de telefono y podre volver a intentarlo",
+                    "next_step":"Informa al usuario del error inmediatamente y solicita el numero de telefono correcto"
+                    }
         
         delivery_address= await get_delivery_address(tools_pool,enterprise_code=package)
         lat=delivery_address.get("latitude",None)
@@ -272,6 +298,9 @@ def Make_send_current_delivery_address_tool(tools_pool):
                     location_data=message.get("locationMessage",None)
                     if location_data:
                         address=location_data.get("address")
+                        if "confirmations" in ctx.context.location_sent:
+                            ctx.context.location_sent["confirmations"]["is_request_confirmed_by_user"] = True
+                            print(f"Valor actuailizado del contexto de location")
                         return {
                             "status": "Success",
                             "reason":" Se envio el mensaje al usuario con la ubicacion en formato de Whatsapp",
@@ -284,17 +313,22 @@ def Make_send_current_delivery_address_tool(tools_pool):
                     else:
                         return {
                             "status":"error",
-                            "message":"error ocurred while sending the ubication through whatsapp"
+                            "message":"Ocurrio un error al enviar la Ubiacion a Whatsapp",
+                            "next_step":"Informa al usuario del error inmediatamente"
                         }
             else:
                 return {
-                    "status","error",
-                    "message","an error ocurred while finding the address name"
+                    "status":"error",
+                    "message":"Ocurrio un error al buscar la direccion de entrega actual",
+                    "next_step":"Informa al usuario del error inmediatamente"
                 }
         except Exception as e:
             print(f"❌ Error al enviar la direccion al usuario: {e}")
-            return {"status":"error",
-                    "message":"Error al enviar la direccion al usuario"}
+            return {
+                "status":"error",
+                "message":"Error al enviar la direccion actual del paquete",
+                "next_step":"Informa al usuario del error inmediatamente"
+                }
         
         
         
@@ -313,8 +347,8 @@ def Make_remember_tool(pool):
             if ctx.context.backup_memory_called:
                 print(["🧠 Ya recordó esta información"])
                 return {
-                    "status":"error",
-                    "reason":"You already remembered this information, and sessions haven't changed"
+                    "status":"success",
+                    "message":"You already remembered this information, and sessions haven't changed"
                 }
             last_states = await get_msgs_from_last_states(pool, ctx.context.user_id)
             memories = {}
@@ -332,5 +366,9 @@ def Make_remember_tool(pool):
             return memories
         except Exception as e:
             print(f"Error al recuperar/resumir mensajes: {e}")
-            return {"status":"error","message": "No se pudo generar el resumen"}
+            return {
+                    "status":"error",
+                    "message": "No pude generar un resumen de sesiones antiguas",
+                    "next_step":"Informa al usuario del error inmediatamente"
+                    }
     return remember

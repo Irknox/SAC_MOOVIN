@@ -21,6 +21,7 @@ from collections import OrderedDict
 import asyncio
 import redis.asyncio as redis
 from handlers.redis_handler import RedisSession, SESSION_IDLE_SECONDS
+from agents.model_settings import ModelSettings
 
 
 from zoneinfo import ZoneInfo
@@ -31,6 +32,13 @@ def now_cr_iso() -> str:
 
 image_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 location_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+
+text_buffer: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+text_timers: Dict[str, "asyncio.TimerHandle"] = {}
+
+TEXT_BUFFER_WINDOW_SECONDS = 4
+TEXT_BUFFER_MAX_USERS = 50
+TEXT_BUFFER_MAX_MSGS = 20
 
 load_dotenv()
 client = OpenAI()
@@ -312,7 +320,7 @@ def _parse_output_dict(s: str) -> dict | None:
         except Exception:
             return None
         
-        
+##--------------------Classes--------------------##
 class AgentEvent(BaseModel):
     id: str
     type: Literal["handoff", "tool_call", "tool_output"]
@@ -511,7 +519,36 @@ async def whatsapp_webhook(request: Request):
         
         ## ------------------------Procesamiento de mensajes de texto------------------------ ##
         if "conversation" in message_data:
-            user_message = message_data["conversation"]
+            raw_text = (message_data.get("conversation") or "").strip()
+            if not raw_text:
+                return {"status": "ok", "response": "[Mensaje vacío ignorado]"}
+            now = datetime.utcnow()
+            if user_id in text_buffer:
+                buf = text_buffer[user_id]
+                buf["messages"].append(raw_text)
+                buf["last_seen"] = now
+                if len(buf["messages"]) > TEXT_BUFFER_MAX_MSGS:
+                    buf["messages"] = buf["messages"][-TEXT_BUFFER_MAX_MSGS:]
+            else:
+                if len(text_buffer) >= TEXT_BUFFER_MAX_USERS:
+                    text_buffer.popitem(last=False)
+                text_buffer[user_id] = {
+                    "messages": [raw_text],
+                    "last_seen": now
+                }
+
+            await asyncio.sleep(TEXT_BUFFER_WINDOW_SECONDS)
+
+            last_seen = text_buffer[user_id]["last_seen"]
+            if (datetime.utcnow() - last_seen).total_seconds() >= TEXT_BUFFER_WINDOW_SECONDS:
+                msgs = text_buffer[user_id]["messages"][:]
+                del text_buffer[user_id]
+                consolidated = "\n".join(msgs).strip()
+                user_message = consolidated
+                message_data["conversation"] = user_message  
+            else:
+                return {"status": "ok", "response": "[Mensaje recibido, esperando otros...]"}
+
 
         ## ------------------------Procesamiento Ubicaciones------------------------ ##
         elif "locationMessage" in message_data:
@@ -637,19 +674,21 @@ async def whatsapp_webhook(request: Request):
         """   
         result = await run_sdk(request.app, user_id, state, current_agent)
         current_agent=result._last_agent
-
+        response_text = None
+        final_out = getattr(result, "final_output", None)
         for item in result.new_items:
             try:
-                if isinstance(item, MessageOutputItem):
+                if isinstance(final_out, str):
+                    response_text = final_out.strip()
+                elif isinstance(item, MessageOutputItem):
                     content = getattr(item.raw_item, "content", None)
+                    print(f"Esto es content: {content}")
                     text = content[0].text if isinstance(content, list) and content else str(content)
                     response_dict = json.loads(text)
                     response_text = response_dict.get("response")
                     print(f"📤 Respuesta del {current_agent.name}: {response_text}")  
-
                 elif isinstance(item, HandoffOutputItem):
                     current_agent = item.target_agent
-
             except Exception as e:
                 print("⚠️ Error al procesar item:", e)
 
@@ -740,7 +779,7 @@ async def whatsapp_webhook(request: Request):
         return {"status": "ok", "response": response_text}
 
     except Exception as e:
-        print("❌ Error procesando mensaje de WhatsApp:",e)
+        print("❌ Error en el flujo general:",e)
         traceback.print_exc()
         return {"error": str(e)}
 
