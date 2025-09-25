@@ -80,7 +80,6 @@ def retrieve_similar_timelines(embedding: list, top_k: int = 3) -> list:
     cur = conn.cursor()
     embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
 
-    # Seleccionamos también metadata para construir la respuesta
     cur.execute("""
         SELECT content, metadata
         FROM (
@@ -99,7 +98,6 @@ def retrieve_similar_timelines(embedding: list, top_k: int = 3) -> list:
 
     out = []
     for content, metadata in rows:
-        # psycopg2 puede devolver metadata como dict o como str JSON: robustecemos
         if isinstance(metadata, str):
             try:
                 metadata = _json.loads(metadata)
@@ -112,7 +110,7 @@ def retrieve_similar_timelines(embedding: list, top_k: int = 3) -> list:
             "package_id": metadata.get("package_id"),
             "last_status": metadata.get("last_status"),
             "date_last_update": metadata.get("date_last_update"),
-            "timeline": content,  # tal cual está guardado
+            "timeline": content
         })
 
     return out

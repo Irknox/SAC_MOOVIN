@@ -19,7 +19,7 @@ from agents.agent import ToolsToFinalOutputResult
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from tools import Make_remember_tool,make_get_package_timeline_tool, make_get_SLA_tool,make_get_likely_package_timelines_tool, Make_send_current_delivery_address_tool
 from dotenv import load_dotenv
-from mcp_tools import Make_request_to_pickup_tool,Make_request_electronic_receipt_tool,Make_package_damaged_tool, Make_send_delivery_address_requested_tool,Make_change_delivery_address_tool
+from mcp_tools import Make_escalate_to_human, Make_request_to_pickup_tool,Make_request_electronic_receipt_tool,Make_package_damaged_tool, Make_send_delivery_address_requested_tool,Make_change_delivery_address_tool
 from typing import Optional, Dict, Any, List
 load_dotenv()
 from agents.realtime import RealtimeAgent, RealtimeRunner
@@ -140,6 +140,10 @@ to_specialized_agent = Agent[MoovinAgentContext](
     - Agente encargado de ejecutar acciones en aplicaciones externas, Encargado de manejar las siguientes solicitudes.
         - Capacidades:
             - Crear Ticket para solicitud de recoleccion en sede Moovin.
+            - Solicitar una escalacion con Servicio al cliente por:
+               - Usuario tiene un paquete que debe ser recolectado pero no tiene numero de seguimiento.
+               - Usuario amenaza con Demandar a Moovin.
+               - Usuario reporta un suceso ocurrido con un Moover (Agresion, robo o problema en general)
             - Cambiar la direccion de entrega de un paquete.
             - Solicitud de Factura electronica por los impuestos pagados.
             - Crear Ticket para reporte de paquete dañado.
@@ -341,9 +345,9 @@ async def build_agents(tools_pool,mysql_pool,prompts):
         name="MCP Agent",
         model="gpt-4o-mini",
         instructions=mcp_agent_instructions,
-        tools=[Make_remember_tool(mysql_pool),Make_request_to_pickup_tool(tools_pool),Make_request_electronic_receipt_tool(tools_pool),Make_package_damaged_tool(mysql_pool,tools_pool),Make_send_current_delivery_address_tool(tools_pool), Make_send_delivery_address_requested_tool(),Make_change_delivery_address_tool(tools_pool)],
+        tools=[Make_remember_tool(mysql_pool),Make_request_to_pickup_tool(tools_pool),Make_request_electronic_receipt_tool(tools_pool),Make_package_damaged_tool(mysql_pool,tools_pool),Make_send_current_delivery_address_tool(tools_pool), Make_send_delivery_address_requested_tool(),Make_change_delivery_address_tool(tools_pool),Make_escalate_to_human(tools_pool)],
         input_guardrails=[basic_guardrail,emotional_analyst],
-        # output_guardrails=[basic_output_guardrail],
+        ##output_guardrails=[basic_output_guardrail],
         output_type=MessageOutput,               
         tool_use_behavior=stop_tools_after_two_errors  
     )
@@ -355,6 +359,7 @@ async def build_agents(tools_pool,mysql_pool,prompts):
         handoffs=[mcp_agent],
         tools=[Make_remember_tool(mysql_pool),make_get_package_timeline_tool(tools_pool),make_get_likely_package_timelines_tool(tools_pool),make_get_SLA_tool(tools_pool),Make_send_current_delivery_address_tool(tools_pool)],
         input_guardrails=[basic_guardrail,emotional_analyst],
+        ##output_guardrails=[basic_output_guardrail],
         output_type=MessageOutput,               
         tool_use_behavior=stop_tools_after_two_errors  
     )
@@ -365,7 +370,8 @@ async def build_agents(tools_pool,mysql_pool,prompts):
         instructions=general_agent_instructions,
         tools=[Make_remember_tool(mysql_pool)],
         handoffs=[package_analysis_agent, mcp_agent],
-        input_guardrails=[basic_guardrail, to_specialized_agent_guardrail, emotional_analyst], 
+        input_guardrails=[basic_guardrail, to_specialized_agent_guardrail, emotional_analyst],
+        ##output_guardrails=[basic_output_guardrail], 
         output_type=MessageOutput,
     )
     

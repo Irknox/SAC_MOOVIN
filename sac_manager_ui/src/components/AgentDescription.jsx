@@ -75,7 +75,6 @@ const AgentDescription = ({ agent }) => {
           </>
         );
         break;
-
       case "MCP Agent":
         agent_description = (
           <>
@@ -110,8 +109,26 @@ const AgentDescription = ({ agent }) => {
                     dos intentos fallidos de entrega.
                   </p>
                   <p>
-                    El Agente obtiene numero de Ticket y la URL de Ticket en
-                    Zoho
+                    El Agente obtiene numero de Ticket
+                  </p>
+                </div>
+              </li>
+              <li>
+                escalate_to_human
+                <div style={{ marginLeft: "20px", color: "#d1d1d1ff" }}>
+                  <p className="text-gray-300">
+                    Crea un Ticket en Zoho Desk para informar a Servicio al
+                    Cliente sobre una Escalacion.
+                  </p>
+                  <p className="text-gray-300"> Parámetros necesarios</p>
+                  <ul className="ml-5 max-w-md space-y-1 text-gray-300 list-disc list-inside dark:text-gray-300">
+                    <li>Correo y Numero de Telefono de referencia(Minimo 1)</li>
+                    <li> Nombre de Referencia (Obligatorio)</li>
+                    <li> Número de seguimiento (Opcional)</li>
+                    <li> Descripción de la escalacion (Obligatorio)</li>
+                  </ul>
+                  <p>
+                    El Agente obtiene numero de Ticket
                   </p>
                 </div>
               </li>
@@ -132,8 +149,7 @@ const AgentDescription = ({ agent }) => {
                   </ul>
                   <p>Todos los parámetros son obligatorios.</p>
                   <p>
-                    El Agente obtiene numero de Ticket y la URL de Ticket en
-                    Zoho
+                    El Agente obtiene numero de Ticket
                   </p>
                 </div>
               </li>
@@ -160,8 +176,7 @@ const AgentDescription = ({ agent }) => {
                     se compró el producto.
                   </p>
                   <p>
-                    El Agente obtiene numero de Ticket y la URL de Ticket en
-                    Zoho
+                    El Agente obtiene numero de Ticket
                   </p>
                 </div>
               </li>
@@ -188,7 +203,7 @@ const AgentDescription = ({ agent }) => {
                   <p className="text-gray-300">
                     Ideal de uso por parte del Agente
                   </p>
-                  <ol class="ps-5  space-y-1 list-decimal list-inside">
+                  <ol className="ps-5  space-y-1 list-decimal list-inside">
                     <li>Verificar datos iniciales (tracking y teléfono).</li>
                     <li>
                       Confirmar dirección actual con
@@ -326,7 +341,6 @@ const AgentDescription = ({ agent }) => {
           </>
         );
         break;
-
       case "Output":
         agent_description = (
           <>
