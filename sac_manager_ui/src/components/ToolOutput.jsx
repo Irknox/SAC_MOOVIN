@@ -324,7 +324,8 @@ const ToolOutput = ({ tool, output, visible = false, call }) => {
   } else if (
     tool === "pickup_ticket" ||
     tool === "request_electronic_receipt_ticket" ||
-    tool === "package_damaged_ticket"
+    tool === "package_damaged_ticket" ||
+    tool === "escalate_to_human"
   ) {
     const devUrl =
       typeof output?.DevURL === "string" && output.DevURL.trim().length > 0

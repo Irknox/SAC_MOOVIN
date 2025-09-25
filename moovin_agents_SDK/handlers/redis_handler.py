@@ -143,8 +143,6 @@ class RedisSession:
         current = await self.get_session(cid)
         if not current:
             return None
-
-        # Deep-ish copy
         session_obj = json.loads(json.dumps(current))
 
         if prefer_audit:

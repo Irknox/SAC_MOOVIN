@@ -1,6 +1,6 @@
 from agents import function_tool,RunContextWrapper
 from handlers.main_handler import get_package_historic, get_id_package, get_img_data,get_delivery_address,reverse_geocode_osm,send_location_to_whatsapp
-from handlers.mcp_handler import _parse_date_cr,create_pickup_ticket,request_electronic_receipt, report_package_damaged,change_delivery_address as change_delivery_address_request
+from handlers.mcp_handler import _parse_date_cr,create_pickup_ticket, escalate_to_zoho, request_electronic_receipt, report_package_damaged,change_delivery_address as change_delivery_address_request
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from tools import is_admin
@@ -441,3 +441,70 @@ def Make_change_delivery_address_tool(pool):
                 "next_step":"Informa al Usuario del error inmediatamente"
             }
     return change_delivery_address
+
+
+def Make_escalate_to_human(pool):
+    @function_tool(
+    name_override="escalate_to_human",
+    description_override=(
+    "Dado un correo, telefono o ambos y una descripcion se crea un Ticket en Zoho Desk para informar a un Agente Humano sobre la situacion que esta siendo escalada."
+    "Puede ser usada unicamente si bajo tu razonamiento determinas que debes informar a un humano de la situacion actual o esta presente en uno de los Motivos Validos"
+    "El system Prompt contiene una lista de Motivos VALIDOS para crear una escalacion de este tipo, si la solicitud o sitacion actual no esta presente en alguno de estos Motivos, el Ticket NO DEBE SER CREADO."
+    "Que un usuario quiera hablar o escalar la situacion con un humano NO es un motivo valido para usar esta herramienta, si el usuario solicita un humano, primero, entiende que es lo que requiere el usuario y luego actua conforme a esta necesidad y tus opciones."
+    "Parametros a usar: email y phone(opcionales pero como minino uno debe estar presente), name(Obligatorio):Nombre de referencia para la escalacion, package(Opcional):Numero de seguimiento o enterpriseCode del paquete description(Obligatoria): Descripcion del problema que requiere atencion humana."
+    ))
+    async def escalate_to_human(
+    ctx:RunContextWrapper,
+    email:str,
+    phone:int,
+    description:str,
+    name:str,
+    package:str) ->dict:
+        print(f"🔝 Escalacion con Correo: {email or "No dado"}, telefono: {phone or "No dado"}, Descipcion: {description or "No dado"}, Nombre:{name or "No dado"}, Package:{package or "No dado"}")
+        if not name:
+            return{
+                "status":"error",
+                "message":"Por favor proporciona un nombre de Referencia para la escalacion, con esto podre proceder con la solicitud.",
+                "next_step":"Solicita al usuario un nombre de Referencia para la escalacion."
+                }
+        if not email and not phone:
+            return{
+                "status":"error",
+                "message":"Por favor proporciona un numero de Telefono o correo para poder proceder con la solicitud.",
+                "next_step":"Solicita al usuario un numero de Telefono o correo validos para proceder con la solicitud"
+                }
+        if not description:
+            return {
+            "status":"error",
+            "message":"Por favor proporciona una descripcion del Motivo de la escalacion con un Humano.",
+            "next_step":"Solicita al usuarioel motivo para proceder con la solicitud"     
+            }
+        if package:
+            package_id = await get_id_package(pool, package)
+            if not package_id:
+                return {
+                        "status": "error",
+                        "message": f"Paquete {package} no encontrado en la base de datos. Estas seguro es el paquete correcto?",
+                        "next_step":"Informa al Usuario del error inmediatamente"
+                        }
+        try:
+            ticket_info=escalate_to_zoho(email,phone,name,package,description)
+            ticketNumber=ticket_info.get("ticket_number")
+            DevURL=ticket_info.get("webUrl","Desconocido")
+            if ctx.context.issued_tickets_info is None:
+                ctx.context.issued_tickets_info = []
+            ctx.context.issued_tickets_info.insert(0,{"TicketNumber":ticketNumber,"DevURL":DevURL})
+            print(f"✅ Ticket creado con exito, Numero de Ticket: {ticketNumber}")
+            return {
+                "status":"success",
+                "TicketNumber":ticketNumber,
+                "message":"Ticket creado exitosamente", 
+            }
+        except Exception as e:
+            print(f"[Debug]--Eror al crear el ticket: {e}--[Debug]")
+            return{
+                "status": "error",
+                "message": "No se ha podido crear el Ticket para la escalacion, Lamento los incovenientes, recomiendo contactar a nuestra Central Telefonica.",
+                "next_step":"Informa al Usuario del error inmediatamente"            
+            } 
+    return escalate_to_human

@@ -682,7 +682,6 @@ async def whatsapp_webhook(request: Request):
                     response_text = final_out.strip()
                 elif isinstance(item, MessageOutputItem):
                     content = getattr(item.raw_item, "content", None)
-                    print(f"Esto es content: {content}")
                     text = content[0].text if isinstance(content, list) and content else str(content)
                     response_dict = json.loads(text)
                     response_text = response_dict.get("response")
@@ -742,10 +741,6 @@ async def whatsapp_webhook(request: Request):
                             it["ticket_url"] = dev_url
                             it["output"] = json.dumps(parsed, ensure_ascii=False)
                             enriched_any = True
-
-            if ctx and getattr(ctx, "issued_tickets_info", None):
-                print(f"Informacion del ticket: {ctx.issued_tickets_info}")
-
             await redis_session.append_audit_items(user_id, delta_items)
             
         agent_message_human = {

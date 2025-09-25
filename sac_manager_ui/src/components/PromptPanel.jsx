@@ -200,27 +200,27 @@ const PromptPanel = ({ value, prompt }) => {
             style={{
               textAlign: "center",
             }}
-            class=" text-xs text-center text-white"
+            className=" text-xs text-center text-white"
           >
             Indicaciones Generales
           </h1>
 
-          <p class="text-gray-300 text-center ">
+          <p className="text-gray-300 text-center ">
             Es importante que las instrucciones referentes a una herramiente de
             un agente lleven el nombre explicito de la herramienta.
           </p>
-          <p class="text-gray-300 text-center">
+          <p className="text-gray-300 text-center">
             Las instrucciones deben ser claras y concisas, evitando ambigüedades
             que puedan complicar el razonamiento de la IA.
           </p>
-          <p class="text-gray-300 text-center">
+          <p className="text-gray-300 text-center">
             El nuevo prompt se tomara en cuenta una vez haya sido actualizado,
             actualiza el prompt para que surja efecto
           </p>
-          <h2 class=" text-xs text-center text-white">
+          <h2 className=" text-xs text-center text-white">
             Todos los agentes obtienen
           </h2>
-          <ul class="max-w-md space-y-1 text-gray-300 list-disc list-inside dark:text-gray-300">
+          <ul className="max-w-md space-y-1 text-gray-300 list-disc list-inside dark:text-gray-300">
             <li>
               Funcion Remember: Obtiene un resumen de cada una de las ultimas 3
               sesiones en caso de existir.
