@@ -6,9 +6,6 @@
 .next/
 docker-compose.yml
 
-
-moovin_agents_SDK/prompts
-moovin_agents_SDK/prompts_backup
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
