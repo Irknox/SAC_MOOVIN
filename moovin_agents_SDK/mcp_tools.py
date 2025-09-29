@@ -4,6 +4,7 @@ from handlers.mcp_handler import _parse_date_cr,create_pickup_ticket, escalate_t
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from tools import is_admin
+from typing import Optional
 
 CR_TZ = ZoneInfo("America/Costa_Rica")
 
@@ -451,15 +452,15 @@ def Make_escalate_to_human(pool):
     "Puede ser usada unicamente si bajo tu razonamiento determinas que debes informar a un humano de la situacion actual o esta presente en uno de los Motivos Validos"
     "El system Prompt contiene una lista de Motivos VALIDOS para crear una escalacion de este tipo, si la solicitud o sitacion actual no esta presente en alguno de estos Motivos, el Ticket NO DEBE SER CREADO."
     "Que un usuario quiera hablar o escalar la situacion con un humano NO es un motivo valido para usar esta herramienta, si el usuario solicita un humano, primero, entiende que es lo que requiere el usuario y luego actua conforme a esta necesidad y tus opciones."
-    "Parametros a usar: email y phone(opcionales pero como minino uno debe estar presente), name(Obligatorio):Nombre de referencia para la escalacion, package(Opcional):Numero de seguimiento o enterpriseCode del paquete description(Obligatoria): Descripcion del problema que requiere atencion humana."
+    "Parametros a usar: email y phone(Como minino uno debe estar presente, si solo uno este presente el valor del dato faltante debe ser None, no incluyas strings u otra informacion si falta alguno de estos datos), name(Obligatorio):Nombre de referencia para la escalacion, package(Opcional):Numero de seguimiento o enterpriseCode del paquete description(Obligatoria): Descripcion del problema que requiere atencion humana."
     ))
     async def escalate_to_human(
     ctx:RunContextWrapper,
-    email:str,
-    phone:int,
-    description:str,
-    name:str,
-    package:str) ->dict:
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    description: str = "",
+    name: str = "",
+    package: Optional[str] = None) -> dict:
         print(f"🔝 Escalacion con Correo: {email or "No dado"}, telefono: {phone or "No dado"}, Descipcion: {description or "No dado"}, Nombre:{name or "No dado"}, Package:{package or "No dado"}")
         if not name:
             return{
@@ -489,17 +490,23 @@ def Make_escalate_to_human(pool):
                         }
         try:
             ticket_info=escalate_to_zoho(email,phone,name,package,description)
-            ticketNumber=ticket_info.get("ticket_number")
-            DevURL=ticket_info.get("webUrl","Desconocido")
-            if ctx.context.issued_tickets_info is None:
-                ctx.context.issued_tickets_info = []
-            ctx.context.issued_tickets_info.insert(0,{"TicketNumber":ticketNumber,"DevURL":DevURL})
-            print(f"✅ Ticket creado con exito, Numero de Ticket: {ticketNumber}")
-            return {
-                "status":"success",
-                "TicketNumber":ticketNumber,
-                "message":"Ticket creado exitosamente", 
-            }
+            if ticket_info.get("status") == "error" :
+                return {
+                    "status":"error",
+                    "message":"La escalacion no pudo ser posible, te recomiendo contactes directamente a nuestro departamento de servicio al cliente",
+                    "next_step":"Informa al usuario que ocurrio un error al escalar la situacion, y direcciona al usuario a utilizar nuestros canales de contacto"
+                }
+            else:
+                ticketNumber=ticket_info.get("ticket_number")
+                DevURL=ticket_info.get("webUrl","Desconocido")
+                if ctx.context.issued_tickets_info is None:
+                    ctx.context.issued_tickets_info = []
+                ctx.context.issued_tickets_info.insert(0,{"TicketNumber":ticketNumber,"DevURL":DevURL})
+                return {
+                    "status":"success",
+                    "TicketNumber":ticketNumber,
+                    "message":"Ticket creado exitosamente", 
+                }
         except Exception as e:
             print(f"[Debug]--Eror al crear el ticket: {e}--[Debug]")
             return{

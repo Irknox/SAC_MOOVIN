@@ -537,11 +537,6 @@ def escalate_to_zoho(email: str, phone: str,
                      description: str = "") -> dict:
     """
     Crea un ticket en Zoho Desk usando los datos provistos.
-    Parametros Necesarios: 
-        - Numero de Telefono o Correo
-        - Descripcion
-        - Nombre de Referencia
-        - 
     """
     print(f"🛠️ Creando ticket para {package_id!r} (type={type(package_id)})")
 
@@ -551,28 +546,24 @@ def escalate_to_zoho(email: str, phone: str,
         if "id" not in contact:
             print("⚠️ No se encontró contacto, creando uno nuevo…")
             contact = create_zoho_contact(email=email, phone=phone, name=name, token=token)
+            print(f"Valor del nuevo contacto es {contact}")
             if "id" not in contact:
-                return {"error": "No se pudo crear el contacto", "details": contact}
+                return {"status": "error", "message": "No se pudo crear el contacto", "details": contact}
 
         headers = {
             "Authorization": f"Zoho-oauthtoken {token}",
-            "orgId": zoho_org_id, 
+            "orgId": zoho_org_id,
             "Content-Type": "application/json",
         }
-
         payload = {
             "subject": "Escalación de Silver-AI (Prueba de Integración)",
-            "description": (
-                "ESTO ES UNA PRUEBA, por favor hacer caso omiso.\n\n" + (description or "")
-            ),
+            "description": "ESTO ES UNA PRUEBA, por favor hacer caso omiso.\n\n" + (description or ""),
             "departmentId": Z_DEPARTMENT_ID,
             "channel": "Whatsapp",
-            "status" : "Closed",  
+            "status": "Closed",
             "teamId": Z_TEAM_ID,
             "contactId": contact["id"],
         }
-
-        # 
         if email:
             payload["email"] = email
         if phone:
@@ -582,33 +573,21 @@ def escalate_to_zoho(email: str, phone: str,
             cf["cf_id_de_envio"] = str(package_id)
         if cf:
             payload["cf"] = cf
-
         response = requests.post(ZOHOENDPOINT, headers=headers, json=payload)
-        if response.status_code >= 400:
-            try:
-                err_json = response.json()
-            except Exception:
-                err_json = {"raw": response.text}
-
-            print("❌ Zoho 422/4xx:")
-            print({
-                "status_code": response.status_code,
-                "error": err_json,
-                "sent_payload": payload,
-            })
-
+        response.raise_for_status()
+        print(f"Type de response es: {type(response)}")
+        data = response.json() 
+        if isinstance(data, dict) and "id" in data:
+            ticket_data = data
+            print(f"✅ Ticket creado con exito, Numero de Ticket: {ticket_data.get('ticketNumber', 'DESCONOCIDO')}")
             return {
-                "error": f"Zoho error {response.status_code}",
-                "details": err_json,
+                "ticket_number": ticket_data.get("ticketNumber", "DESCONOCIDO"),
+                "message": "Ticket creado exitosamente",
+                "webUrl": ticket_data.get("webUrl", "No disponible"),
             }
-
-        ticket_data = response.json()
-        return {
-            "ticket_number": ticket_data.get("ticketNumber", "DESCONOCIDO"),
-            "message": "Ticket creado exitosamente",
-            "webUrl": ticket_data.get("webUrl", "No disponible"),
-        }
-
+        else:
+            return {"status": "error", "message": data}
     except Exception as e:
         print(f"Error general al crear ticket: {e}")
-        return {"error": "Error general al crear ticket", "details": str(e)}
+        return {"status": "error", "message": "Error general al crear ticket", "details": str(e)}
+
