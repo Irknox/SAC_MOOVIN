@@ -10,7 +10,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-
   redis:
     image: redis:7-alpine
     command: ["redis-server","--appendonly","yes","--save","60","1","--requirepass","${REDIS_PASSWORD}"]
@@ -25,20 +24,52 @@ services:
       retries: 5
     restart: unless-stopped
 
-  realtime:
+  realtime-agent:
     build: .
-    command: python -m realtime_service
+    container_name: realtime-agent
+    restart: unless-stopped
     env_file:
       - .env
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      PYTHONUNBUFFERED: "1"
-    # montamos prompts igual que el ui_api para que el Realtime lea los mismos
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - RTP_BIND_HOST=0.0.0.0
+      - RTP_BIND_PORT=40000
+      - RTP_PAYLOAD=alaw
+      - RTP_PTIME_MS=20
+    ports:
+      - "7000:7000/tcp"      
+      - "40000:40000/udp" 
     volumes:
-      - ./moovin_agents_SDK/prompts:/app/prompts:ro
-    restart: unless-stopped
+      - /moovin_agents_SDK
+    working_dir: /app
+    command: ["python", "SilverAI_Voice.py"]
 
-  # Backend del Front (api_manager_ui.py)
+  silverai-ari:
+    build: .
+    container_name: silverai-ari
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ARI_URL=${ARI_URL}                
+      - ARI_USER=${ARI_USER}               
+      - ARI_PASS=${ARI_PASS}
+      - ARI_APP=${ARI_APP}                 
+      - EXTERNAL_HOST=${EXTERNAL_HOST}     
+      - EXTERNAL_FORMAT=${EXTERNAL_FORMAT} 
+      - EXTERNAL_TRANSPORT=${EXTERNAL_TRANSPORT}       
+      - EXTERNAL_ENCAPSULATION=${EXTERNAL_ENCAPSULATION}
+      - EXTERNAL_DIRECTION=${EXTERNAL_DIRECTION}      
+      - LOG_LEVEL=${LOG_LEVEL}
+      - MAX_CALL_MS=${MAX_CALL_MS}
+    network_mode: host
+    depends_on:
+      - realtime-agent      
+    volumes:
+      - /moovin_agents_SDK
+    working_dir: /app
+    command: ["python", "SilverAI_ari.py"]
+    
   ui_api:
     build: .
     env_file:
