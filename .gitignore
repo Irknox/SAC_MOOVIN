@@ -6,8 +6,8 @@
 .next/
 
 
-docker-compose.yml
-nginx.conf
+**docker-compose.yml
+**nginx.conf
 
 /moovin_agents_SDK/prompts
 /moovin_agents_SDK/prompts
