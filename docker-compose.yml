@@ -59,22 +59,13 @@ services:
     restart: unless-stopped
 
   voicesvc:
-    image: python:3.11-slim
+    build: .
     container_name: voicesvc
-    env_file:
-      - .env
     working_dir: /app
-    volumes:
-      - ./moovin_agents_SDK:/app
     environment:
       AUDIOSOCKET_PORT: "40000"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
-    command: >
-      sh -lc "
-        pip install --no-cache-dir --upgrade pip &&
-        (test -f requirements.txt && pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir openai websockets) &&
-        python silverAI_audiosocket_bridge.py
-      "
+    command: python silverAI_audiosocket_bridge.py
     expose:
       - "40000"
     ports:
