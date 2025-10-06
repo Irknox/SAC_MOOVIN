@@ -1,7 +1,7 @@
 import asyncio
 from typing import AsyncIterator, Optional
 import contextlib
-from agents.realtime import RealtimeAgent, RealtimeRunner
+from agents import RealtimeAgent, RealtimeRunner
 
 
 class SilverAIVoiceSession:
