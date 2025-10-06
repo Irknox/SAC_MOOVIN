@@ -1,6 +1,8 @@
 # Puente AudioSocket (TCP) <-> SilverAIVoiceSession (PCM16 mono 8k)
 import asyncio, struct
-from SilverAI_Voice import SilverAIVoice 
+from SilverAI_Voice import SilverAIVoice
+from dotenv import load_dotenv
+load_dotenv() 
 
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     voice = SilverAIVoice()

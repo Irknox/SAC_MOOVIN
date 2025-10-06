@@ -5,7 +5,6 @@
 // - Añadir ambos canales al bridge
 // - Limpiar recursos al colgar
 //
-// Requiere: npm i ari-client dotenv
 // --------------------------------------------
 
 require('dotenv').config();
@@ -18,16 +17,15 @@ const {
   ARI_APP = 'app',
 
   EXTERNAL_HOST,
-  EXTERNAL_FORMAT = 'alaw',          // alaw | ulaw | slin16
-  EXTERNAL_TRANSPORT = 'udp',        // udp | tcp | websocket
-  EXTERNAL_ENCAPSULATION = 'rtp',    // rtp | audiosocket | none
-  EXTERNAL_DIRECTION = 'both',       // both | in | out
+  EXTERNAL_FORMAT = 'alaw',         
+  EXTERNAL_TRANSPORT = 'udp',        
+  EXTERNAL_ENCAPSULATION = 'rtp',    
+  EXTERNAL_DIRECTION = 'both',       
 
   MAX_CALL_MS = '0',
   LOG_LEVEL = 'INFO',
 } = process.env;
 
-// --- Logger mínimo con niveles ---
 const LEVELS = ['ERROR', 'WARN', 'INFO', 'DEBUG'];
 const CUR_LEVEL_IDX = Math.max(0, LEVELS.indexOf(String(LOG_LEVEL).toUpperCase()));
 const log = {
@@ -144,10 +142,6 @@ async function onStasisStart(event, channel) {
     }
 
     // Crear ExternalMedia apuntando a gateway
-    // Terminología:
-    // - ExternalMedia: Canal "virtual" que saca/mete audio por red (útil para gateway RTP/WebSocket).
-    // - Encapsulation: Cómo empaquetamos audio (RTP, AudioSocket, etc).
-    // - Direction: Sentido del flujo (ambos, solo in, solo out).
     const params = {
       app: ARI_APP,
       external_host: EXTERNAL_HOST,       // host:port en el gateway/SDK

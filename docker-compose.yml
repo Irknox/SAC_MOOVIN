@@ -43,7 +43,6 @@ services:
       - /moovin_agents_SDK
     working_dir: /app
     command: ["python", "SilverAI_Voice.py"]
-
   ui_api:
     build: .
     env_file:
@@ -72,7 +71,6 @@ services:
       - "40000:40000"
     networks:
       - telephony
-
   silverai-ari:
     image: node:20
     container_name: silverai-ari
@@ -103,8 +101,7 @@ services:
         npm i ari-client dotenv &&
         node SilverAI_ari.js
       "
-    networks:
-      - telephony
+    network_mode: "host"
 
   web:
     build:
@@ -117,7 +114,6 @@ services:
     environment:
       - COOKIE_SECURE=false   # en local HTTP
      # - COOKIE_SECURE=true  # en prod con HTTPS en el gateway
-
   gateway:
     image: nginx:alpine
     depends_on:
