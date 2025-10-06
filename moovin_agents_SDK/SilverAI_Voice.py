@@ -2,7 +2,8 @@ import asyncio
 from typing import AsyncIterator, Optional
 import contextlib
 from agents.realtime import RealtimeAgent, RealtimeRunner
-
+from dotenv import load_dotenv
+load_dotenv()
 
 class SilverAIVoiceSession:
     """
@@ -19,12 +20,9 @@ class SilverAIVoiceSession:
         self._closed = False
 
     async def __aenter__(self):
-        # Arranca un “pump” que escucha eventos de la sesión real y
-        # encola los chunks de audio PCM16 salientes en _audio_out_q.
-        await self._session.__aenter__()         
-        await self._pump_task == asyncio.create_task( 
-                self._pump_events_to_queue()
-            )
+        await self._session.__aenter__()
+        self._pump_task = asyncio.create_task(self._pump_events_to_queue())
+
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
