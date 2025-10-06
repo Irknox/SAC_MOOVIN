@@ -109,7 +109,7 @@ async function onStasisStart(event, channel) {
   // Caso: canal SIP entrante
   const sipId = chId;
   CALLS.set(sipId, new CallState(sipId));
-  const ch = client.channels.get({ channelId: sipId });
+  const ch = await client.channels.get({ channelId: sipId });
 
   try {
     // Contestar
