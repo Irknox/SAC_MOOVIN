@@ -148,8 +148,6 @@ async function onStasisStart(event, channel) {
       format: EXTERNAL_FORMAT,            // códec (p.ej. alaw/ulaw/slin16)
       transport: EXTERNAL_TRANSPORT,      // udp/tcp/websocket
       encapsulation: EXTERNAL_ENCAPSULATION, // rtp/audiosocket/none
-      connection_type: 'client',
-      direction: EXTERNAL_DIRECTION,      // both/in/out
     };
 
     const extCh = await client.channels.externalMedia(params);
