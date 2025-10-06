@@ -65,7 +65,7 @@ services:
       - .env
     working_dir: /app
     volumes:
-      - ./moovin_agents_sdk:/app
+      - ./moovin_agents_SDK:/app
     environment:
       AUDIOSOCKET_PORT: "40000"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
@@ -89,7 +89,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./moovin_agents_sdk:/app
+      - ./moovin_agents_SDK:/app
     environment:
       ARI_URL: "${ARI_URL}"
       ARI_USER: "${ARI_USER:-asterisk}"
@@ -117,10 +117,10 @@ services:
 
   web:
     build:
-    context: ./sac_manager_ui
-    args:
-      NEXT_PUBLIC_BASE_PATH: /SilverAI/ManagerUI
-      NEXT_PUBLIC_MANAGER_API_BASE: /SilverAI/Manager
+      context: ./sac_manager_ui
+      args:
+        NEXT_PUBLIC_BASE_PATH: /SilverAI/ManagerUI
+        NEXT_PUBLIC_MANAGER_API_BASE: /SilverAI/Manager
     env_file:
       - ./sac_manager_ui/.env
     environment:
