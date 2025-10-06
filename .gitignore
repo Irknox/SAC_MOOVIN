@@ -4,7 +4,11 @@
 .gitignore
 **node_modules/
 .next/
+
+
 **docker-compose.yml
+**nginx.conf
+
 /moovin_agents_SDK/prompts
 /moovin_agents_SDK/prompts
 /asterisk_to_openai_rt
