@@ -39,6 +39,17 @@ class SilverAIVoiceSession:
         Intentamos métodos comunes del runner para no acoplar al detalle.
         """
         #
+        self._bytes_in = getattr(self, "_bytes_in", 0) + len(pcm16_bytes)
+        self._last_log_in = getattr(self, "_last_log_in", None)
+        import time
+        now = time.monotonic()
+        if self._last_log_in is None:
+            self._last_log_in = now
+        if now - self._last_log_in >= 1.0:
+            print(f"[Voice] IN agente ~{self._bytes_in} bytes último ~1s")
+            self._bytes_in = 0
+            self._last_log_in = now
+
         for name in ("send_audio", "send_pcm16", "feed_pcm16", "feed_audio"):
             fn = getattr(self._session, name, None)
             if callable(fn):
@@ -60,6 +71,16 @@ class SilverAIVoiceSession:
         while not self._closed:
             chunk = await self._audio_out_q.get()
             if chunk:
+                self._bytes_out = getattr(self, "_bytes_out", 0) + len(chunk)
+                self._last_log_out = getattr(self, "_last_log_out", None)
+                import time
+                now = time.monotonic()
+                if self._last_log_out is None:
+                    self._last_log_out = now
+                if now - self._last_log_out >= 1.0:
+                    print(f"[Voice] OUT agente ~{self._bytes_out} bytes último ~1s")
+                    self._bytes_out = 0
+                    self._last_log_out = now
                 yield chunk
 
     # ====== Internals ======
@@ -125,4 +146,5 @@ class SilverAIVoice:
         )
 
         inner_session = await self._runner.run()
+        print("[Voice] Realtime conectado (runner listo)")
         return SilverAIVoiceSession(inner_session)
