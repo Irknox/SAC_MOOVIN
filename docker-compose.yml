@@ -31,6 +31,7 @@ services:
     env_file:
       - .env
     environment:
+      - PYTHONUNBUFFERED=1
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - RTP_BIND_HOST=0.0.0.0
       - RTP_BIND_PORT=40000
@@ -43,6 +44,7 @@ services:
       - /moovin_agents_SDK
     working_dir: /app
     command: ["python", "SilverAI_Voice.py"]
+
   ui_api:
     build: .
     env_file:
@@ -62,8 +64,9 @@ services:
     container_name: voicesvc
     working_dir: /app
     environment:
-      AUDIOSOCKET_PORT: "40000"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      - PYTHONUNBUFFERED=1
+      - AUDIOSOCKET_PORT=40000
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     command: python silverAI_audiosocket_bridge.py
     expose:
       - "40000"
@@ -71,6 +74,7 @@ services:
       - "40000:40000"
     networks:
       - telephony
+
   silverai-ari:
     image: node:20
     container_name: silverai-ari
