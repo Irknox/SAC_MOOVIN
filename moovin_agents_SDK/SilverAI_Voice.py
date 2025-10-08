@@ -23,6 +23,28 @@ class SilverAIVoiceSession:
     async def __aenter__(self):
         await self._session.__aenter__()
         self._pump_task = asyncio.create_task(self._pump_events_to_queue())
+        async def _debug_probe_tts():
+            text = "Conectado a Silver. Prueba de audio."
+            # Intenta nombres comunes en runners/sesiones:
+            for m in ("speak", "say", "tts", "respond", "response_create", "start_response"):
+                fn = getattr(self._session, m, None)
+                if callable(fn):
+                    try:
+                        res = fn(text)
+                        if asyncio.iscoroutine(res):
+                            await res
+                        print("[Voice] DEBUG: Se invocó", m, "para emitir TTS inicial.")
+                        return
+                    except Exception as e:
+                        print("[Voice] DEBUG:", m, "falló:", repr(e))
+            outq = getattr(self._session, "text_out", None)
+            if outq:
+                try:
+                    await outq.put(text)
+                    print("[Voice] DEBUG: texto de prueba en 'text_out'")
+                except Exception as e:
+                    print("[Voice] DEBUG: text_out put falló:", repr(e))
+        asyncio.create_task(_debug_probe_tts())
 
         return self
 
@@ -95,27 +117,48 @@ class SilverAIVoiceSession:
     # ====== Internals ======
     async def _pump_events_to_queue(self):
         """
-        Lee eventos de la sesión Realtime y publica audio PCM16 en _audio_out_q.
+        Lee eventos/streams de la sesión Realtime y publica audio PCM16 en _audio_out_q.
+        Intenta múltiples APIs comunes (stream_tts, audio_stream, etc.) y,
+        si no están, itera eventos crudos con más logs.
         """
-        #
-        for mname in ("stream_tts", "audio_stream", "stream_agent_tts"):
+        # 1)Métodos típicos
+        for mname in ("stream_tts", "audio_stream", "stream_agent_tts", "audio_out_stream"):
             maybe = getattr(self._session, mname, None)
             if callable(maybe):
+                print(f"[Voice] DEBUG: usando stream '{mname}'")
                 stream = maybe()
                 if asyncio.iscoroutine(stream):
                     stream = await stream
                 async for pcm in stream:
                     if pcm:
                         await self._audio_out_q.put(pcm)
-                return  # si el stream acaba, se deja de anadir eventos
+                return  # si ese stream termina, salimos
 
-        async for ev in self._session:
-            if getattr(ev, "type", "") == "audio":
-                for attr in ("pcm16", "samples", "data", "buffer", "bytes"):
-                    pcm = getattr(ev, attr, None)
+        # 2) Intenta colas directas de salida
+        for qname in ("audio_out", "pcm16_out", "tts_out"):
+            q = getattr(self._session, qname, None)
+            if q is not None:
+                print(f"[Voice] DEBUG: leyendo de cola '{qname}'")
+                while not self._closed:
+                    pcm = await q.get()
                     if pcm:
                         await self._audio_out_q.put(pcm)
-                        break
+                return
+
+        # 3) Itera eventos crudos y trata de extraer audio
+        print("[Voice] DEBUG: no hay stream/cola directa; iterando eventos de sesión…")
+        last_any = None
+        async for ev in self._session:
+            et = getattr(ev, "type", None)
+            if et and et != last_any:
+                print("[Voice] DEBUG ev.type:", et)
+                last_any = et
+            for attr in ("pcm16", "samples", "data", "buffer", "bytes", "audio"):
+                pcm = getattr(ev, attr, None)
+                if pcm:
+                    await self._audio_out_q.put(pcm)
+                    break
+
 
 
 class SilverAIVoice:
