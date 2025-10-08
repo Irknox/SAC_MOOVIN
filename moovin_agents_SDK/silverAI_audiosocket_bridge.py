@@ -6,7 +6,7 @@ import os
 import audioop
 from dotenv import load_dotenv
 from SilverAI_Voice import SilverAIVoice
-
+ECHO_BACK = os.getenv("ECHO_BACK", "0") == "1"
 load_dotenv()
 
 
@@ -62,13 +62,13 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                         continue
                     data = await reader.readexactly(size)
                 except asyncio.IncompleteReadError:
-                    # Fallback “crudo”: leer 320 bytes (~20ms a 8k) si el peer no mandó header
                     data = await reader.readexactly(320)
-
-                # Entrega audio entrante al agente
+                    if ECHO_BACK and data:
+                        writer.write(struct.pack("!H", len(data)) + data)
+                        await writer.drain()
+                        bytes_out += 2 + len(data)
                 session.feed_pcm16(data)
-
-                bytes_in += 2 + len(data)  # header+payload para tener simetría con OUT
+                bytes_in += 2 + len(data)
                 now = time.monotonic()
                 if now - last_log >= 1.0:
                     print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
