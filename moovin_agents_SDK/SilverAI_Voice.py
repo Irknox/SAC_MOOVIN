@@ -5,7 +5,58 @@ from agents.realtime import RealtimeAgent, RealtimeRunner
 from dotenv import load_dotenv
 load_dotenv()
 import audioop 
+import base64, struct
+from array import array
 
+
+def _to_pcm16_bytes(x):
+        """
+        Devuelve bytes PCM16 (mono) a 16 kHz cuando sea posible.
+        Acepta: bytes/bytearray/memoryview, array('h'), list[int] 16-bit, dicts con {pcm16|bytes|buffer|data},
+        o strings base64.
+        """
+        if x is None:
+            return None
+        # bytes-like directos
+        if isinstance(x, (bytes, bytearray, memoryview)):
+            return bytes(x)
+        # array de 16-bit (signed)
+        if isinstance(x, array) and x.typecode == 'h':
+            return x.tobytes()
+        # lista de enteros 16-bit
+        if isinstance(x, list) and x and isinstance(x[0], int):
+            return struct.pack("<" + "h"*len(x), *x)
+        # dict con posibles contenedores
+        if isinstance(x, dict):
+            for k in ("pcm16", "bytes", "buffer", "data", "audio"):
+                v = x.get(k)
+                b = _to_pcm16_bytes(v)
+                if b:
+                    return b
+            # a veces { "b64": "..."} o similar
+            for k in ("b64", "base64"):
+                v = x.get(k)
+                if isinstance(v, str):
+                    try:
+                        return base64.b64decode(v)
+                    except Exception:
+                        pass
+            return None
+        # string como base64
+        if isinstance(x, str):
+            try:
+                return base64.b64decode(x)
+            except Exception:
+                return None
+        # objeto con tobytes()
+        tobytes = getattr(x, "tobytes", None)
+        if callable(tobytes):
+            try:
+                return tobytes()
+            except Exception:
+                return None
+        return None
+    
 class SilverAIVoiceSession:
     """
     Envoltura sobre la sesión del SDK Realtime para exponer:
@@ -114,7 +165,8 @@ class SilverAIVoiceSession:
                     self._last_log_out = now
                 yield chunk
 
-    # ====== Internals ======
+    # ====== Internals =====
+
     async def _pump_events_to_queue(self):
         """
         Lee eventos/streams de la sesión Realtime y publica audio PCM16 en _audio_out_q.
@@ -153,13 +205,23 @@ class SilverAIVoiceSession:
             if et and et != last_any:
                 print("[Voice] DEBUG ev.type:", et)
                 last_any = et
-            for attr in ("pcm16", "samples", "data", "buffer", "bytes", "audio"):
-                pcm = getattr(ev, attr, None)
-                if pcm:
-                    await self._audio_out_q.put(pcm)
+            cand = None
+            for attr in ("pcm16", "samples", "data", "buffer", "bytes", "audio", "chunk"):
+                if hasattr(ev, attr):
+                    cand = getattr(ev, attr)
                     break
+            if cand is None:
+                try:
+                    cand = dict(ev)
+                except Exception:
+                    cand = None
 
-
+            pcm = _to_pcm16_bytes(cand)
+            if pcm:
+                await self._audio_out_q.put(pcm)
+            else:
+                tname = type(cand).__name__ if cand is not None else "None"
+                print(f"[Voice] DEBUG: evento sin PCM usable (tipo={tname})")
 
 class SilverAIVoice:
     """
