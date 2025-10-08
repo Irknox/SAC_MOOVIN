@@ -19,6 +19,36 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     bytes_out = 0    
     last_log = time.monotonic()
 
+        # === MODO ECO===
+    if ECHO_BACK:
+        print("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
+        try:
+            while True:
+                try:
+                    hdr = await reader.readexactly(2)
+                    (size,) = struct.unpack("!H", hdr)
+                    if size == 0:
+                        continue
+                    data = await reader.readexactly(size)
+                except asyncio.IncompleteReadError:
+                    break
+                writer.write(struct.pack("!H", len(data)) + data)
+                await writer.drain()
+
+                bytes_in  += 2 + len(data)
+                bytes_out += 2 + len(data)
+                now = time.monotonic()
+                if now - last_log >= 1.0:
+                    print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
+                    bytes_in = 0
+                    bytes_out = 0
+                    last_log = now
+        finally:
+            writer.close()
+            await writer.wait_closed()
+            print(f"[AudioSocket Bridge] cliente desconectado {peer}")
+        return
+    
     # Levanta sesión con el agente (SDK Realtime)
     voice = SilverAIVoice()
     session = await voice.start()
@@ -63,12 +93,9 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     data = await reader.readexactly(size)
                 except asyncio.IncompleteReadError:
                     data = await reader.readexactly(320)
-                    if ECHO_BACK and data:
-                        writer.write(struct.pack("!H", len(data)) + data)
-                        await writer.drain()
-                        bytes_out += 2 + len(data)
                 session.feed_pcm16(data)
-                bytes_in += 2 + len(data)
+
+                bytes_in += 2 + len(data)  # header+payload para tener simetría con OUT
                 now = time.monotonic()
                 if now - last_log >= 1.0:
                     print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
