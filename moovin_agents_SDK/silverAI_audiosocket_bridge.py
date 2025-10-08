@@ -24,19 +24,25 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         print("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
         try:
             while True:
-                try:
-                    hdr = await reader.readexactly(2)
-                    (size,) = struct.unpack("!H", hdr)
-                    if size == 0:
-                        continue
-                    data = await reader.readexactly(size)
-                except asyncio.IncompleteReadError:
-                    break
-                writer.write(struct.pack("!H", len(data)) + data)
-                await writer.drain()
+                # --- AudioSocket header (3 bytes): type + len_be ---
+                hdr3 = await reader.readexactly(3)
+                msg_type = hdr3[0]
+                payload_len = (hdr3[1] << 8) | hdr3[2]
 
-                bytes_in  += 2 + len(data)
-                bytes_out += 2 + len(data)
+                payload = b""
+                if payload_len:
+                    payload = await reader.readexactly(payload_len)
+
+                # Contadores de entrada (header + payload)
+                bytes_in += 3 + payload_len
+
+                # ECO: rebotar SOLO audio (0x10)
+                if msg_type == 0x10 and payload:
+                    writer.write(bytes([0x10, (payload_len >> 8) & 0xFF, payload_len & 0xFF]) + payload)
+                    await writer.drain()
+                    bytes_out += 3 + payload_len
+
+                # Log cada ~1s
                 now = time.monotonic()
                 if now - last_log >= 1.0:
                     print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
