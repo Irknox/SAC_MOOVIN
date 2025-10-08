@@ -4,11 +4,11 @@ import struct
 import time
 import os
 import audioop
-from dotenv import load_dotenv
 from SilverAI_Voice import SilverAIVoice
-ECHO_BACK = os.getenv("ECHO_BACK", "0") == "1"
+from dotenv import load_dotenv
 load_dotenv()
 
+ECHO_BACK = os.getenv("ECHO_BACK", "0") == "1"
 
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     print("[AudioSocket Bridge] cliente conectado")
@@ -69,15 +69,15 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                         continue
 
                     try:
-                        pcm8, rate_state_out = audioop.ratecv(
-+                        pcm, 2, 1, 16000, 8000, rate_state_out
-                    )
+                        pcm8, rate_state_out = audioop.ratecv(pcm, 2, 1, 16000, 8000, rate_state_out)
                     except Exception:
                         pcm8 = pcm  
 
-                    writer.write(struct.pack("!H", len(pcm8)) + pcm8)
+                    
+                    frame = bytes([0x10]) + struct.pack("!H", len(pcm8)) + pcm8
+                    writer.write(frame)
                     await writer.drain()
-                    bytes_out += 2 + len(pcm8)  
+                    bytes_out += len(frame)
                     now = time.monotonic()
                     if now - last_log >= 1.0:
                         print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
@@ -88,26 +88,45 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 pass
 
         pump_task = asyncio.create_task(pump_agent_to_asterisk())
-
+        rate_state_in = None 
         try:
             while True:
-                try:
-                    hdr = await reader.readexactly(2)
-                    (size,) = struct.unpack("!H", hdr)
-                    if size == 0:
-                        continue
-                    data = await reader.readexactly(size)
-                except asyncio.IncompleteReadError:
-                    data = await reader.readexactly(320)
-                session.feed_pcm16(data)
+                    # 3 bytes: type (1B) + length (2B big-endian)
+                    hdr3 = await reader.readexactly(3)
+                    msg_type = hdr3[0]
+                    payload_len = (hdr3[1] << 8) | hdr3[2]
 
-                bytes_in += 2 + len(data)  # header+payload para tener simetría con OUT
-                now = time.monotonic()
-                if now - last_log >= 1.0:
-                    print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
-                    bytes_in = 0
-                    bytes_out = 0
-                    last_log = now
+                    payload = b""
+                    if payload_len:
+                        payload = await reader.readexactly(payload_len)
+
+                    bytes_in += 3 + payload_len
+
+                    if msg_type == 0x01:
+                        print(f"[Bridge] UUID: {payload.hex()}")
+                        continue
+                    if msg_type == 0x03:
+                        print(f"[Bridge] DTMF: {payload!r}")
+                        continue
+                    if msg_type == 0x00:
+                        break
+                    if msg_type != 0x10:
+                        continue
+
+                    # msg_type == 0x10 => audio PCM slin16 @ 8kHz desde Asterisk
+                    try:
+                        pcm16k, rate_state_in = audioop.ratecv(payload, 2, 1, 8000, 16000, rate_state_in)
+                    except Exception:
+                        pcm16k = payload  # fallback
+
+                    session.feed_pcm16(pcm16k)
+
+                    now = time.monotonic()
+                    if now - last_log >= 1.0:
+                        print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
+                        bytes_in = 0
+                        bytes_out = 0
+                        last_log = now
 
         except (asyncio.IncompleteReadError, ConnectionResetError):
             # El peer colgó o se cortó
