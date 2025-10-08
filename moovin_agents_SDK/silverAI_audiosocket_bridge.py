@@ -3,7 +3,7 @@ import asyncio
 import struct
 import time
 import os
-
+import audioop
 from dotenv import load_dotenv
 from SilverAI_Voice import SilverAIVoice
 
@@ -22,19 +22,26 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     # Levanta sesión con el agente (SDK Realtime)
     voice = SilverAIVoice()
     session = await voice.start()
-
+    rate_state_out = None
     async with session:
         async def pump_agent_to_asterisk():
             """Saca audio TTS del agente y lo envía a Asterisk por AudioSocket."""
-            nonlocal bytes_out, last_log
+            nonlocal bytes_out, last_log, rate_state_out
             try:
                 async for pcm in session.stream_agent_tts():
                     if not pcm:
                         continue
-                    # Protocolo audiosocket: 2 bytes (big-endian) = longitud, luego payload PCM16
-                    writer.write(struct.pack("!H", len(pcm)) + pcm)
+
+                    try:
+                        pcm8, rate_state_out = audioop.ratecv(
++                        pcm, 2, 1, 16000, 8000, rate_state_out
+                    )
+                    except Exception:
+                        pcm8 = pcm  
+
+                    writer.write(struct.pack("!H", len(pcm8)) + pcm8)
                     await writer.drain()
-                    bytes_out += 2 + len(pcm)
+                    bytes_out += 2 + len(pcm8)  
                     now = time.monotonic()
                     if now - last_log >= 1.0:
                         print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
@@ -42,15 +49,12 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                         bytes_out = 0
                         last_log = now
             except asyncio.CancelledError:
-                # cierre normal
                 pass
 
-        # *** Importante: lanzar la tarea de salida en paralelo ***
         pump_task = asyncio.create_task(pump_agent_to_asterisk())
 
         try:
             while True:
-                # Lee frames del AudioSocket (2 bytes de tamaño + payload PCM16)
                 try:
                     hdr = await reader.readexactly(2)
                     (size,) = struct.unpack("!H", hdr)
