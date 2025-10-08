@@ -4,7 +4,7 @@ import contextlib
 from agents.realtime import RealtimeAgent, RealtimeRunner
 from dotenv import load_dotenv
 load_dotenv()
-import audioop_lts as audioop 
+import audioop 
 
 class SilverAIVoiceSession:
     """
