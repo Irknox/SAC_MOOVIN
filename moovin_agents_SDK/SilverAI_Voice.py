@@ -4,6 +4,7 @@ import contextlib
 from agents.realtime import RealtimeAgent, RealtimeRunner
 from dotenv import load_dotenv
 load_dotenv()
+import audioop_lts as audioop 
 
 class SilverAIVoiceSession:
     """
@@ -49,22 +50,30 @@ class SilverAIVoiceSession:
             print(f"[Voice] IN agente ~{self._bytes_in} bytes último ~1s")
             self._bytes_in = 0
             self._last_log_in = now
+        try:
+            converted, self._rate_state_in = audioop.ratecv(
+                pcm16_bytes,  # data
+                2,            # width=2 bytes (16-bit)
+                1,            # nchannels=1 (mono)
+                8000,         # inrate
+                16000,        # outrate
+                getattr(self, "_rate_state_in", None)
+            )
+        except Exception:
+            converted = pcm16_bytes  # fallback: envía raw si algo falla
 
         for name in ("send_audio", "send_pcm16", "feed_pcm16", "feed_audio"):
             fn = getattr(self._session, name, None)
             if callable(fn):
-                res = fn(pcm16_bytes)
+                res = fn(converted)   # <-- enviar 16k al agente
                 if asyncio.iscoroutine(res):
                     asyncio.create_task(res)
                 return
         q = getattr(self._session, "audio_in", None)
         if q is not None:
-            asyncio.create_task(q.put(pcm16_bytes))
+            asyncio.create_task(q.put(converted))  # <-- 16k
             return
-
-        # Si llegamos aquí, no hay API conocida.
         print("WARN: No input audio API found on session")
-        return
 
     async def stream_agent_tts(self) -> AsyncIterator[bytes]:
         """Itera chunks PCM16 salientes del agente (para enviarlos a Asterisk)."""
