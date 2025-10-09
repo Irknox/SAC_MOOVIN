@@ -67,13 +67,10 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 async for pcm in session.stream_agent_tts():
                     if not pcm:
                         continue
-
                     try:
                         pcm8, rate_state_out = audioop.ratecv(pcm, 2, 1, 16000, 8000, rate_state_out)
                     except Exception:
                         pcm8 = pcm  
-
-                    
                     frame = bytes([0x10]) + struct.pack("!H", len(pcm8)) + pcm8
                     writer.write(frame)
                     await writer.drain()
@@ -86,7 +83,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                         last_log = now
             except asyncio.CancelledError:
                 pass
-
         pump_task = asyncio.create_task(pump_agent_to_asterisk())
         rate_state_in = None 
         try:

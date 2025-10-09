@@ -8,6 +8,32 @@ import audioop
 import base64, struct
 from array import array
 
+def _extract_pcm_and_rate(ev_audio) -> tuple[bytes | None, int | None]:
+    """
+    Intenta obtener (pcm_bytes, sample_rate) desde RealtimeModelAudioEvent.
+    Distintas versiones del SDK han usado .audio, .data y metadatos con rate.
+    Devolvemos (None, None) si no hay payload útil.
+    """
+    pcm = None
+    rate = None
+
+    for attr in ("audio", "data", "bytes", "pcm"):
+        if hasattr(ev_audio, attr):
+            val = getattr(ev_audio, attr)
+            if isinstance(val, (bytes, bytearray)):
+                pcm = bytes(val)
+                break
+    for attr in ("sample_rate_hz", "sample_rate", "rate"):
+        if hasattr(ev_audio, attr):
+            try:
+                rate = int(getattr(ev_audio, attr))
+                break
+            except Exception:
+                pass
+    if rate is None:
+        rate = 24000
+    return pcm, rate
+
 
 def _to_pcm16_bytes(x):
         """
@@ -148,32 +174,21 @@ class SilverAIVoiceSession:
             return
         print("WARN: No input audio API found on session")
 
-    async def stream_agent_tts(self) -> AsyncIterator[bytes]:
-        """Itera chunks PCM16 salientes del agente (para enviarlos a Asterisk)."""
+    async def stream_agent_tts(self):
+        """
+        Devuelve chunks PCM16 mono listos para enviar al bridge.
+        Lee ÚNICAMENTE de la cola _audio_out_q, que es llenada por _pump_events_to_queue().
+        """
         while not self._closed:
-            chunk = await self._audio_out_q.get()
-            if chunk:
-                self._bytes_out = getattr(self, "_bytes_out", 0) + len(chunk)
-                self._last_log_out = getattr(self, "_last_log_out", None)
-                import time
-                now = time.monotonic()
-                if self._last_log_out is None:
-                    self._last_log_out = now
-                if now - self._last_log_out >= 1.0:
-                    print(f"[Voice] OUT agente ~{self._bytes_out} bytes último ~1s")
-                    self._bytes_out = 0
-                    self._last_log_out = now
-                yield chunk
-
-    # ====== Internals =====
+            pcm = await self._audio_out_q.get()
+            if pcm:
+                yield pcm
 
     async def _pump_events_to_queue(self):
         """
-        Lee eventos/streams de la sesión Realtime y publica audio PCM16 en _audio_out_q.
-        Intenta múltiples APIs comunes (stream_tts, audio_stream, etc.) y,
-        si no están, itera eventos crudos con más logs.
+        Itera eventos del Realtime y publica PCM en _audio_out_q.
+        Prioriza streams/colas nativas; si no existen, cae a eventos crudos y extrae PCM.
         """
-        # 1)Métodos típicos
         for mname in ("stream_tts", "audio_stream", "stream_agent_tts", "audio_out_stream"):
             maybe = getattr(self._session, mname, None)
             if callable(maybe):
@@ -184,9 +199,7 @@ class SilverAIVoiceSession:
                 async for pcm in stream:
                     if pcm:
                         await self._audio_out_q.put(pcm)
-                return  # si ese stream termina, salimos
-
-        # 2) Intenta colas directas de salida
+                return
         for qname in ("audio_out", "pcm16_out", "tts_out"):
             q = getattr(self._session, qname, None)
             if q is not None:
@@ -196,32 +209,27 @@ class SilverAIVoiceSession:
                     if pcm:
                         await self._audio_out_q.put(pcm)
                 return
-
-        # 3) Itera eventos crudos y trata de extraer audio
         print("[Voice] DEBUG: no hay stream/cola directa; iterando eventos de sesión…")
-        last_any = None
+        ratecv_state = None
         async for ev in self._session:
             et = getattr(ev, "type", None)
-            if et and et != last_any:
+            if et:
                 print("[Voice] DEBUG ev.type:", et)
-                last_any = et
-            cand = None
-            for attr in ("pcm16", "samples", "data", "buffer", "bytes", "audio", "chunk"):
-                if hasattr(ev, attr):
-                    cand = getattr(ev, attr)
-                    break
-            if cand is None:
-                try:
-                    cand = dict(ev)
-                except Exception:
-                    cand = None
+            if et == "audio":
+                pcm_in, in_rate = _extract_pcm_and_rate(getattr(ev, "audio", ev))
+                if not pcm_in:
+                    continue
+                if in_rate != 8000:
+                    pcm_out, ratecv_state = audioop.ratecv(pcm_in, 2, 1, in_rate, 8000, ratecv_state)
+                else:
+                    pcm_out = pcm_in
+                if pcm_out:
+                    await self._audio_out_q.put(pcm_out)
 
-            pcm = _to_pcm16_bytes(cand)
-            if pcm:
-                await self._audio_out_q.put(pcm)
+            elif et == "audio_end":
+                ratecv_state = None
             else:
-                tname = type(cand).__name__ if cand is not None else "None"
-                print(f"[Voice] DEBUG: evento sin PCM usable (tipo={tname})")
+                continue
 
 class SilverAIVoice:
     """
