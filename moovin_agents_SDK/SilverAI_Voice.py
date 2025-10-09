@@ -11,10 +11,6 @@ from os import getenv
 import audioop
 
 def _extract_pcm_and_rate(audio_obj):
-    """
-    Devuelve (pcm_bytes, sample_rate_hz) desde un RealtimeModelAudioEvent o similar.
-    Soporta varios nombres de campo según versión del SDK.
-    """
     if audio_obj is None:
         return None, None
     pcm = getattr(audio_obj, "pcm", None)
@@ -26,13 +22,21 @@ def _extract_pcm_and_rate(audio_obj):
         pcm = getattr(audio_obj, "data", None)
     if isinstance(pcm, memoryview):
         pcm = pcm.tobytes()
+
     rate = getattr(audio_obj, "sample_rate_hz", None)
     if rate is None:
         rate = getattr(audio_obj, "sample_rate", None)
     if rate is None:
+        rate = getattr(audio_obj, "rate", None) 
+
+    if rate is None:
         fmt = getattr(audio_obj, "format", None)
         if fmt is not None:
-            rate = getattr(fmt, "sample_rate_hz", None) or getattr(fmt, "sample_rate", None)
+            rate = (
+                getattr(fmt, "sample_rate_hz", None)
+                or getattr(fmt, "sample_rate", None)
+                or getattr(fmt, "rate", None) 
+            )
     if rate is None:
         rate = int(getenv("AGENT_OUT_RATE_DEFAULT", "24000"))
         print(f"[Debug] No se encontró sample_rate en audio obj -> usando {rate} Hz por defecto")
@@ -289,7 +293,7 @@ class SilverAIVoice:
                     "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
                     "turn_detection": {
                         "type": "semantic_vad",
-                        "interrupt_response": True
+                        "interrupt_response": False
                     },
                 }
             },
