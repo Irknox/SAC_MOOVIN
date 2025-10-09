@@ -49,23 +49,18 @@ def _to_pcm16_bytes(x):
         """
         if x is None:
             return None
-        # bytes-like directos
         if isinstance(x, (bytes, bytearray, memoryview)):
             return bytes(x)
-        # array de 16-bit (signed)
         if isinstance(x, array) and x.typecode == 'h':
             return x.tobytes()
-        # lista de enteros 16-bit
         if isinstance(x, list) and x and isinstance(x[0], int):
             return struct.pack("<" + "h"*len(x), *x)
-        # dict con posibles contenedores
         if isinstance(x, dict):
             for k in ("pcm16", "bytes", "buffer", "data", "audio"):
                 v = x.get(k)
                 b = _to_pcm16_bytes(v)
                 if b:
                     return b
-            # a veces { "b64": "..."} o similar
             for k in ("b64", "base64"):
                 v = x.get(k)
                 if isinstance(v, str):
@@ -74,13 +69,11 @@ def _to_pcm16_bytes(x):
                     except Exception:
                         pass
             return None
-        # string como base64
         if isinstance(x, str):
             try:
                 return base64.b64decode(x)
             except Exception:
                 return None
-        # objeto con tobytes()
         tobytes = getattr(x, "tobytes", None)
         if callable(tobytes):
             try:
@@ -88,6 +81,20 @@ def _to_pcm16_bytes(x):
             except Exception:
                 return None
         return None
+    
+def _force_to_8k_pcm16(pcm: bytes, assumed_in_rate: int = 16000, state=None):
+    """
+    Recibe PCM16 mono (bytes) a cualquier rate (por defecto 16k) y devuelve (pcm8k, new_state).
+    """
+    if not pcm:
+        return b"", state
+    if len(pcm) & 1:
+        pcm = pcm[:-1]
+    try:
+        out, state = audioop.ratecv(pcm, 2, 1, assumed_in_rate, 8000, state)
+        return out, state
+    except Exception:
+        return pcm, state
     
 class SilverAIVoiceSession:
     """
@@ -204,18 +211,28 @@ class SilverAIVoiceSession:
                 stream = maybe()
                 if asyncio.iscoroutine(stream):
                     stream = await stream
+                rate_state = None
                 async for pcm in stream:
-                    if pcm:
-                        await self._audio_out_q.put(pcm)
+                    b = _to_pcm16_bytes(pcm)
+                    if not b:
+                        continue
+                    b8, rate_state = _force_to_8k_pcm16(b, assumed_in_rate=16000, state=rate_state)
+                    if b8:
+                        await self._audio_out_q.put(b8)
                 return
         for qname in ("audio_out", "pcm16_out", "tts_out"):
             q = getattr(self._session, qname, None)
             if q is not None:
                 print(f"[Voice] DEBUG: leyendo de cola '{qname}'")
+                rate_state = None
                 while not self._closed:
                     pcm = await q.get()
-                    if pcm:
-                        await self._audio_out_q.put(pcm)
+                    b = _to_pcm16_bytes(pcm)
+                    if not b:
+                        continue
+                    b8, rate_state = _force_to_8k_pcm16(b, assumed_in_rate=16000, state=rate_state)
+                    if b8:
+                        await self._audio_out_q.put(b8)
                 return
         print("[Voice] DEBUG: no hay stream/cola directa; iterando eventos de sesión…")
         ratecv_state = None
