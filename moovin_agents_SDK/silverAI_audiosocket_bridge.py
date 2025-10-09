@@ -58,16 +58,19 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     async with session:
         async def pump_agent_to_asterisk(session, writer):
             bytes_in = 0
-            bytes_out = 0 
+            bytes_out = 0
             last_log = time.time()
-            ratecv_state = None
-
-            async for pcm16_be_8k in session.stream_agent_tts():
+            ratecv_state = None 
+            async for pcm16_8k in session.stream_agent_tts():
                 try:
-                    bytes_out += len(pcm16_be_8k)
-                    frame = b"\x10" + len(pcm16_be_8k).to_bytes(2, "big") + pcm16_be_8k
+                    if not pcm16_8k:
+                        continue
+                    if len(pcm16_8k) & 1:
+                        pcm16_8k = pcm16_8k[:-1]
+                    frame = b"\x10" + len(pcm16_8k).to_bytes(2, "big") + pcm16_8k
                     writer.write(frame)
                     await writer.drain()
+                    bytes_out += 3 + len(pcm16_8k)
                     now = time.time()
                     if now - last_log >= 1.0:
                         print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
@@ -77,11 +80,10 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 except Exception as e:
                     print("[Bridge] error enviando audio a Asterisk:", repr(e))
                     break
-        pump_task = asyncio.create_task(pump_agent_to_asterisk())
+        pump_task = asyncio.create_task(pump_agent_to_asterisk(session, writer))
         rate_state_in = None 
         try:
             while True:
-                    # 3 bytes: type (1B) + length (2B big-endian)
                     hdr3 = await reader.readexactly(3)
                     msg_type = hdr3[0]
                     payload_len = (hdr3[1] << 8) | hdr3[2]
