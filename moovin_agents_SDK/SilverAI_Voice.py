@@ -167,12 +167,7 @@ class SilverAIVoiceSession:
             self._last_log_in = now
         try:
             converted, self._rate_state_in = audioop.ratecv(
-                pcm16_bytes,  # data
-                2,            # width=2 bytes (16-bit)
-                1,            # nchannels=1 (mono)
-                8000,         # inrate
-                16000,        # outrate
-                getattr(self, "_rate_state_in", None)
+                pcm16_bytes, 2, 1, 8000, 24000, getattr(self, "_rate_state_in", None)
             )
         except Exception:
             converted = pcm16_bytes  # fallback: envía raw si algo falla
@@ -285,17 +280,23 @@ class SilverAIVoice:
             starting_agent=voice_agent,
             config={
                 "model_settings": {
-                    "model_name": "gpt-realtime",
-                    "voice": "alloy",
-                    "modalities": ["audio"],
-                    "input_audio_format": "pcm16",
-                    "output_audio_format": "pcm16",
-                    "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
-                    "turn_detection": {
-                        "type": "semantic_vad",
-                        "interrupt_response": False
-                    },
+                "model_name": "gpt-realtime",
+                "voice": "alloy",
+                "modalities": ["audio"],
+                "input_audio_format": "pcm16",
+                "output_audio_format": "pcm16",
+                "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
+                "noise_reduction": {"type": "far_field"},
+                "turn_detection": {
+                    "type": "server_vad",
+                    "create_response": True,
+                    "interrupt_response": False,
+                    "eagerness": "low",
+                    "silence_duration_ms": 700,
+                    "prefix_padding_ms": 150,
+                    "idle_timeout_ms": 2500
                 }
+            }
             },
         )
 

@@ -106,11 +106,11 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
                     # msg_type == 0x10 => audio PCM slin16 @ 8kHz desde Asterisk
                     try:
-                        pcm16k, rate_state_in = audioop.ratecv(payload, 2, 1, 8000, 16000, rate_state_in)
+                        pcm24k, rate_state_in = audioop.ratecv(payload, 2, 1, 8000, 24000, rate_state_in)
                     except Exception:
-                        pcm16k = payload  # fallback
+                        pcm24k = payload  # fallback
 
-                    session.feed_pcm16(pcm16k)
+                    session.feed_pcm16(pcm24k)
 
                     now = time.monotonic()
                     if now - last_log >= 1.0:
