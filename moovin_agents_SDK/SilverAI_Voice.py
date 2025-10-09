@@ -34,7 +34,7 @@ def _extract_pcm_and_rate(audio_obj):
         if fmt is not None:
             rate = getattr(fmt, "sample_rate_hz", None) or getattr(fmt, "sample_rate", None)
     if rate is None:
-        print(f"[Debug] No se encontró sample_rate en audio obj: {audio_obj}")
+        print(f"[Debug] No se encontró sample_rate en audio obj")
         rate = 16000
 
     return pcm, int(rate)
