@@ -60,7 +60,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             bytes_in = 0
             bytes_out = 0
             last_log = time.time()
-            ratecv_state = None 
             async for pcm16_8k in session.stream_agent_tts():
                 try:
                     if not pcm16_8k:
