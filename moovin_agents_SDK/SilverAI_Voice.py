@@ -7,7 +7,7 @@ load_dotenv()
 import audioop 
 import base64, struct
 from array import array
-
+from os import getenv
 import audioop
 
 def _extract_pcm_and_rate(audio_obj):
@@ -34,9 +34,8 @@ def _extract_pcm_and_rate(audio_obj):
         if fmt is not None:
             rate = getattr(fmt, "sample_rate_hz", None) or getattr(fmt, "sample_rate", None)
     if rate is None:
-        print(f"[Debug] No se encontró sample_rate en audio obj")
-        rate = 16000
-
+        rate = int(getenv("AGENT_OUT_RATE_DEFAULT", "24000"))
+        print(f"[Debug] No se encontró sample_rate en audio obj -> usando {rate} Hz por defecto")
     return pcm, int(rate)
 
 
@@ -245,15 +244,16 @@ class SilverAIVoiceSession:
                 pcm_in, in_rate = _extract_pcm_and_rate(getattr(ev, "audio", ev))
                 if not pcm_in:
                     continue
+                # Normaliza SIEMPRE a 8000 Hz
                 if in_rate != 8000:
                     pcm_out, ratecv_state = audioop.ratecv(pcm_in, 2, 1, in_rate, 8000, ratecv_state)
                 else:
                     pcm_out = pcm_in
-
                 if pcm_out:
                     await self._audio_out_q.put(pcm_out)
 
             elif et == "audio_end":
+                # Resetea el estado del resampler al terminar un item de audio
                 ratecv_state = None
             else:
                 continue
