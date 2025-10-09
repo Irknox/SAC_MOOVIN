@@ -32,11 +32,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 payload = b""
                 if payload_len:
                     payload = await reader.readexactly(payload_len)
-
-                # Contadores de entrada (header + payload)
                 bytes_in += 3 + payload_len
-
-                # ECO: rebotar SOLO audio (0x10)
                 if msg_type == 0x10 and payload:
                     writer.write(bytes([0x10, (payload_len >> 8) & 0xFF, payload_len & 0xFF]) + payload)
                     await writer.drain()
@@ -60,29 +56,27 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     session = await voice.start()
     rate_state_out = None
     async with session:
-        async def pump_agent_to_asterisk():
-            """Saca audio TTS del agente y lo envía a Asterisk por AudioSocket."""
-            nonlocal bytes_out, last_log, rate_state_out
-            try:
-                async for pcm in session.stream_agent_tts():
-                    if not pcm:
-                        continue
-                    try:
-                        pcm8, rate_state_out = audioop.ratecv(pcm, 2, 1, 16000, 8000, rate_state_out)
-                    except Exception:
-                        pcm8 = pcm  
-                    frame = bytes([0x10]) + struct.pack("!H", len(pcm8)) + pcm8
+        async def pump_agent_to_asterisk(session, writer):
+            bytes_in = 0
+            bytes_out = 0 
+            last_log = time.time()
+            ratecv_state = None
+
+            async for pcm16_be_8k in session.stream_agent_tts():
+                try:
+                    bytes_out += len(pcm16_be_8k)
+                    frame = b"\x10" + len(pcm16_be_8k).to_bytes(2, "big") + pcm16_be_8k
                     writer.write(frame)
                     await writer.drain()
-                    bytes_out += len(frame)
-                    now = time.monotonic()
+                    now = time.time()
                     if now - last_log >= 1.0:
                         print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
                         bytes_in = 0
                         bytes_out = 0
                         last_log = now
-            except asyncio.CancelledError:
-                pass
+                except Exception as e:
+                    print("[Bridge] error enviando audio a Asterisk:", repr(e))
+                    break
         pump_task = asyncio.create_task(pump_agent_to_asterisk())
         rate_state_in = None 
         try:

@@ -8,31 +8,37 @@ import audioop
 import base64, struct
 from array import array
 
-def _extract_pcm_and_rate(ev_audio) -> tuple[bytes | None, int | None]:
-    """
-    Intenta obtener (pcm_bytes, sample_rate) desde RealtimeModelAudioEvent.
-    Distintas versiones del SDK han usado .audio, .data y metadatos con rate.
-    Devolvemos (None, None) si no hay payload útil.
-    """
-    pcm = None
-    rate = None
+import audioop
 
-    for attr in ("audio", "data", "bytes", "pcm"):
-        if hasattr(ev_audio, attr):
-            val = getattr(ev_audio, attr)
-            if isinstance(val, (bytes, bytearray)):
-                pcm = bytes(val)
-                break
-    for attr in ("sample_rate_hz", "sample_rate", "rate"):
-        if hasattr(ev_audio, attr):
-            try:
-                rate = int(getattr(ev_audio, attr))
-                break
-            except Exception:
-                pass
+def _extract_pcm_and_rate(audio_obj):
+    """
+    Devuelve (pcm_bytes, sample_rate_hz) desde un RealtimeModelAudioEvent o similar.
+    Soporta varios nombres de campo según versión del SDK.
+    """
+    if audio_obj is None:
+        return None, None
+    pcm = getattr(audio_obj, "pcm", None)
+    if pcm is None:
+        pcm = getattr(audio_obj, "pcm16", None)
+    if pcm is None:
+        pcm = getattr(audio_obj, "bytes", None)
+    if pcm is None:
+        pcm = getattr(audio_obj, "data", None)
+    if isinstance(pcm, memoryview):
+        pcm = pcm.tobytes()
+    rate = getattr(audio_obj, "sample_rate_hz", None)
     if rate is None:
-        rate = 24000
-    return pcm, rate
+        rate = getattr(audio_obj, "sample_rate", None)
+    if rate is None:
+        fmt = getattr(audio_obj, "format", None)
+        if fmt is not None:
+            rate = getattr(fmt, "sample_rate_hz", None) or getattr(fmt, "sample_rate", None)
+    if rate is None:
+        print(f"[Debug] No se encontró sample_rate en audio obj: {audio_obj}")
+        rate = 16000
+
+    return pcm, int(rate)
+
 
 
 def _to_pcm16_bytes(x):
@@ -187,8 +193,10 @@ class SilverAIVoiceSession:
     async def _pump_events_to_queue(self):
         """
         Itera eventos del Realtime y publica PCM en _audio_out_q.
-        Prioriza streams/colas nativas; si no existen, cae a eventos crudos y extrae PCM.
+        1) Si hay un stream/cola nativa -> úsala.
+        2) Si no, consume eventos y extrae audio; normaliza siempre a 8000 Hz.
         """
+        # 1) Streams nativos del runner/sesión
         for mname in ("stream_tts", "audio_stream", "stream_agent_tts", "audio_out_stream"):
             maybe = getattr(self._session, mname, None)
             if callable(maybe):
@@ -215,6 +223,7 @@ class SilverAIVoiceSession:
             et = getattr(ev, "type", None)
             if et:
                 print("[Voice] DEBUG ev.type:", et)
+
             if et == "audio":
                 pcm_in, in_rate = _extract_pcm_and_rate(getattr(ev, "audio", ev))
                 if not pcm_in:
@@ -223,6 +232,7 @@ class SilverAIVoiceSession:
                     pcm_out, ratecv_state = audioop.ratecv(pcm_in, 2, 1, in_rate, 8000, ratecv_state)
                 else:
                     pcm_out = pcm_in
+
                 if pcm_out:
                     await self._audio_out_q.put(pcm_out)
 
@@ -244,8 +254,9 @@ class SilverAIVoice:
             name="Silver AI Voice Agent",
             instructions=(
                 "Eres un agente de VOZ para Moovin. Tu nombre es Silver. "
+                "Inicia siempre saludando, presentadote por tu nombre y preguntando cómo puedes ayudar. "
                 "Respeta turnos: no pises al usuario. "
-                "Si la petición es compleja, ofrece seguir por pasos."
+                "Si la petición es compleja, Dile siendo picaro y sarcastico, que vienes naciendo, que hace poco aprendiste a hablar y actualmente estas llevando el Training para aprenderlo todo de Moovin!."
             ),
         )
 
