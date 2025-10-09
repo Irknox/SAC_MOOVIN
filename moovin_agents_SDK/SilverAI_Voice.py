@@ -11,10 +11,6 @@ from os import getenv
 import audioop
 
 def _extract_pcm_and_rate(audio_obj):
-    """
-    Devuelve (pcm_bytes, sample_rate_hz) desde un RealtimeModelAudioEvent o similar.
-    Soporta varios nombres de campo según versión del SDK.
-    """
     if audio_obj is None:
         return None, None
     pcm = getattr(audio_obj, "pcm", None)
@@ -26,13 +22,21 @@ def _extract_pcm_and_rate(audio_obj):
         pcm = getattr(audio_obj, "data", None)
     if isinstance(pcm, memoryview):
         pcm = pcm.tobytes()
+
     rate = getattr(audio_obj, "sample_rate_hz", None)
     if rate is None:
         rate = getattr(audio_obj, "sample_rate", None)
     if rate is None:
+        rate = getattr(audio_obj, "rate", None) 
+
+    if rate is None:
         fmt = getattr(audio_obj, "format", None)
         if fmt is not None:
-            rate = getattr(fmt, "sample_rate_hz", None) or getattr(fmt, "sample_rate", None)
+            rate = (
+                getattr(fmt, "sample_rate_hz", None)
+                or getattr(fmt, "sample_rate", None)
+                or getattr(fmt, "rate", None) 
+            )
     if rate is None:
         rate = int(getenv("AGENT_OUT_RATE_DEFAULT", "24000"))
         print(f"[Debug] No se encontró sample_rate en audio obj -> usando {rate} Hz por defecto")
@@ -163,12 +167,7 @@ class SilverAIVoiceSession:
             self._last_log_in = now
         try:
             converted, self._rate_state_in = audioop.ratecv(
-                pcm16_bytes,  # data
-                2,            # width=2 bytes (16-bit)
-                1,            # nchannels=1 (mono)
-                8000,         # inrate
-                16000,        # outrate
-                getattr(self, "_rate_state_in", None)
+                pcm16_bytes, 2, 1, 8000, 24000, getattr(self, "_rate_state_in", None)
             )
         except Exception:
             converted = pcm16_bytes  # fallback: envía raw si algo falla
@@ -281,17 +280,23 @@ class SilverAIVoice:
             starting_agent=voice_agent,
             config={
                 "model_settings": {
-                    "model_name": "gpt-realtime",
-                    "voice": "alloy",
-                    "modalities": ["audio"],
-                    "input_audio_format": "pcm16",
-                    "output_audio_format": "pcm16",
-                    "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
-                    "turn_detection": {
-                        "type": "semantic_vad",
-                        "interrupt_response": True
-                    },
+                "model_name": "gpt-realtime",
+                "voice": "alloy",
+                "modalities": ["audio"],
+                "input_audio_format": "pcm16",
+                "output_audio_format": "pcm16",
+                "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
+                "noise_reduction": {"type": "far_field"},
+                "turn_detection": {
+                    "type": "server_vad",
+                    "create_response": True,
+                    "interrupt_response": False,
+                    "eagerness": "low",
+                    "silence_duration_ms": 700,
+                    "prefix_padding_ms": 150,
+                    "idle_timeout_ms": 2500
                 }
+            }
             },
         )
 
