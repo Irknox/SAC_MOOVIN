@@ -9,6 +9,7 @@ import base64, struct
 from array import array
 from os import getenv
 import audioop
+from openai.types.realtime.realtime_audio_formats import AudioPCM
 
 def _extract_pcm_and_rate(audio_obj):
     if audio_obj is None:
@@ -240,22 +241,14 @@ class SilverAIVoiceSession:
                 print("[Voice] DEBUG ev.type:", et)
 
             if et == "audio":
-                pcm_in, in_rate = _extract_pcm_and_rate(getattr(ev, "audio", ev))
-                if not pcm_in:
+                audio_obj = getattr(ev, "audio", ev)
+                pcm = getattr(audio_obj, "pcm16", None) or getattr(audio_obj, "data", None)
+                if not pcm:
                     continue
-                # Normaliza SIEMPRE a 8000 Hz
-                if in_rate != 8000:
-                    pcm_out, ratecv_state = audioop.ratecv(pcm_in, 2, 1, in_rate, 8000, ratecv_state)
-                else:
-                    pcm_out = pcm_in
-                if pcm_out:
-                    await self._audio_out_q.put(pcm_out)
+                await self._audio_out_q.put(pcm)
 
             elif et == "audio_end":
-                # Resetea el estado del resampler al terminar un item de audio
-                ratecv_state = None
-            else:
-                continue
+                pass
 
 class SilverAIVoice:
     """
@@ -283,8 +276,8 @@ class SilverAIVoice:
                 "model_name": "gpt-realtime",
                 "voice": "alloy",
                 "modalities": ["audio"],
-                "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16",
+                "input_audio_format": AudioPCM(type="audio/pcm", rate=8000),
+                "output_audio_format": AudioPCM(type="audio/pcm", rate=8000),
                 "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
                 "noise_reduction": {"type": "far_field"},
                 "turn_detection": {
@@ -293,8 +286,9 @@ class SilverAIVoice:
                     "interrupt_response": False,
                     "eagerness": "low",
                     "silence_duration_ms": 700,
-                    "prefix_padding_ms": 150,
-                    "idle_timeout_ms": 2500
+                    "prefix_padding_ms": 250,
+                    "idle_timeout_ms": 2500,
+                    "threshold": 0.6
                 }
             }
             },

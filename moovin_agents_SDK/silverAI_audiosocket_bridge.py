@@ -103,13 +103,9 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                         break
                     if msg_type != 0x10:
                         continue
-
-                    # msg_type == 0x10 => audio PCM slin16 @ 8kHz desde Asterisk
-                    try:
-                        pcm24k, rate_state_in = audioop.ratecv(payload, 2, 1, 8000, 24000, rate_state_in)
-                    except Exception:
-                        pcm24k = payload  # fallback
-
+                    elif msg_type == 0x10:
+                        ## Audio PCM16 8kHz mono
+                        session.feed_pcm16(payload)
                     session.feed_pcm16(pcm24k)
 
                     now = time.monotonic()
@@ -120,7 +116,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                         last_log = now
 
         except (asyncio.IncompleteReadError, ConnectionResetError):
-            # El peer colgó o se cortó
             pass
         finally:
             pump_task.cancel()
