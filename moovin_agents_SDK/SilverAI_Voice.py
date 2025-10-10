@@ -168,10 +168,15 @@ class SilverAIVoiceSession:
             self._last_log_in = now
         try:
             converted, self._rate_state_in = audioop.ratecv(
-                pcm16_bytes, 2, 1, 8000, 24000, getattr(self, "_rate_state_in", None)
+                pcm16_bytes,  # data
+                2,            # 16-bit
+                1,            # mono
+                8000,         # inrate (Asterisk)
+                24000,        # outrate (modelo)
+                getattr(self, "_rate_state_in", None)
             )
         except Exception:
-            converted = pcm16_bytes  # fallback: envía raw si algo falla
+            converted = pcm16_bytes # fallback: envía raw si algo falla
 
         for name in ("send_audio", "send_pcm16", "feed_pcm16", "feed_audio"):
             fn = getattr(self._session, name, None)
@@ -215,7 +220,7 @@ class SilverAIVoiceSession:
                     b = _to_pcm16_bytes(pcm)
                     if not b:
                         continue
-                    b8, rate_state = _force_to_8k_pcm16(b, assumed_in_rate=16000, state=rate_state)
+                    b8, rate_state = _force_to_8k_pcm16(b, assumed_in_rate=24000, state=rate_state)
                     if b8:
                         await self._audio_out_q.put(b8)
                 return
@@ -229,7 +234,7 @@ class SilverAIVoiceSession:
                     b = _to_pcm16_bytes(pcm)
                     if not b:
                         continue
-                    b8, rate_state = _force_to_8k_pcm16(b, assumed_in_rate=16000, state=rate_state)
+                    b8, rate_state = _force_to_8k_pcm16(b, assumed_in_rate=24000, state=rate_state)
                     if b8:
                         await self._audio_out_q.put(b8)
                 return
@@ -239,18 +244,23 @@ class SilverAIVoiceSession:
             et = getattr(ev, "type", None)
             if et:
                 print("[Voice] DEBUG ev.type:", et)
-
+            if et == "error":
+                try:
+                    detail = getattr(ev, "error", None) or getattr(ev, "data", None) or ev
+                    print("[Voice][ERROR]", detail)
+                except Exception:
+                    print("[Voice][ERROR] evento de error sin detalle")
             if et == "audio":
-                audio_obj = getattr(ev, "audio", ev)
-                pcm = getattr(audio_obj, "pcm16", None) or getattr(audio_obj, "data", None)
-                if not pcm:
+                pcm_in, in_rate = _extract_pcm_and_rate(getattr(ev, "audio", ev))
+                if not pcm_in:
                     continue
-                # Convertir 24 kHz (SDK) -> 8 kHz (Asterisk)
-                self._rate_state_out = getattr(self, "_rate_state_out", None)
-                pcm8k, self._rate_state_out = audioop.ratecv(pcm, 2, 1, 24000, 8000, self._rate_state_out)
-
-                if pcm8k:
-                    await self._audio_out_q.put(pcm8k)
+                # Fuerza salida del modelo → 8k para Asterisk
+                if in_rate != 8000:
+                    pcm_out, ratecv_state = audioop.ratecv(pcm_in, 2, 1, in_rate or 24000, 8000, ratecv_state)
+                else:
+                    pcm_out = pcm_in
+                if pcm_out:
+                    await self._audio_out_q.put(pcm_out)
 
             elif et == "audio_end":
                 pass
@@ -281,10 +291,10 @@ class SilverAIVoice:
                 "model_name": "gpt-realtime",
                 "voice": "alloy",
                 "modalities": ["audio"],
-                "input_audio_format": AudioPCM(type="audio/pcm", rate=24000),
-                "output_audio_format": AudioPCM(type="audio/pcm", rate=24000),
+                "input_audio_format": "pcm16",
+                "output_audio_format":"pcm16",
                 "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
-                "noise_reduction": {"type": "far_field"},
+                "noise_reduction":"near_field",
                 "turn_detection": {
                     "type": "server_vad",
                     "create_response": True,
@@ -293,7 +303,6 @@ class SilverAIVoice:
                     "silence_duration_ms": 700,
                     "prefix_padding_ms": 250,
                     "idle_timeout_ms": 2500,
-                    "threshold": 0.6
                 }
             }
             },

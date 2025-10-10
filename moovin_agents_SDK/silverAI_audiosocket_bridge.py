@@ -60,16 +60,14 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             bytes_in = 0
             bytes_out = 0
             last_log = time.time()
-            async for pcm16_8k in session.stream_agent_tts():
+            async for pcm8 in session.stream_agent_tts():
                 try:
-                    if not pcm16_8k:
+                    if not pcm8:
                         continue
-                    if len(pcm16_8k) & 1:
-                        pcm16_8k = pcm16_8k[:-1]
-                    frame = b"\x10" + len(pcm16_8k).to_bytes(2, "big") + pcm16_8k
+                    frame = bytes([0x10]) + struct.pack("!H", len(pcm8)) + pcm8
                     writer.write(frame)
                     await writer.drain()
-                    bytes_out += 3 + len(pcm16_8k)
+                    bytes_out += len(frame)
                     now = time.time()
                     if now - last_log >= 1.0:
                         print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
