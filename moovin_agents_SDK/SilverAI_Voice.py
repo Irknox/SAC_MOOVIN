@@ -288,23 +288,17 @@ class SilverAIVoice:
             starting_agent=voice_agent,
             config={
                 "model_settings": {
-                "model_name": "gpt-realtime",
-                "voice": "alloy",
-                "modalities": ["audio"],
-                "input_audio_format": "pcm16",
-                "output_audio_format":"pcm16",
-                "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
-                "noise_reduction":"near_field",
-                "turn_detection": {
-                    "type": "server_vad",
-                    "create_response": True,
-                    "interrupt_response": False,
-                    "eagerness": "low",
-                    "silence_duration_ms": 700,
-                    "prefix_padding_ms": 250,
-                    "idle_timeout_ms": 2500,
+                    "model_name": "gpt-realtime",
+                    "voice": "alloy",
+                    "modalities": ["audio"],
+                    "input_audio_format": "pcm16",
+                    "output_audio_format": "pcm16",
+                    "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
+                    "turn_detection": {
+                        "type": "semantic_vad",
+                        "interrupt_response": False
+                    },
                 }
-            }
             },
         )
 
