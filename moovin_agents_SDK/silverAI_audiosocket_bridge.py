@@ -106,7 +106,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     elif msg_type == 0x10:
                         ## Audio PCM16 8kHz mono
                         session.feed_pcm16(payload)
-                    session.feed_pcm16(pcm24k)
 
                     now = time.monotonic()
                     if now - last_log >= 1.0:

@@ -245,7 +245,12 @@ class SilverAIVoiceSession:
                 pcm = getattr(audio_obj, "pcm16", None) or getattr(audio_obj, "data", None)
                 if not pcm:
                     continue
-                await self._audio_out_q.put(pcm)
+                # Convertir 24 kHz (SDK) -> 8 kHz (Asterisk)
+                self._rate_state_out = getattr(self, "_rate_state_out", None)
+                pcm8k, self._rate_state_out = audioop.ratecv(pcm, 2, 1, 24000, 8000, self._rate_state_out)
+
+                if pcm8k:
+                    await self._audio_out_q.put(pcm8k)
 
             elif et == "audio_end":
                 pass
@@ -276,8 +281,8 @@ class SilverAIVoice:
                 "model_name": "gpt-realtime",
                 "voice": "alloy",
                 "modalities": ["audio"],
-                "input_audio_format": AudioPCM(type="audio/pcm", rate=8000),
-                "output_audio_format": AudioPCM(type="audio/pcm", rate=8000),
+                "input_audio_format": AudioPCM(type="audio/pcm", rate=24000),
+                "output_audio_format": AudioPCM(type="audio/pcm", rate=24000),
                 "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
                 "noise_reduction": {"type": "far_field"},
                 "turn_detection": {
