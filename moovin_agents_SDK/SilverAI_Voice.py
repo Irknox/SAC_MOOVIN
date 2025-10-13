@@ -307,7 +307,6 @@ class SilverAIVoice:
                         "type": "server_vad",
                         "interrupt_response": False,
                         "threshold": 0.4,
-                        "eagerness":"low",
                     },
                 }
             },
