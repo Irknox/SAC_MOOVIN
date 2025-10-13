@@ -171,7 +171,7 @@ class SilverAIVoiceSession:
             self._bytes_in = 0
             self._last_log_in = now
             
-            dt = time.monotonic() - getattr(self, "_last_tts_out_ts", 0.0)
+        dt = time.monotonic() - getattr(self, "_last_tts_out_ts", 0.0)
         if dt <= getattr(self, "_duck_window_sec", 0.25):
             try:
                 pcm16_bytes = audioop.mul(pcm16_bytes, 2, getattr(self, "_duck_gain", 0.25))
