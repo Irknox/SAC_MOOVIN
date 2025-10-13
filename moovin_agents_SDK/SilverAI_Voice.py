@@ -117,7 +117,10 @@ class SilverAIVoiceSession:
         self._last_tts_out_ts = 0.0    
         self._duck_window_sec = 0.25
         self._duck_gain = 0.25 
-
+        self._disable_voice_during_agent_response = getenv("DISABLE_VOICE_DURING_AGENT_RESPONSE", "0")
+        self._agent_is_speaking = False
+        
+        
     async def __aenter__(self):
         await self._session.__aenter__()
         self._pump_task = asyncio.create_task(self._pump_events_to_queue())
@@ -159,7 +162,11 @@ class SilverAIVoiceSession:
         Empuja audio entrante (PCM16 mono 16-bit, 8 kHz) al agente.
         Intentamos métodos comunes del runner para no acoplar al detalle.
         """
-        #
+        # Si el agente está hablando, no se alimenta audio al realtime, basado en DISABLE_VOICE_DURING_AGENT_RESPONSE en el env
+        if self._disable_voice_during_agent_response and self._agent_is_speaking:
+            return
+        
+        
         self._bytes_in = getattr(self, "_bytes_in", 0) + len(pcm16_bytes)
         self._last_log_in = getattr(self, "_last_log_in", None)
         import time
@@ -258,6 +265,7 @@ class SilverAIVoiceSession:
                 except Exception:
                     print("[Voice][ERROR] evento de error sin detalle")
             if et == "audio":
+                self._agent_is_speaking = True
                 pcm_in, in_rate = _extract_pcm_and_rate(getattr(ev, "audio", ev))
                 if not pcm_in:
                     continue
@@ -271,6 +279,7 @@ class SilverAIVoiceSession:
                     self._last_tts_out_ts = time.monotonic()
 
             elif et == "audio_end":
+                self._agent_is_speaking = False
                 pass
 
 class SilverAIVoice:
