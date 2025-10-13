@@ -84,10 +84,21 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     try:
                         if not pcm8:
                             continue
-                        frame = bytes([0x10]) + struct.pack("!H", len(pcm8)) + pcm8
-                        writer.write(frame)
-                        await writer.drain()
-                        bytes_out += len(frame)
+                        # Opcional: si llegan chunks grandes, puedes segmentar en 320b:
+                        buf = pcm8
+                        while buf:
+                            chunk, buf = buf[:320], buf[320:]
+                            if not chunk:
+                                break
+                            # si el último trozo <320, pad a 320 para mantener 20ms exactos
+                            if len(chunk) < 320:
+                                chunk = chunk + b"\x00" * (320 - len(chunk))
+                            frame = bytes([0x10]) + struct.pack("!H", len(chunk)) + chunk
+                            writer.write(frame)
+                            await writer.drain()
+                            bytes_out += len(frame)
+                            last_send = time.monotonic()
+
                         now = time.time()
                         if now - last_log >= 1.0:
                             print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
