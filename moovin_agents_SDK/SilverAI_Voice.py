@@ -10,6 +10,7 @@ from array import array
 from os import getenv
 import audioop
 from openai.types.realtime.realtime_audio_formats import AudioPCM
+import time
 
 def _extract_pcm_and_rate(audio_obj):
     if audio_obj is None:
@@ -113,6 +114,9 @@ class SilverAIVoiceSession:
         self._audio_out_q: asyncio.Queue[bytes] = asyncio.Queue()
         self._pump_task: Optional[asyncio.Task] = None
         self._closed = False
+        self._last_tts_out_ts = 0.0    
+        self._duck_window_sec = 0.25
+        self._duck_gain = 0.25 
 
     async def __aenter__(self):
         await self._session.__aenter__()
@@ -166,28 +170,31 @@ class SilverAIVoiceSession:
             print(f"[Voice] IN agente ~{self._bytes_in} bytes último ~1s")
             self._bytes_in = 0
             self._last_log_in = now
+            
+            dt = time.monotonic() - getattr(self, "_last_tts_out_ts", 0.0)
+        if dt <= getattr(self, "_duck_window_sec", 0.25):
+            try:
+                pcm16_bytes = audioop.mul(pcm16_bytes, 2, getattr(self, "_duck_gain", 0.25))
+            except Exception:
+                pass
+            
         try:
             converted, self._rate_state_in = audioop.ratecv(
-                pcm16_bytes,  # data
-                2,            # 16-bit
-                1,            # mono
-                8000,         # inrate (Asterisk)
-                24000,        # outrate (modelo)
-                getattr(self, "_rate_state_in", None)
+                pcm16_bytes, 2, 1, 8000, 24000, getattr(self, "_rate_state_in", None)
             )
         except Exception:
-            converted = pcm16_bytes # fallback: envía raw si algo falla
+            converted = pcm16_bytes 
 
         for name in ("send_audio", "send_pcm16", "feed_pcm16", "feed_audio"):
             fn = getattr(self._session, name, None)
             if callable(fn):
-                res = fn(converted)   # <-- enviar 16k al agente
+                res = fn(converted) 
                 if asyncio.iscoroutine(res):
                     asyncio.create_task(res)
                 return
         q = getattr(self._session, "audio_in", None)
         if q is not None:
-            asyncio.create_task(q.put(converted))  # <-- 16k
+            asyncio.create_task(q.put(converted)) 
             return
         print("WARN: No input audio API found on session")
 
@@ -261,6 +268,7 @@ class SilverAIVoiceSession:
                     pcm_out = pcm_in
                 if pcm_out:
                     await self._audio_out_q.put(pcm_out)
+                    self._last_tts_out_ts = time.monotonic()
 
             elif et == "audio_end":
                 pass
@@ -293,10 +301,13 @@ class SilverAIVoice:
                     "modalities": ["audio"],
                     "input_audio_format": "pcm16",
                     "output_audio_format": "pcm16",
+                    "input_audio_noise_reduction":"near_field",
                     "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
                     "turn_detection": {
-                        "type": "semantic_vad",
-                        "interrupt_response": False
+                        "type": "server_vad",
+                        "interrupt_response": False,
+                        "threshold": 0.4,
+                        "eagerness":"low",
                     },
                 }
             },
