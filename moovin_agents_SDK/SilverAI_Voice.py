@@ -164,6 +164,7 @@ class SilverAIVoiceSession:
         """
         # Si el agente está hablando, no se alimenta audio al realtime, basado en DISABLE_VOICE_DURING_AGENT_RESPONSE en el env
         if self._disable_voice_during_agent_response and self._agent_is_speaking:
+            print("[Voice] Agente está hablando, no se envía audio entrante")
             return
         
         
