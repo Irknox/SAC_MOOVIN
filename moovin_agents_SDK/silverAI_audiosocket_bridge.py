@@ -83,13 +83,10 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     hdr3 = await reader.readexactly(3)
                     msg_type = hdr3[0]
                     payload_len = (hdr3[1] << 8) | hdr3[2]
-
                     payload = b""
                     if payload_len:
                         payload = await reader.readexactly(payload_len)
-
                     bytes_in += 3 + payload_len
-
                     if msg_type == 0x01:
                         print(f"[Bridge] UUID: {payload.hex()}")
                         continue
@@ -103,7 +100,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     elif msg_type == 0x10:
                         ## Audio PCM16 8kHz mono
                         session.feed_pcm16(payload)
-
                     now = time.monotonic()
                     if now - last_log >= 1.0:
                         print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
