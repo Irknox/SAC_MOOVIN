@@ -38,7 +38,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     await writer.drain()
                     bytes_out += 3 + payload_len
 
-                # Log cada ~1s
                 now = time.monotonic()
                 if now - last_log >= 1.0:
                     print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
