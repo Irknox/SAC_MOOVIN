@@ -63,7 +63,9 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
             last_send = time.monotonic()
             SILENCE_20MS = b"\x00" * 320
-
+            next_deadline = last_send
+            TARGET_CHUNK_SEC = 0.020 
+            
             async def keepalive():
                 nonlocal last_send
                 try:
@@ -84,27 +86,22 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     try:
                         if not pcm8:
                             continue
-                        # Opcional: si llegan chunks grandes, puedes segmentar en 320b:
                         buf = pcm8
                         while buf:
                             chunk, buf = buf[:320], buf[320:]
                             if not chunk:
                                 break
-                            # si el último trozo <320, pad a 320 para mantener 20ms exactos
                             if len(chunk) < 320:
                                 chunk = chunk + b"\x00" * (320 - len(chunk))
+                            now = time.monotonic()
+                            if now < next_deadline:
+                                await asyncio.sleep(next_deadline - now)
                             frame = bytes([0x10]) + struct.pack("!H", len(chunk)) + chunk
                             writer.write(frame)
                             await writer.drain()
                             bytes_out += len(frame)
-                            last_send = time.monotonic()
-
-                        now = time.time()
-                        if now - last_log >= 1.0:
-                            print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
-                            bytes_in = 0
-                            bytes_out = 0
-                            last_log = now
+                            last_send = next_deadline
+                            next_deadline = last_send + TARGET_CHUNK_SEC
                     except Exception as e:
                         print("[Bridge] error enviando audio a Asterisk:", repr(e))
                         break
