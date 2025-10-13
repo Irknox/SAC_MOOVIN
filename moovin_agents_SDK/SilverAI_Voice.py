@@ -12,6 +12,8 @@ import audioop
 from openai.types.realtime.realtime_audio_formats import AudioPCM
 import time
 
+
+
 def _extract_pcm_and_rate(audio_obj):
     if audio_obj is None:
         return None, None
@@ -117,10 +119,13 @@ class SilverAIVoiceSession:
         self._last_tts_out_ts = 0.0    
         self._duck_window_sec = 0.25
         self._duck_gain = 0.25 
-        self._disable_voice_during_agent_response = getenv("DISABLE_VOICE_DURING_AGENT_RESPONSE", "0")
+        self._disable_voice_during_agent_response = getenv("DISABLE_VOICE_DURING_AGENT_RESPONSE", "0") == "1"
         self._agent_is_speaking = False
         
-        
+    
+    def is_speaking(self) -> bool:
+        return self._agent_is_speaking and (time.monotonic() - self._last_tts_out_ts) < 0.5
+    
     async def __aenter__(self):
         await self._session.__aenter__()
         self._pump_task = asyncio.create_task(self._pump_events_to_queue())
@@ -270,7 +275,6 @@ class SilverAIVoiceSession:
                 pcm_in, in_rate = _extract_pcm_and_rate(getattr(ev, "audio", ev))
                 if not pcm_in:
                     continue
-                # Fuerza salida del modelo → 8k para Asterisk
                 if in_rate != 8000:
                     pcm_out, ratecv_state = audioop.ratecv(pcm_in, 2, 1, in_rate or 24000, 8000, ratecv_state)
                 else:
@@ -279,9 +283,12 @@ class SilverAIVoiceSession:
                     await self._audio_out_q.put(pcm_out)
                     self._last_tts_out_ts = time.monotonic()
 
-            elif et == "audio_end":
+            if et == "audio_end":
                 self._agent_is_speaking = False
                 pass
+            
+            elif self._agent_is_speaking and (time.monotonic() - self._last_tts_out_ts) > 0.8:
+                self._agent_is_speaking = False
 
 class SilverAIVoice:
     """
