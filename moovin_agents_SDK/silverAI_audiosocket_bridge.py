@@ -63,17 +63,18 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
             last_send = time.monotonic()
             SILENCE_20MS = b"\x00" * 320
-            next_deadline = last_send
-            TARGET_CHUNK_SEC = 0.020 
-            
+            TARGET_CHUNK_SEC = 0.020
+            accum_out = bytearray()
+            next_deadline = time.monotonic()
+            primed = False 
             async def keepalive():
                 nonlocal last_send
                 try:
                     while True:
-                        await asyncio.sleep(0.02) 
+                        await asyncio.sleep(0.02)
                         if session.is_speaking():
-                            if (time.monotonic() - last_send) > 0.06: 
-                                frame = bytes([0x10, 0x01, 0x40]) + SILENCE_20MS  
+                            if (time.monotonic() - last_send) > 0.06:
+                                frame = bytes([0x10, 0x01, 0x40]) + SILENCE_20MS
                                 writer.write(frame)
                                 await writer.drain()
                                 last_send = time.monotonic()
@@ -86,11 +87,16 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     try:
                         if not pcm8:
                             continue
-                        if 'accum_out' not in locals():
-                            accum_out = bytearray()
-                        if 'next_deadline' not in locals():
-                            next_deadline = time.monotonic()
                         accum_out.extend(pcm8)
+                        if not primed and len(accum_out) >= 320:
+                            for _ in range(2):
+                                frame = bytes([0x10, 0x01, 0x40]) + SILENCE_20MS
+                                writer.write(frame)
+                                await writer.drain()
+                                bytes_out += len(frame)
+                                next_deadline += TARGET_CHUNK_SEC
+                                await asyncio.sleep(TARGET_CHUNK_SEC)
+                            primed = True
                         while len(accum_out) >= 320:
                             chunk = bytes(accum_out[:320])
                             del accum_out[:320]
@@ -101,7 +107,8 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                             writer.write(frame)
                             await writer.drain()
                             bytes_out += len(frame)
-                            next_deadline += 0.020
+                            last_send = time.monotonic()
+                            next_deadline += TARGET_CHUNK_SEC
                         max_accum = 320 * 3
                         if len(accum_out) > max_accum:
                             overflow = len(accum_out) - max_accum
