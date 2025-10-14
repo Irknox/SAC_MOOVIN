@@ -88,7 +88,37 @@ def _to_pcm16_bytes(x):
             except Exception:
                 return None
         return None
-    
+def _soft_de_esser_pcm16(pcm: bytes, amount: float = 0.18) -> bytes:
+    """
+    De-esser IIR muy suave (mono 16-bit). 'amount' 0.12–0.22 razonable.
+    No usa numpy; puro struct/audioop compatible 8k PCM16.
+    """
+    if not pcm:
+        return pcm
+    try:
+        import struct
+        nsamp = len(pcm) // 2
+        if nsamp == 0:
+            return pcm
+        it = struct.iter_unpack("<h", pcm)
+        y_prev = 0.0
+        out = bytearray(len(pcm))
+        w = memoryview(out)
+        idx = 0
+        a = max(0.0, min(0.35, amount))
+        one_minus = 1.0 - a
+        for (x,) in it:
+            y = one_minus * x + a * y_prev
+            mixed = 0.22 * y + 0.78 * x
+            if mixed > 32767: mixed = 32767
+            if mixed < -32768: mixed = -32768
+            struct.pack_into("<h", w, idx, int(mixed))
+            idx += 2
+            y_prev = y
+        return bytes(out)
+    except Exception:
+        return pcm
+      
 def _force_to_8k_pcm16(pcm: bytes, assumed_in_rate: int = 16000, state=None):
     """
     Recibe PCM16 mono (bytes) a cualquier rate (por defecto 16k) y devuelve (pcm8k, new_state).
@@ -260,6 +290,7 @@ class SilverAIVoiceSession:
                 return
         print("[Voice] DEBUG: no hay stream/cola directa; iterando eventos de sesión…")
         ratecv_state = None
+
         async for ev in self._session:
             et = getattr(ev, "type", None)
             if et:
@@ -280,6 +311,9 @@ class SilverAIVoiceSession:
                 else:
                     pcm_out = pcm_in
                 if pcm_out:
+                    if getenv("DE_ESSER", "0") == "1":
+                        amt = float(getenv("DE_ESSER_AMOUNT", "0.18"))
+                        pcm_out = _soft_de_esser_pcm16(pcm_out, amount=amt)
                     await self._audio_out_q.put(pcm_out)
                     self._last_tts_out_ts = time.monotonic()
 
