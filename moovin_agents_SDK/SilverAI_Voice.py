@@ -315,7 +315,8 @@ class SilverAIVoice:
                 "model_settings": {
                     "model_name": "gpt-realtime",
                     #Opciones son alloy, ash, ballad, coral, echo, sage, shimmer, and verse#
-                    "voice": "ballad",
+                    "voice": "shimmer",
+                    "speed": 1.18,
                     "modalities": ["audio"],
                     "input_audio_format": "pcm16",
                     "output_audio_format": "pcm16",
