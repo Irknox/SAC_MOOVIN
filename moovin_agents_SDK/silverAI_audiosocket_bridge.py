@@ -86,22 +86,31 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     try:
                         if not pcm8:
                             continue
-                        buf = pcm8
-                        while buf:
-                            chunk, buf = buf[:320], buf[320:]
-                            if not chunk:
-                                break
-                            if len(chunk) < 320:
-                                chunk = chunk + b"\x00" * (320 - len(chunk))
-                            now = time.monotonic()
-                            if now < next_deadline:
-                                await asyncio.sleep(next_deadline - now)
+                        if 'accum_out' not in locals():
+                            accum_out = bytearray()
+                        if 'next_deadline' not in locals():
+                            next_deadline = time.monotonic()
+                        accum_out.extend(pcm8)
+                        while len(accum_out) >= 320:
+                            chunk = bytes(accum_out[:320])
+                            del accum_out[:320]
                             frame = bytes([0x10]) + struct.pack("!H", len(chunk)) + chunk
+                            now_mono = time.monotonic()
+                            if now_mono < next_deadline:
+                                await asyncio.sleep(next_deadline - now_mono)
                             writer.write(frame)
                             await writer.drain()
                             bytes_out += len(frame)
-                            last_send = next_deadline
-                            next_deadline = last_send + TARGET_CHUNK_SEC
+                            next_deadline += 0.020
+                        max_accum = 320 * 3
+                        if len(accum_out) > max_accum:
+                            overflow = len(accum_out) - max_accum
+                            del accum_out[:overflow]
+                        now = time.time()
+                        if now - last_log >= 1.0:
+                            print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
+                            bytes_in = 0
+                            bytes_out = 0
                             last_log = now
                     except Exception as e:
                         print("[Bridge] error enviando audio a Asterisk:", repr(e))
