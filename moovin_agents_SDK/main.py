@@ -232,7 +232,6 @@ async def build_agents(tools_pool,mysql_pool,prompts):
             "Respondes con un reasoning:str=Motivo por el cual se activo o no el guardarail, passed:bool=en true si la respuesta del agente es correcta, false si la respuesta no es correcta"
             )
                 
-
     def general_agent_instructions(ctx: RunContextWrapper[MoovinAgentContext], agent: Agent) -> str:
         debug_context_info(ctx, label="General Agent")  
         env_info = ""
@@ -242,7 +241,7 @@ async def build_agents(tools_pool,mysql_pool,prompts):
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
             f"{prompts["General Prompt"]}\n"
             f"Datos precargados para este usuario: {env_info}\n"
-            f"System prompt para el agente actual:\n"
+            f"System prompt actual:\n"
             f"{prompts["General Agent"]}\n"
         )
         
@@ -254,13 +253,12 @@ async def build_agents(tools_pool,mysql_pool,prompts):
                 note = (
                     "\n\n[Handoff del Railing Agent] Motivo: "
                     f"{ctx.context.handoff_reason}\nAjusta tu respuesta a esta razón."
-                )
-                
+                )            
         return (
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
             f"{prompts["General Prompt"]}\n"
             f"Datos precargados para este usuario: {env_info}\n"
-            f"System prompt para el agente actual:\n"
+            f"System prompt actual:\n"
             f"{prompts["Package Analyst Agent"]}\n"
             f"{note}"
         )
@@ -276,10 +274,10 @@ async def build_agents(tools_pool,mysql_pool,prompts):
                 )
         return (
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
-            f"{prompts["MCP Agent"]}\n"
-            f"Datos precargados para este usuario: {env_info}\n"
-            f"System prompt para el agente actual:\n"
             f"{prompts["General Prompt"]}\n"
+            f"Datos precargados para este usuario: {env_info}\n"
+            f"System prompt actual:\n"
+            f"{prompts["MCP Agent"]}\n"
             f"{note}"
         )
         
@@ -291,7 +289,7 @@ async def build_agents(tools_pool,mysql_pool,prompts):
             f"{RECOMMENDED_PROMPT_PREFIX}\n"
             f"{prompts["General Prompt"]}\n"
             f"Datos precargados para este usuario: {env_info}\n"
-            f"System prompt para el agente actual:\n"
+            f"System prompt actual:\n"
             f"{prompts["Railing Agent"]}\n"
             f"Razon por la que el tripwire fue activado, razonamiento del guardrailes: {ctx.context.input_tripwired_trigered_reason}"
         )
