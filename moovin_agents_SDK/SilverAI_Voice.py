@@ -318,6 +318,8 @@ class SilverAIVoiceSession:
                     if not pcm_in:
                         continue
                     if in_rate != 8000:
+                        if len(pcm_in) & 1:
+                            pcm_in = pcm_in[:-1]
                         pcm_out, ratecv_state = audioop.ratecv(pcm_in, 2, 1, in_rate or 24000, 8000, ratecv_state)
                     else:
                         pcm_out = pcm_in
@@ -330,6 +332,13 @@ class SilverAIVoiceSession:
 
                 if et == "audio_end":
                     self._agent_is_speaking = False
+                    ratecv_state = None  # reinicia resampler para el siguiente tramo
+                    # vacía cualquier residuo de salida
+                    while not self._audio_out_q.empty():
+                        try:
+                            self._audio_out_q.get_nowait()
+                        except Exception:
+                            break
                 elif self._agent_is_speaking and (time.monotonic() - self._last_tts_out_ts) > 0.8:
                     self._agent_is_speaking = False
         finally:
@@ -364,8 +373,8 @@ class SilverAIVoice:
                     "voice": "ballad",
                     "speed": 1.18,
                     "modalities": ["audio"],
-                    "input_audio_format": "pcm16",
-                    "output_audio_format": "pcm16",
+                    "input_audio_format": AudioPCM(type="audio/pcm", rate=24000),
+                    "output_audio_format": AudioPCM(type="audio/pcm", rate=24000),
                     "input_audio_noise_reduction":"near_field",
                     "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
                     "turn_detection": {
