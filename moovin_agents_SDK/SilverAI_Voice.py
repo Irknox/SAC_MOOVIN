@@ -49,34 +49,10 @@ class _RunLenLogger:
 def _extract_pcm_and_rate(audio_obj):
     if audio_obj is None:
         return None, None
-    pcm = getattr(audio_obj, "pcm", None)
-    if pcm is None:
-        pcm = getattr(audio_obj, "pcm16", None)
-    if pcm is None:
-        pcm = getattr(audio_obj, "bytes", None)
-    if pcm is None:
-        pcm = getattr(audio_obj, "data", None)
+    pcm = getattr(audio_obj, "data", None)
     if isinstance(pcm, memoryview):
         pcm = pcm.tobytes()
-
-    rate = getattr(audio_obj, "sample_rate_hz", None)
-    if rate is None:
-        rate = getattr(audio_obj, "sample_rate", None)
-    if rate is None:
-        rate = getattr(audio_obj, "rate", None) 
-
-    if rate is None:
-        fmt = getattr(audio_obj, "format", None)
-        if fmt is not None:
-            rate = (
-                getattr(fmt, "sample_rate_hz", None)
-                or getattr(fmt, "sample_rate", None)
-                or getattr(fmt, "rate", None) 
-            )
-    if rate is None:
-        rate = int(getenv("AGENT_OUT_RATE_DEFAULT", "24000"))
-        print(f"[Debug] No se encontró sample_rate en audio obj -> usando {rate} Hz por defecto")
-    return pcm, int(rate)
+    return pcm, 24000
 
 def _guess_rate_from_chunk_len(nbytes: int) -> int:
     # ~20ms: 24kHz → 960B, 8kHz → 320B
@@ -122,6 +98,7 @@ def _to_pcm16_bytes(x):
             except Exception:
                 return None
         return None
+    
 def _soft_de_esser_pcm16(pcm: bytes, amount: float = 0.18) -> bytes:
     """
     De-esser IIR muy suave (mono 16-bit). 'amount' 0.12–0.22 razonable.
@@ -210,7 +187,7 @@ class SilverAIVoiceSession:
         """
         # Si el agente está hablando, no se alimenta audio al realtime, basado en DISABLE_VOICE_DURING_AGENT_RESPONSE en el env
         if self._disable_voice_during_agent_response and self._agent_is_speaking:
-            print("[Voice] Agente está hablando, no se envía audio entrante")
+            print("[RT] Agente está hablando, no se envía audio entrante")
             return
         self._bytes_in = getattr(self, "_bytes_in", 0) + len(pcm16_bytes)
         self._last_log_in = getattr(self, "_last_log_in", None)
@@ -219,7 +196,7 @@ class SilverAIVoiceSession:
         if self._last_log_in is None:
             self._last_log_in = now
         if now - self._last_log_in >= 1.0:
-            print(f"[Voice] IN agente ~{self._bytes_in} bytes último ~1s")
+            print(f"[RT] IN agente ~{self._bytes_in} bytes último ~1s")
             self._bytes_in = 0
             self._last_log_in = now
             
@@ -246,7 +223,7 @@ class SilverAIVoiceSession:
         if q is not None:
             asyncio.create_task(q.put(converted)) 
             return
-        print("WARN: No input audio API found on session")
+        print("[RT] WARN: No input audio API found on session")
 
     async def stream_agent_tts(self):
         """
@@ -269,7 +246,7 @@ class SilverAIVoiceSession:
         for mname in ("stream_tts", "audio_stream", "stream_agent_tts", "audio_out_stream"):
             maybe = getattr(self._session, mname, None)
             if callable(maybe):
-                print(f"[Voice] DEBUG: usando stream '{mname}'")
+                print(f"[RT] DEBUG: usando stream '{mname}'")
                 stream = maybe()
                 if asyncio.iscoroutine(stream):
                     stream = await stream
@@ -285,7 +262,7 @@ class SilverAIVoiceSession:
         for qname in ("audio_out", "pcm16_out", "tts_out"):
             q = getattr(self._session, qname, None)
             if q is not None:
-                print(f"[Voice] DEBUG: leyendo de cola '{qname}'")
+                print(f"[RT] DEBUG: leyendo de cola '{qname}'")
                 rate_state = None
                 while not self._closed:
                     pcm = await q.get()
@@ -296,10 +273,10 @@ class SilverAIVoiceSession:
                     if b8:
                         await self._audio_out_q.put(b8)
                 return
-        print("[Voice] DEBUG: no hay stream/cola directa; iterando eventos de sesión…")
+            
+        print("[RT] DEBUG: no hay stream/cola directa; iterando eventos de sesión…")
         ratecv_state = None
         in_rate_latched = None 
-
         try:
             async for ev in self._session:
                 et = getattr(ev, "type", None)
@@ -309,30 +286,26 @@ class SilverAIVoiceSession:
                 if et == "error":
                     try:
                         detail = getattr(ev, "error", None) or getattr(ev, "data", None) or ev
-                        print("[Voice][ERROR]", detail)
+                        print("[RT][ERROR]", detail)
                     except Exception:
-                        print("[Voice][ERROR] evento de error sin detalle")
+                        print("[RT][ERROR] evento de error sin detalle")
 
                 if et == "audio":
                     self._agent_is_speaking = True
                     audio_obj = getattr(ev, "audio", ev)
-                    pcm_in, in_rate = _extract_pcm_and_rate(audio_obj)
+                    pcm_in, _ = _extract_pcm_and_rate(audio_obj) 
                     if not pcm_in:
                         continue
-                    if in_rate_latched is None:
-                        in_rate_latched = in_rate if in_rate else _guess_rate_from_chunk_len(len(pcm_in))
-                        print(f"[Voice] LATCH rate tramo = {in_rate_latched} Hz")
-                    if in_rate_latched != 8000:
-                        if len(pcm_in) & 1:
-                            pcm_in = pcm_in[:-1]
-                        try:
-                            pcm_out, ratecv_state = audioop.ratecv(
-                                pcm_in, 2, 1, in_rate_latched, 8000, ratecv_state
-                            )
-                        except Exception:
-                            pcm_out = pcm_in
-                    else:
-                        pcm_out = pcm_in
+
+                    # resampleo único 24k -> 8k para Asterisk
+                    if len(pcm_in) & 1:
+                        pcm_in = pcm_in[:-1]
+                    try:
+                        pcm_out, ratecv_state = audioop.ratecv(
+                            pcm_in, 2, 1, 24000, 8000, ratecv_state
+                        )
+                    except Exception:
+                        pcm_out = pcm_in 
 
                     if pcm_out:
                         if getenv("DE_ESSER", "0") == "1":
@@ -375,7 +348,6 @@ class SilverAIVoice:
                     "model_name": "gpt-realtime",
                     #Opciones son alloy, ash, ballad, coral, echo, sage, shimmer, and verse#
                     "voice": "ballad",
-                    "speed": 1.18,
                     "modalities": ["audio"],
                     "input_audio_format": AudioPCM(type="audio/pcm", rate=24000),
                     "output_audio_format": AudioPCM(type="audio/pcm", rate=24000),
@@ -391,7 +363,7 @@ class SilverAIVoice:
         )
 
         inner_session = await self._runner.run()
-        print("[Voice] Realtime conectado (runner listo)")
+        print("[RT] Realtime conectado (runner listo)")
         try:
             _win = int(getenv("RT_EVENT_WINDOW_MS", "600"))
             _rll = _RunLenLogger(tag="[RT]", window_ms=_win)
