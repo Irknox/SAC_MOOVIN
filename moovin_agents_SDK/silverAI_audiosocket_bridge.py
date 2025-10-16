@@ -145,7 +145,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 try:
                     while True:
                         await asyncio.sleep(0.02)
-                        if session.is_speaking():
+                        if session.is_speaking() and len(accum_out) == 0:
                             if (time.monotonic() - last_send) > 0.06:
                                 frame = bytes([0x10, 0x01, 0x40]) + SILENCE_20MS
                                 writer.write(frame)
@@ -186,10 +186,10 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                             bytes_out += len(frame)
                             last_send = time.monotonic()
                             next_deadline += TARGET_CHUNK_SEC
-                        max_accum = 320 * 3
+                        max_accum = 320 * (12 if session.is_speaking() else 3)
                         if len(accum_out) > max_accum:
-                            overflow = len(accum_out) - max_accum
-                            del accum_out[:overflow]
+                            keep = max_accum
+                            accum_out[:] = accum_out[-keep:]
                         now = time.time()
                         if now - last_log >= 1.0:
                             if int(time.monotonic()) % 5 == 0:

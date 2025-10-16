@@ -78,7 +78,9 @@ def _extract_pcm_and_rate(audio_obj):
         print(f"[Debug] No se encontró sample_rate en audio obj -> usando {rate} Hz por defecto")
     return pcm, int(rate)
 
-
+def _guess_rate_from_chunk_len(nbytes: int) -> int:
+    # ~20ms: 24kHz → 960B, 8kHz → 320B
+    return 8000 if nbytes <= 400 else 24000
 
 def _to_pcm16_bytes(x):
         """
@@ -210,8 +212,6 @@ class SilverAIVoiceSession:
         if self._disable_voice_during_agent_response and self._agent_is_speaking:
             print("[Voice] Agente está hablando, no se envía audio entrante")
             return
-        
-        
         self._bytes_in = getattr(self, "_bytes_in", 0) + len(pcm16_bytes)
         self._last_log_in = getattr(self, "_last_log_in", None)
         import time
@@ -228,15 +228,13 @@ class SilverAIVoiceSession:
             try:
                 pcm16_bytes = audioop.mul(pcm16_bytes, 2, getattr(self, "_duck_gain", 0.25))
             except Exception:
-                pass
-            
+                pass 
         try:
             converted, self._rate_state_in = audioop.ratecv(
                 pcm16_bytes, 2, 1, 8000, 24000, getattr(self, "_rate_state_in", None)
             )
         except Exception:
             converted = pcm16_bytes 
-
         for name in ("send_audio", "send_pcm16", "feed_pcm16", "feed_audio"):
             fn = getattr(self._session, name, None)
             if callable(fn):
@@ -300,29 +298,42 @@ class SilverAIVoiceSession:
                 return
         print("[Voice] DEBUG: no hay stream/cola directa; iterando eventos de sesión…")
         ratecv_state = None
+        in_rate_latched = None 
 
         try:
             async for ev in self._session:
                 et = getattr(ev, "type", None)
                 if et:
                     _rll.tick(et)
+
                 if et == "error":
                     try:
                         detail = getattr(ev, "error", None) or getattr(ev, "data", None) or ev
                         print("[Voice][ERROR]", detail)
                     except Exception:
                         print("[Voice][ERROR] evento de error sin detalle")
+
                 if et == "audio":
                     self._agent_is_speaking = True
-                    pcm_in, in_rate = _extract_pcm_and_rate(getattr(ev, "audio", ev))
+                    audio_obj = getattr(ev, "audio", ev)
+                    pcm_in, in_rate = _extract_pcm_and_rate(audio_obj)
                     if not pcm_in:
                         continue
-                    if in_rate != 8000:
+                    if in_rate_latched is None:
+                        in_rate_latched = in_rate if in_rate else _guess_rate_from_chunk_len(len(pcm_in))
+                        print(f"[Voice] LATCH rate tramo = {in_rate_latched} Hz")
+                    if in_rate_latched != 8000:
                         if len(pcm_in) & 1:
                             pcm_in = pcm_in[:-1]
-                        pcm_out, ratecv_state = audioop.ratecv(pcm_in, 2, 1, in_rate or 24000, 8000, ratecv_state)
+                        try:
+                            pcm_out, ratecv_state = audioop.ratecv(
+                                pcm_in, 2, 1, in_rate_latched, 8000, ratecv_state
+                            )
+                        except Exception:
+                            pcm_out = pcm_in
                     else:
                         pcm_out = pcm_in
+
                     if pcm_out:
                         if getenv("DE_ESSER", "0") == "1":
                             amt = float(getenv("DE_ESSER_AMOUNT", "0.18"))
@@ -332,15 +343,8 @@ class SilverAIVoiceSession:
 
                 if et == "audio_end":
                     self._agent_is_speaking = False
-                    ratecv_state = None  # reinicia resampler para el siguiente tramo
-                    # vacía cualquier residuo de salida
-                    while not self._audio_out_q.empty():
-                        try:
-                            self._audio_out_q.get_nowait()
-                        except Exception:
-                            break
-                elif self._agent_is_speaking and (time.monotonic() - self._last_tts_out_ts) > 0.8:
-                    self._agent_is_speaking = False
+                    ratecv_state = None
+                    in_rate_latched = None
         finally:
             _rll.flush()
 class SilverAIVoice:
