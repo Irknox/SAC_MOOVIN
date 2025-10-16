@@ -135,16 +135,20 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             evlog = CoalescedLogger(tag="[AudioSocket Events]", window_ms=600)
             out_probe = FlowProbe(warmup_ms=1200)
             last_send = time.monotonic()
-            SILENCE_20MS = b"\x00" * 320
+            
+            
+            SILENCE_20MS = b"\x00" * 320    
             TARGET_CHUNK_SEC = 0.020
             accum_out = bytearray()
-            next_deadline = time.monotonic()
-            primed = False 
+            primed = False
+            
             async def keepalive():
-                nonlocal last_send
+                nonlocal last_send, primed
                 try:
                     while True:
                         await asyncio.sleep(0.02)
+                        if not primed:
+                            continue
                         if session.is_speaking() and len(accum_out) == 0:
                             if (time.monotonic() - last_send) > 0.06:
                                 frame = bytes([0x10, 0x01, 0x40]) + SILENCE_20MS
@@ -156,6 +160,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     pass
 
             ka_task = asyncio.create_task(keepalive())
+            
             try:
                 async for pcm8 in session.stream_agent_tts():
                     try:
@@ -174,8 +179,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                                 await asyncio.sleep(TARGET_CHUNK_SEC)
                             primed = True
                         while len(accum_out) >= 320:
-                            chunk = bytes(accum_out[:320])
-                            del accum_out[:320]
+                            chunk = bytes(accum_out[:320]); del accum_out[:320]
                             frame = bytes([0x10]) + struct.pack("!H", len(chunk)) + chunk
                             now_mono = time.monotonic()
                             if now_mono < next_deadline:
@@ -205,6 +209,8 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 ka_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await ka_task
+                    
+                    
         pump_task = asyncio.create_task(pump_agent_to_asterisk(session, writer))
         rate_state_in = None 
         try:
