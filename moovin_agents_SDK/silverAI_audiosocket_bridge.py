@@ -169,14 +169,15 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                         accum_out.extend(pcm8)
                         bytes_in += len(pcm8)
                         if not primed and len(accum_out) >= 320:
+                            next_deadline = time.monotonic() + TARGET_CHUNK_SEC
                             for _ in range(2):
                                 frame = bytes([0x10, 0x01, 0x40]) + SILENCE_20MS
                                 writer.write(frame)
                                 out_probe.note(len(frame)); evlog.tick("out:0x10")
                                 await writer.drain()
                                 bytes_out += len(frame)
-                                next_deadline += TARGET_CHUNK_SEC
                                 await asyncio.sleep(TARGET_CHUNK_SEC)
+                                next_deadline += TARGET_CHUNK_SEC
                             primed = True
                         while len(accum_out) >= 320:
                             chunk = bytes(accum_out[:320]); del accum_out[:320]
