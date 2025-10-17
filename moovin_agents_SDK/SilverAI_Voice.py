@@ -328,16 +328,15 @@ class SilverAIVoiceSession:
                         pcm_in = pcm_in[:-1]
                     try:
                         pcm_out, ratecv_state = audioop.ratecv(
-                            pcm_in, 2, 1, 24000, 8000, ratecv_state
-                        )
+                        pcm_in, 2, 1, 24000, 16000, ratecv_state
+                    )
                     except Exception:
                         pcm_out = pcm_in 
 
                     if pcm_out:
                         out16 = pcm_out
                         if self._de_esser_on:
-                            out16 = _soft_de_esser_pcm16(out16, amount=self._de_esser_amount)  # opcional
-                        # Desactiva LPF_8K en 16 kHz (diseñado para 8 kHz)
+                            out16 = _soft_de_esser_pcm16(out16, amount=self._de_esser_amount)
                         await self._audio_out_q.put(out16)
 
                 if et == "audio_end":
