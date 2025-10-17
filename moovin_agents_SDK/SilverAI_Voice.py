@@ -54,10 +54,6 @@ def _extract_pcm_and_rate(audio_obj):
         pcm = pcm.tobytes()
     return pcm, 24000
 
-def _guess_rate_from_chunk_len(nbytes: int) -> int:
-    # ~20ms: 24kHz → 960B, 8kHz → 320B
-    return 8000 if nbytes <= 400 else 24000
-
 def _to_pcm16_bytes(x):
         """
         Devuelve bytes PCM16 (mono) a 16 kHz cuando sea posible.
@@ -158,8 +154,8 @@ class SilverAIVoiceSession:
         self._pump_task: Optional[asyncio.Task] = None
         self._closed = False
         self._last_tts_out_ts = 0.0    
-        self._duck_window_sec = 0.25
-        self._duck_gain = 0.25 
+        self._duck_window_sec = float(getenv("DUCK_WINDOW_SEC", "0.0")) 
+        self._duck_gain = float(getenv("DUCK_GAIN", "1.0")) 
         self._disable_voice_during_agent_response = getenv("DISABLE_VOICE_DURING_AGENT_RESPONSE", "0") == "1"
         self._agent_is_speaking = False
         
@@ -201,11 +197,12 @@ class SilverAIVoiceSession:
             self._last_log_in = now
             
         dt = time.monotonic() - getattr(self, "_last_tts_out_ts", 0.0)
-        if dt <= getattr(self, "_duck_window_sec", 0.25):
+        if self._duck_window_sec > 0.0 and dt <= self._duck_window_sec:
             try:
-                pcm16_bytes = audioop.mul(pcm16_bytes, 2, getattr(self, "_duck_gain", 0.25))
+                pcm16_bytes = audioop.mul(pcm16_bytes, 2, self._duck_gain)
             except Exception:
-                pass 
+                pass
+            
         try:
             converted, self._rate_state_in = audioop.ratecv(
                 pcm16_bytes, 2, 1, 8000, 24000, getattr(self, "_rate_state_in", None)
@@ -241,7 +238,6 @@ class SilverAIVoiceSession:
         1) Si hay un stream/cola nativa -> úsala.
         2) Si no, consume eventos y extrae audio; normaliza siempre a 8000 Hz.
         """
-        # 1) Streams nativos del runner/sesión
         _rll = _RunLenLogger(tag="[RT]", window_ms=int(getenv("RT_EVENT_WINDOW_MS","600")))
         for mname in ("stream_tts", "audio_stream", "stream_agent_tts", "audio_out_stream"):
             maybe = getattr(self._session, mname, None)
@@ -282,22 +278,18 @@ class SilverAIVoiceSession:
                 et = getattr(ev, "type", None)
                 if et:
                     _rll.tick(et)
-
                 if et == "error":
                     try:
                         detail = getattr(ev, "error", None) or getattr(ev, "data", None) or ev
                         print("[RT][ERROR]", detail)
                     except Exception:
                         print("[RT][ERROR] evento de error sin detalle")
-
                 if et == "audio":
                     self._agent_is_speaking = True
                     audio_obj = getattr(ev, "audio", ev)
                     pcm_in, _ = _extract_pcm_and_rate(audio_obj) 
                     if not pcm_in:
                         continue
-
-                    # resampleo único 24k -> 8k para Asterisk
                     if len(pcm_in) & 1:
                         pcm_in = pcm_in[:-1]
                     try:
@@ -348,8 +340,9 @@ class SilverAIVoice:
                 "model_settings": {
                     "model_name": "gpt-realtime",
                     #Opciones son alloy, ash, ballad, coral, echo, sage, shimmer, and verse#
-                    "voice": "verse",
+                    "voice": "alloy",
                     "modalities": ["audio"],
+                    "speed": 1.4,
                     "input_audio_format": AudioPCM(type="audio/pcm", rate=24000),
                     "output_audio_format": AudioPCM(type="audio/pcm", rate=24000),
                     "input_audio_noise_reduction":"near_field",
@@ -357,7 +350,7 @@ class SilverAIVoice:
                     "turn_detection": {
                         "type": "server_vad",
                         "interrupt_response": True,
-                        "threshold": 0.4,
+                        "threshold": 0.2,
                     },
                 }
             },

@@ -87,8 +87,8 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     last_log = time.monotonic()
     
     FRAME_MS = 20
-    BYTES_PER_FRAME = 320                 # PCM16 mono 8kHz => 160 muestras * 2B = 320B
-    TARGET_CHUNK_SEC = FRAME_MS / 1000.0  # 0.020
+    BYTES_PER_FRAME = 320           
+    TARGET_CHUNK_SEC = FRAME_MS / 1000.0 
 
     # === MODO ECO===
     if ECHO_BACK:
@@ -128,7 +128,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             print(f"[AudioSocket Bridge] cliente desconectado {peer}")
         return
     
-    # Levanta sesión con el agente (SDK Realtime)
+    # Levanta sesión con el agente 
     voice = SilverAIVoice()
     session = await voice.start()
     rate_state_out = None
