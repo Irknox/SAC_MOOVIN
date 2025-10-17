@@ -346,16 +346,18 @@ class SilverAIVoice:
             config={
                 "model_settings": {
                     "model_name": "gpt-realtime",
-                    #Opciones son alloy, ash, ballad, coral, echo, sage, shimmer, and verse#
-                    "voice": "shimmer",
+                    #Opciones son alloy, ash, ballad, coral, echo, sage(N), shimmer(N), and verse(N)#
+                    "voice": "alloy",
                     "modalities": ["audio"],
                     "speed": 1.3,
                     "input_audio_format": AudioPCM(type="audio/pcm", rate=24000),
                     "output_audio_format": AudioPCM(type="audio/pcm", rate=24000),
                     "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
+                    "input_audio_noise_reduction":"near_field",
                     "turn_detection": {
                         "type": "server_vad",
                         "interrupt_response": True,
+                        "threshold": 0.2,
                     },
                 }
             },
