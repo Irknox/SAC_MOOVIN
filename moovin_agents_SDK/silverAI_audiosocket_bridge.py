@@ -135,42 +135,69 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     async with session:
         async def pump_agent_to_asterisk(writer, session):
             """
-            Lee audio 8 kHz PCM16 desde session.stream_agent_tts()
-            y lo envía a Asterisk como frames fijos de 20 ms (320 B) con reloj determinista.
-            No libera ráfagas. Inserta silencio solo si el agente "habla" y falta audio.
+            Productor: lee 8 kHz PCM16 desde session.stream_agent_tts() y llena accum_out.
+            Consumidor: pacea a 50 Hz y envía 320 B por tick, con silencio si corresponde.
             """
             def build_frame(payload: bytes) -> bytes:
                 plen = len(payload)
                 return bytes((0x10, (plen >> 8) & 0xFF, plen & 0xFF)) + payload
             accum_out = bytearray()
-            frame_idx = 0
-            bytes_sent_window = 0
-            last_log = time.monotonic()
-            next_deadline = time.monotonic() + TARGET_CHUNK_SEC
-            async for pcm8 in session.stream_agent_tts():
-                if pcm8:
-                    accum_out.extend(pcm8)
-                now = time.monotonic()
-                while now >= next_deadline:
+            lock = asyncio.Lock()
+            stop = asyncio.Event()
+            async def producer():
+                try:
+                    async for pcm8 in session.stream_agent_tts():
+                        if pcm8:
+                            async with lock:
+                                accum_out.extend(pcm8)
+                finally:
+                    stop.set()
+            async def consumer():
+                next_deadline = time.monotonic() + TARGET_CHUNK_SEC
+                last_log = time.monotonic()
+                bytes_sent_window = 0
+                frame_idx = 0
+
+                while not stop.is_set():
+                    now = time.monotonic()
+                    sleep_s = next_deadline - now
+                    if sleep_s > 0:
+                        await asyncio.sleep(sleep_s)
+                        now = time.monotonic()
+
                     payload = None
-                    if len(accum_out) >= BYTES_PER_FRAME:
-                        payload = bytes(accum_out[:BYTES_PER_FRAME])
-                        del accum_out[:BYTES_PER_FRAME]
-                    else:
-                        if hasattr(session, "is_speaking") and session.is_speaking():
+                    async with lock:
+                        if len(accum_out) >= BYTES_PER_FRAME:
+                            payload = bytes(accum_out[:BYTES_PER_FRAME])
+                            del accum_out[:BYTES_PER_FRAME]
+
+                    if payload is None:
+                      if hasattr(session, "is_speaking") and session.is_speaking():
                             payload = b"\x00" * BYTES_PER_FRAME
+
                     if payload is not None:
-                        writer.write(build_frame(payload))
+                        frame = build_frame(payload)
+                        writer.write(frame)
                         await writer.drain()
                         frame_idx += 1
-                        bytes_sent_window += len(payload)
+                        bytes_sent_window += len(payload) 
+                    if now - last_log >= 1.0:
+                        backlog_frames = 0
+                        async with lock:
+                            backlog_frames = len(accum_out) // BYTES_PER_FRAME
+                        print(f"[Bridge] frames={frame_idx} bps={bytes_sent_window} backlog={backlog_frames}")
+                        bytes_sent_window = 0
+                        last_log = now
+
                     next_deadline += TARGET_CHUNK_SEC
-                    now = time.monotonic()
-                if now - last_log >= 1.0:
-                    backlog_frames = len(accum_out) // BYTES_PER_FRAME
-                    print(f"[Bridge] frames={frame_idx} bps={bytes_sent_window} backlog={backlog_frames}")
-                    bytes_sent_window = 0
-                    last_log = now      
+            prod_task = asyncio.create_task(producer())
+            try:
+                await consumer()
+            finally:
+                stop.set()
+                prod_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await prod_task
         pump_task = asyncio.create_task(pump_agent_to_asterisk(writer, session))
         try:
             while True:
