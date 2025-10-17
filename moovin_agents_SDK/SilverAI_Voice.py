@@ -11,7 +11,7 @@ from os import getenv
 import audioop
 from openai.types.realtime.realtime_audio_formats import AudioPCM
 import time
-
+import asyncio as _asyncio
 import time as _time
 
 class _RunLenLogger:
@@ -158,6 +158,7 @@ class SilverAIVoiceSession:
         self._duck_gain = float(getenv("DUCK_GAIN", "1.0")) 
         self._disable_voice_during_agent_response = getenv("DISABLE_VOICE_DURING_AGENT_RESPONSE", "0") == "1"
         self._agent_is_speaking = False
+        self._flush_tts_event = _asyncio.Event()
         
     
     def is_speaking(self) -> bool:
@@ -310,6 +311,13 @@ class SilverAIVoiceSession:
                     self._agent_is_speaking = False
                     ratecv_state = None
                     in_rate_latched = None
+                
+                elif et == "audio_interrupted":
+                    self._agent_is_speaking = False
+                    try:
+                        self._flush_tts_event.set()
+                    except Exception:
+                        pass
         finally:
             _rll.flush()
             
@@ -339,7 +347,7 @@ class SilverAIVoice:
                 "model_settings": {
                     "model_name": "gpt-realtime",
                     #Opciones son alloy, ash, ballad, coral, echo, sage, shimmer, and verse#
-                    "voice": "ballad",
+                    "voice": "shimmer",
                     "modalities": ["audio"],
                     "speed": 1.3,
                     "input_audio_format": AudioPCM(type="audio/pcm", rate=24000),

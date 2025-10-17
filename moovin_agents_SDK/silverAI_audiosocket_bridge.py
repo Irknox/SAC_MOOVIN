@@ -71,6 +71,7 @@ class FlowProbe:
 
     def dump_now(self, title="Snapshot"):
         self._dump_warmup(title)
+        
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     print("[AudioSocket Bridge] cliente conectado")
     peer = writer.get_extra_info("peername") or ("?", 0)
@@ -127,6 +128,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     voice = SilverAIVoice()
     session = await voice.start()
     rate_state_out = None
+    
     async with session:
         async def pump_agent_to_asterisk(writer, session):
             """
@@ -152,14 +154,25 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 last_log = time.monotonic()
                 bytes_sent_window = 0
                 frame_idx = 0
-
+                suppress_keepalive_until = 0.0
+                
                 while not stop.is_set():
                     now = time.monotonic()
                     sleep_s = next_deadline - now
                     if sleep_s > 0:
                         await asyncio.sleep(sleep_s)
                         now = time.monotonic()
-
+                        
+                    try:
+                        if getattr(session, "_flush_tts_event", None) and session._flush_tts_event.is_set():
+                            async with lock:
+                                accum_out.clear()
+                            session._flush_tts_event.clear()
+                            suppress_keepalive_until = time.monotonic() + 0.20
+                            print("[Bridge] FLUSH TTS por audio_interrupted")
+                    except Exception:
+                        pass
+                    
                     payload = None
                     async with lock:
                         if len(accum_out) >= BYTES_PER_FRAME:
@@ -167,7 +180,8 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                             del accum_out[:BYTES_PER_FRAME]
 
                     if payload is None:
-                      if hasattr(session, "is_speaking") and session.is_speaking():
+                        if (time.monotonic() >= suppress_keepalive_until
+                            and hasattr(session, "is_speaking") and session.is_speaking()):
                             payload = b"\x00" * BYTES_PER_FRAME
 
                     if payload is not None:
