@@ -8,6 +8,7 @@ from SilverAI_Voice import SilverAIVoice
 from dotenv import load_dotenv
 load_dotenv()
 import contextlib
+import time
 
 ECHO_BACK = os.getenv("ECHO_BACK", "0") == "1"
 
@@ -84,8 +85,12 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     bytes_in = 0      
     bytes_out = 0    
     last_log = time.monotonic()
+    
+    FRAME_MS = 20
+    BYTES_PER_FRAME = 320                 # PCM16 mono 8kHz => 160 muestras * 2B = 320B
+    TARGET_CHUNK_SEC = FRAME_MS / 1000.0  # 0.020
 
-        # === MODO ECO===
+    # === MODO ECO===
     if ECHO_BACK:
         print("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
         try:
@@ -128,91 +133,45 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     session = await voice.start()
     rate_state_out = None
     async with session:
-        async def pump_agent_to_asterisk(session, writer):
-            bytes_in = 0
-            bytes_out = 0
-            last_log = time.time()
-            evlog = CoalescedLogger(tag="[AudioSocket Events]", window_ms=600)
-            out_probe = FlowProbe(warmup_ms=1200)
-            last_send = time.monotonic()
-            
-            
-            SILENCE_20MS = b"\x00" * 320    
-            TARGET_CHUNK_SEC = 0.020
+        async def pump_agent_to_asterisk(writer, session):
+            """
+            Lee audio 8 kHz PCM16 desde session.stream_agent_tts()
+            y lo envía a Asterisk como frames fijos de 20 ms (320 B) con reloj determinista.
+            No libera ráfagas. Inserta silencio solo si el agente "habla" y falta audio.
+            """
+            def build_frame(payload: bytes) -> bytes:
+                plen = len(payload)
+                return bytes((0x10, (plen >> 8) & 0xFF, plen & 0xFF)) + payload
             accum_out = bytearray()
-            primed = False
-            
-            async def keepalive():
-                nonlocal last_send, primed
-                try:
-                    while True:
-                        await asyncio.sleep(0.02)
-                        if not primed:
-                            continue
-                        if session.is_speaking() and len(accum_out) == 0:
-                            if (time.monotonic() - last_send) > 0.06:
-                                frame = bytes([0x10, 0x01, 0x40]) + SILENCE_20MS
-                                writer.write(frame)
-                                out_probe.note(len(frame)); evlog.tick("out:0x10")
-                                await writer.drain()
-                                last_send = time.monotonic()
-                except asyncio.CancelledError:
-                    pass
-
-            ka_task = asyncio.create_task(keepalive())
-            
-            try:
-                async for pcm8 in session.stream_agent_tts():
-                    try:
-                        if not pcm8:
-                            continue
-                        accum_out.extend(pcm8)
-                        bytes_in += len(pcm8)
-                        if not primed and len(accum_out) >= 320:
-                            for _ in range(2):
-                                frame = bytes([0x10, 0x01, 0x40]) + SILENCE_20MS
-                                writer.write(frame)
-                                out_probe.note(len(frame)); evlog.tick("out:0x10")
-                                await writer.drain()
-                                bytes_out += len(frame)
-                                next_deadline += TARGET_CHUNK_SEC
-                                await asyncio.sleep(TARGET_CHUNK_SEC)
-                            primed = True
-                        while len(accum_out) >= 320:
-                            chunk = bytes(accum_out[:320]); del accum_out[:320]
-                            frame = bytes([0x10]) + struct.pack("!H", len(chunk)) + chunk
-                            now_mono = time.monotonic()
-                            if now_mono < next_deadline:
-                                await asyncio.sleep(next_deadline - now_mono)
-                            writer.write(frame)
-                            out_probe.note(len(frame)); evlog.tick("out:0x10")
-                            await writer.drain()
-                            bytes_out += len(frame)
-                            last_send = time.monotonic()
-                            next_deadline += TARGET_CHUNK_SEC
-                        max_accum = 320 * (12 if session.is_speaking() else 3)
-                        if len(accum_out) > max_accum:
-                            keep = max_accum
-                            accum_out[:] = accum_out[-keep:]
-                        now = time.time()
-                        if now - last_log >= 1.0:
-                            if int(time.monotonic()) % 5 == 0:
-                                out_probe.dump_now("Snapshot-OUT")
-                            print(f"[Bridge] IN={bytes_in}  OUT={bytes_out}  (último ~1s)")
-                            bytes_in = 0
-                            bytes_out = 0
-                            last_log = now
-                    except Exception as e:
-                        print("[Bridge] error enviando audio a Asterisk:", repr(e))
-                        break
-            finally:
-                ka_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await ka_task
-                    
-                    
-        pump_task = asyncio.create_task(pump_agent_to_asterisk(session, writer))
-        rate_state_in = None 
+            frame_idx = 0
+            bytes_sent_window = 0
+            last_log = time.monotonic()
+            next_deadline = time.monotonic() + TARGET_CHUNK_SEC
+            async for pcm8 in session.stream_agent_tts():
+                if pcm8:
+                    accum_out.extend(pcm8)
+                now = time.monotonic()
+                while now >= next_deadline:
+                    payload = None
+                    if len(accum_out) >= BYTES_PER_FRAME:
+                        payload = bytes(accum_out[:BYTES_PER_FRAME])
+                        del accum_out[:BYTES_PER_FRAME]
+                    else:
+                        if hasattr(session, "is_speaking") and session.is_speaking():
+                            payload = b"\x00" * BYTES_PER_FRAME
+                    if payload is not None:
+                        writer.write(build_frame(payload))
+                        await writer.drain()
+                        frame_idx += 1
+                        bytes_sent_window += len(payload)
+                    next_deadline += TARGET_CHUNK_SEC
+                    now = time.monotonic()
+                if now - last_log >= 1.0:
+                    backlog_frames = len(accum_out) // BYTES_PER_FRAME
+                    print(f"[Bridge] frames={frame_idx} bps={bytes_sent_window} backlog={backlog_frames}")
+                    bytes_sent_window = 0
+                    last_log = now      
+        pump_task = asyncio.create_task(pump_agent_to_asterisk(writer, session))
         try:
             while True:
                     hdr3 = await reader.readexactly(3)
