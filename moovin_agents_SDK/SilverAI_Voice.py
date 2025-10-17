@@ -95,6 +95,24 @@ def _to_pcm16_bytes(x):
                 return None
         return None
     
+def _lpf_8k_simple(pcm: bytes, alpha: float = 0.715) -> bytes:
+    # IIR 1er orden, Fs=8 kHz, fc≈3.2 kHz
+    if not pcm:
+        return pcm
+    try:
+        import array
+        arr = array.array("h")
+        arr.frombytes(pcm if isinstance(pcm, (bytes, bytearray)) else bytes(pcm))
+        y = 0
+        for i, x in enumerate(arr):
+            y = int(y + alpha * (x - y))
+            if y > 32767: y = 32767
+            if y < -32768: y = -32768
+            arr[i] = y
+        return arr.tobytes()
+    except Exception:
+        return pcm
+        
 def _soft_de_esser_pcm16(pcm: bytes, amount: float = 0.68) -> bytes:
     """
     De-esser IIR muy suave (mono 16-bit). 'amount' 0.12–0.22 razonable.
@@ -112,7 +130,7 @@ def _soft_de_esser_pcm16(pcm: bytes, amount: float = 0.68) -> bytes:
         out = bytearray(len(pcm))
         w = memoryview(out)
         idx = 0
-        a = max(0.0, min(0.35, amount))
+        a = max(0.0, min(0.45, amount))
         one_minus = 1.0 - a
         for (x,) in it:
             y = one_minus * x + a * y_prev
@@ -159,6 +177,9 @@ class SilverAIVoiceSession:
         self._disable_voice_during_agent_response = getenv("DISABLE_VOICE_DURING_AGENT_RESPONSE", "0") == "1"
         self._agent_is_speaking = False
         self._flush_tts_event = _asyncio.Event()
+        self._de_esser_on = getenv("DE_ESSER", "0") == "1"    # 1=activo
+        self._de_esser_amount = float(getenv("DE_ESSER_AMOUNT", "0.20"))  # 0.1–0.35
+        self._lp8k_on = getenv("LPF_8K", "0") == "1"         # 1=low-pass 3.2kHz
         
     
     def is_speaking(self) -> bool:
@@ -301,10 +322,12 @@ class SilverAIVoiceSession:
                         pcm_out = pcm_in 
 
                     if pcm_out:
-                        if getenv("DE_ESSER", "0") == "1":
-                            amt = float(getenv("DE_ESSER_AMOUNT", "0.18"))
-                            pcm_out = _soft_de_esser_pcm16(pcm_out, amount=amt)
-                        await self._audio_out_q.put(pcm_out)
+                        out8 = pcm_out
+                        if self._de_esser_on:
+                            out8 = _soft_de_esser_pcm16(out8, amount=self._de_esser_amount)
+                        if self._lp8k_on:
+                            out8 = _lpf_8k_simple(out8)
+                        await self._audio_out_q.put(out8)
                         self._last_tts_out_ts = time.monotonic()
 
                 if et == "audio_end":
