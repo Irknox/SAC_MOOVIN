@@ -320,6 +320,7 @@ class SilverAIVoiceSession:
                     in_rate_latched = None
         finally:
             _rll.flush()
+            
 class SilverAIVoice:
     """
     Orquesta la creación del agente y devuelve SilverAIVoiceSession,
@@ -347,8 +348,7 @@ class SilverAIVoice:
                 "model_settings": {
                     "model_name": "gpt-realtime",
                     #Opciones son alloy, ash, ballad, coral, echo, sage, shimmer, and verse#
-                    "voice": "alloy",
-                    "speed": 1.4,
+                    "voice": "verse",
                     "modalities": ["audio"],
                     "input_audio_format": AudioPCM(type="audio/pcm", rate=24000),
                     "output_audio_format": AudioPCM(type="audio/pcm", rate=24000),
@@ -357,7 +357,7 @@ class SilverAIVoice:
                     "turn_detection": {
                         "type": "server_vad",
                         "interrupt_response": True,
-                        "threshold": 0.2,
+                        "threshold": 0.4,
                     },
                 }
             },
