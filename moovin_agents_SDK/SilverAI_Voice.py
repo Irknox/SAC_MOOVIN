@@ -95,7 +95,7 @@ def _to_pcm16_bytes(x):
                 return None
         return None
     
-def _soft_de_esser_pcm16(pcm: bytes, amount: float = 0.18) -> bytes:
+def _soft_de_esser_pcm16(pcm: bytes, amount: float = 0.28) -> bytes:
     """
     De-esser IIR muy suave (mono 16-bit). 'amount' 0.12–0.22 razonable.
     No usa numpy; puro struct/audioop compatible 8k PCM16.
@@ -340,7 +340,7 @@ class SilverAIVoice:
                 "model_settings": {
                     "model_name": "gpt-realtime",
                     #Opciones son alloy, ash, ballad, coral, echo, sage, shimmer, and verse#
-                    "voice": "echo",
+                    "voice": "shimmer",
                     "modalities": ["audio"],
                     "speed": 1.3,
                     "input_audio_format": AudioPCM(type="audio/pcm", rate=24000),
@@ -360,9 +360,7 @@ class SilverAIVoice:
         try:
             _win = int(getenv("RT_EVENT_WINDOW_MS", "600"))
             _rll = _RunLenLogger(tag="[RT]", window_ms=_win)
-
             _orig_on = inner_session.on
-
             def _wrapped_on(evt_name, handler):
                 def _h(*args, **kwargs):
                     _rll.tick(evt_name)
