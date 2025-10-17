@@ -8,7 +8,6 @@ from SilverAI_Voice import SilverAIVoice
 from dotenv import load_dotenv
 load_dotenv()
 import contextlib
-from collections import deque
 
 ECHO_BACK = os.getenv("ECHO_BACK", "0") == "1"
 
@@ -161,8 +160,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     pass
 
             ka_task = asyncio.create_task(keepalive())
-            was_speaking = False
-            next_deadline = time.monotonic()
             
             try:
                 async for pcm8 in session.stream_agent_tts():
@@ -171,36 +168,15 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                             continue
                         accum_out.extend(pcm8)
                         bytes_in += len(pcm8)
-                        speaking = session.is_speaking()
-                        if speaking and not was_speaking:
-                            accum_out.clear()
-                            primed = False
-                            next_deadline = time.monotonic() + TARGET_CHUNK_SEC
-                            for _ in range(2):
-                                frame = bytes([0x10, 0x01, 0x40]) + SILENCE_20MS
-                                writer.write(frame)
-                                out_probe.note(len(frame)); evlog.tick("out:0x10")
-                                await writer.drain()
-                                bytes_out += len(frame)
-                                await asyncio.sleep(TARGET_CHUNK_SEC)
-                                next_deadline += TARGET_CHUNK_SEC
-
-                            primed = True
-                        max_accum = 320 * (12 if speaking else 3)
-                        if len(accum_out) > max_accum:
-                            keep = max_accum
-                            accum_out[:] = accum_out[-keep:]
-                        was_speaking = speaking
                         if not primed and len(accum_out) >= 320:
-                            next_deadline = time.monotonic() + TARGET_CHUNK_SEC
                             for _ in range(2):
                                 frame = bytes([0x10, 0x01, 0x40]) + SILENCE_20MS
                                 writer.write(frame)
                                 out_probe.note(len(frame)); evlog.tick("out:0x10")
                                 await writer.drain()
                                 bytes_out += len(frame)
-                                await asyncio.sleep(TARGET_CHUNK_SEC)
                                 next_deadline += TARGET_CHUNK_SEC
+                                await asyncio.sleep(TARGET_CHUNK_SEC)
                             primed = True
                         while len(accum_out) >= 320:
                             chunk = bytes(accum_out[:320]); del accum_out[:320]
