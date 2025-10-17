@@ -40,7 +40,6 @@ class FlowProbe:
         self._intervals = []
         self._sizes = []
         self._done_warmup = False
-
     def note(self, size_bytes: int):
         now = time.monotonic()
         if self._first_ts is None:
@@ -53,7 +52,6 @@ class FlowProbe:
         if not self._done_warmup and (now - self._first_ts) >= self.warmup_s:
             self._done_warmup = True
             self._dump_warmup("Warmup")
-
     def _dump_warmup(self, title):
         if not self._sizes:
             return
@@ -73,7 +71,6 @@ class FlowProbe:
 
     def dump_now(self, title="Snapshot"):
         self._dump_warmup(title)
-
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     print("[AudioSocket Bridge] cliente conectado")
     peer = writer.get_extra_info("peername") or ("?", 0)
@@ -112,7 +109,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     bytes_out += 3 + payload_len
                     out_probe.note(3 + payload_len)
                     evlog.tick(f"out:{msg_type:#04x}")
-
                 now = time.monotonic()
                 if now - last_log >= 1.0:
                     if int(now) % 5 == 0:
@@ -127,7 +123,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             await writer.wait_closed()
             print(f"[AudioSocket Bridge] cliente desconectado {peer}")
         return
-    
     # Levanta sesión con el agente 
     voice = SilverAIVoice()
     session = await voice.start()
