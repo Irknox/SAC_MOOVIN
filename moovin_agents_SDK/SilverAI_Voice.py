@@ -158,6 +158,17 @@ def _force_to_8k_pcm16(pcm: bytes, assumed_in_rate: int = 16000, state=None):
     except Exception:
         return pcm, state
     
+def _force_to_16k_pcm16(pcm: bytes, assumed_in_rate: int = 24000, state=None):
+    if not pcm:
+        return b"", state
+    if len(pcm) & 1:
+        pcm = pcm[:-1]
+    try:
+        out, state = audioop.ratecv(pcm, 2, 1, assumed_in_rate, 16000, state)
+        return out, state
+    except Exception:
+        return pcm, state
+    
 class SilverAIVoiceSession:
     """
     Envoltura sobre la sesión del SDK Realtime para exponer:
@@ -227,8 +238,8 @@ class SilverAIVoiceSession:
             
         try:
             converted, self._rate_state_in = audioop.ratecv(
-                pcm16_bytes, 2, 1, 8000, 24000, getattr(self, "_rate_state_in", None)
-            )
+            pcm16_bytes, 2, 1, 16000, 24000, getattr(self, "_rate_state_in", None)
+        )
         except Exception:
             converted = pcm16_bytes 
         for name in ("send_audio", "send_pcm16", "feed_pcm16", "feed_audio"):
@@ -273,9 +284,9 @@ class SilverAIVoiceSession:
                     b = _to_pcm16_bytes(pcm)
                     if not b:
                         continue
-                    b8, rate_state = _force_to_8k_pcm16(b, assumed_in_rate=24000, state=rate_state)
-                    if b8:
-                        await self._audio_out_q.put(b8)
+                    b16, rate_state = _force_to_16k_pcm16(b, assumed_in_rate=24000, state=rate_state)
+                    if b16:
+                        await self._audio_out_q.put(b16)
                 return
         for qname in ("audio_out", "pcm16_out", "tts_out"):
             q = getattr(self._session, qname, None)
@@ -287,9 +298,9 @@ class SilverAIVoiceSession:
                     b = _to_pcm16_bytes(pcm)
                     if not b:
                         continue
-                    b8, rate_state = _force_to_8k_pcm16(b, assumed_in_rate=24000, state=rate_state)
-                    if b8:
-                        await self._audio_out_q.put(b8)
+                    b16, rate_state = _force_to_16k_pcm16(b, assumed_in_rate=24000, state=rate_state)
+                    if b16:
+                        await self._audio_out_q.put(b16)
                 return
             
         print("[RT] DEBUG: no hay stream/cola directa; iterando eventos de sesión…")
@@ -306,6 +317,7 @@ class SilverAIVoiceSession:
                         print("[RT][ERROR]", detail)
                     except Exception:
                         print("[RT][ERROR] evento de error sin detalle")
+                        
                 if et == "audio":
                     self._agent_is_speaking = True
                     audio_obj = getattr(ev, "audio", ev)
@@ -322,13 +334,11 @@ class SilverAIVoiceSession:
                         pcm_out = pcm_in 
 
                     if pcm_out:
-                        out8 = pcm_out
+                        out16 = pcm_out
                         if self._de_esser_on:
-                            out8 = _soft_de_esser_pcm16(out8, amount=self._de_esser_amount)
-                        if self._lp8k_on:
-                            out8 = _lpf_8k_simple(out8)
-                        await self._audio_out_q.put(out8)
-                        self._last_tts_out_ts = time.monotonic()
+                            out16 = _soft_de_esser_pcm16(out16, amount=self._de_esser_amount)  # opcional
+                        # Desactiva LPF_8K en 16 kHz (diseñado para 8 kHz)
+                        await self._audio_out_q.put(out16)
 
                 if et == "audio_end":
                     self._agent_is_speaking = False
