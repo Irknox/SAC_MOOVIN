@@ -197,7 +197,25 @@ class SilverAIVoiceSession:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._pump_task
         await self._session.__aexit__(exc_type, exc, tb)
-
+        
+    async def append_input_audio_24k(self, pcm24: bytes) -> None:
+        """Empuja PCM16 mono 24 kHz directo al runner sin re-muestreo."""
+        if not pcm24:
+            return
+        for name in ("send_audio", "send_pcm16", "feed_pcm16", "feed_audio"):
+            fn = getattr(self._session, name, None)
+            if callable(fn):
+                res = fn(pcm24)
+                if asyncio.iscoroutine(res):
+                    await res
+                return
+        q = getattr(self._session, "audio_in", None)
+        if q is not None:
+            await q.put(pcm24)
+            return
+        print("[RT] WARN: no input audio API for 24k")
+        
+        
     def feed_pcm16(self, pcm16_bytes: bytes) -> None:
         """
         Empuja audio entrante (PCM16 mono 16-bit, 8 kHz) al agente.
@@ -351,7 +369,17 @@ class SilverAIVoice:
     """
     def __init__(self):
         self._runner: Optional[RealtimeRunner] = None
+        
+    @staticmethod
+    def resample_16k_to_24k(pcm16_mono_16k: bytes) -> bytes:
+        out, _ = audioop.ratecv(pcm16_mono_16k, 2, 1, 16000, 24000, None)
+        return out
 
+    @staticmethod
+    def resample_24k_to_16k(pcm16_mono_24k: bytes) -> bytes:
+        out, _ = audioop.ratecv(pcm16_mono_24k, 2, 1, 24000, 16000, None)
+        return out
+    
     async def start(self) -> SilverAIVoiceSession:
         voice_agent = RealtimeAgent(
             name="Silver AI Voice Agent",

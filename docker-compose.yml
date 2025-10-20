@@ -67,7 +67,7 @@ services:
       - PYTHONUNBUFFERED=1
       - AUDIOSOCKET_PORT=40000
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-    command: python silverAI_audiosocket_bridge.py
+    command: python silverAI_externalmedia_bridge.py
     expose:
       - "40000"
     ports:
@@ -103,7 +103,7 @@ services:
         node -v && npm -v &&
         npm init -y >/dev/null 2>&1 || true &&
         npm i ari-client dotenv &&
-        node SilverAI_ari.js
+        node SilverAI_externalmedia_ari.js
       "
     network_mode: "host"
 
