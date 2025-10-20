@@ -85,7 +85,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     last_log = time.monotonic()
     
     FRAME_MS = 20
-    BYTES_PER_FRAME = 640         
+    BYTES_PER_FRAME = 320           
     TARGET_CHUNK_SEC = FRAME_MS / 1000.0 
 
     # === MODO ECO===
@@ -264,5 +264,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    # Ejecuta en modo no bloqueante
     asyncio.run(main())
