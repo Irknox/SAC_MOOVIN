@@ -161,7 +161,7 @@ async function onStasisStart(event, channel) {
 
     const uuid =
       global.crypto?.randomUUID?.() || require("crypto").randomUUID();
-    const endpoint = `AudioSocket/${AS_HOST}:${AS_PORT}/${uuid}/c(slin16)`;
+    const endpoint = `AudioSocket/${AS_HOST}:${AS_PORT}/${uuid}/c(slin)`;
 
     const extCh = await client.channels.originate({
       endpoint,
