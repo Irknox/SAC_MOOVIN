@@ -71,7 +71,8 @@ class RtpIO:
 class ExternalMediaBridge:
     def __init__(self):
         self.rtp = RtpIO(BIND_IP, BIND_PORT, RTP_PT)
-        self.voice = SilverAIVoice() 
+        self.voice = SilverAIVoice()
+        self.session = None 
         self.out_q = asyncio.Queue(maxsize=50) 
         self._stop = asyncio.Event()
         self._sdk_playing = False
@@ -89,14 +90,14 @@ class ExternalMediaBridge:
             pcm16_16k = pkt["payload"]
             pcm16_24k = self.voice.resample_16k_to_24k(pcm16_16k)
             try:
-                await self.voice.append_input_audio_24k(pcm16_24k)
+                await self.session.append_input_audio_24k(pcm16_24k)
             except Exception as e:
                 dbg("append_input_audio_24k error:", e)
 
     # ---- Outbound: SDK TTS -> RTP (agente habla) ----
     async def sdk_tts_consumer(self):
         """Lee stream TTS 24 kHz del SDK, convierte y pone en cola RTP."""
-        async for pcm24 in self.voice.stream_agent_tts():
+        async for pcm24 in self.session.stream_agent_tts():
             if pcm24 is None:
                 continue
             self._sdk_playing = True
@@ -140,24 +141,20 @@ class ExternalMediaBridge:
     # ---- Ciclo principal ----
     async def run(self):
         log("Inicializando sesión SDK…")
-        await self.voice.start_session(
-            input_audio_format={"type": "audio/pcm", "rate": 24000},
-            output_audio_format={"type": "audio/pcm", "rate": 24000},
-            on_audio_interrupted=self.on_audio_interrupted
-        )
-
+        self.session = await self.voice.start()
+        
         log(f"RTP L16/16k en {BIND_IP}:{BIND_PORT} PT={RTP_PT}")
-        tasks = [
-            asyncio.create_task(self.rtp_inbound_task()),
-            asyncio.create_task(self.sdk_tts_consumer()),
-            asyncio.create_task(self.rtp_outbound_task()),
-        ]
-        try:
-            await asyncio.gather(*tasks)
-        finally:
-            self._stop.set()
-            await self.voice.close_session()
-            log("Bridge detenido")
+        async with self.session:
+            tasks = [
+                asyncio.create_task(self.rtp_inbound_task()),
+                asyncio.create_task(self.sdk_tts_consumer()),
+                asyncio.create_task(self.rtp_outbound_task()),
+            ]
+            try:
+                await asyncio.gather(*tasks)
+            finally:
+                self._stop.set()
+        log("Bridge detenido")
 
 if __name__ == "__main__":
     try:

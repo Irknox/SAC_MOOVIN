@@ -13,7 +13,7 @@ const EM_FORMAT = process.env.EM_FORMAT || 'slin16';
 function log(...args) { console.log('[ARI]', ...args); }
 function err(...args) { console.error('[ARI][ERR]', ...args); }
 
-Ari.connect(ARI_URL, ARI_USER, ARI_PASS)
+ari.connect(ARI_URL, ARI_USER, ARI_PASS)
   .then(client => {
     log('Conectado a ARI:', ARI_URL, 'app=', APP_NAME);
 
