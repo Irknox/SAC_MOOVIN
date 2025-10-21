@@ -18,22 +18,25 @@ ari.connect(ARI_URL, ARI_USER, ARI_PASS)
     log('Conectado a ARI:', ARI_URL, 'app=', APP_NAME);
 
     client.on('StasisStart', async (event, incoming) => {
-      if (event.application !== APP_NAME) return;
-      try {
-        log('Llamada entrante:', incoming.id, 'from', incoming.caller && incoming.caller.number);
-        await incoming.answer();
-        const bridge = client.Bridge();
-        await bridge.create({type: 'mixing'});
-        log('Bridge creado:', bridge.id);
-        const em = await client.channels.externalMedia({
-          app: APP_NAME,
-          external_host: `${EXT_HOST}:${EXT_PORT}`,
-          format: EM_FORMAT,          
-          direction: 'both'
-        });
+    if (event.application !== APP_NAME) return;
 
-        await bridge.addChannel({channel: incoming.id});
-        await bridge.addChannel({channel: em.id});
+    const chName = (incoming.name || incoming.json?.name || "");
+    const isExternalMedia = chName.startsWith('UnicastRTP/');
+
+    if (isExternalMedia) {
+        return; 
+    }
+    await incoming.answer();
+    const bridge = client.Bridge();
+    await bridge.create({ type: 'mixing' });
+    const em = await client.channels.externalMedia({
+        app: APP_NAME,
+        external_host: `${EXT_HOST}:${EXT_PORT}`,
+        format: EM_FORMAT,
+        direction: 'both'
+    });
+    await bridge.addChannel({ channel: incoming.id });
+    await bridge.addChannel({ channel: em.id });
         log('Canales agregados al bridge. SIP=', incoming.id, ' EM=', em.id);
 
         const hangupAll = async () => {
