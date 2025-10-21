@@ -1,110 +1,248 @@
-"use strict";
+// - Responde SIP entrante
+// - Bridge mixing,proxy_media
+// - Crea canal ExternalMedia RTP (Opus por defecto) hacia EXTERNAL_HOST:EXTERNAL_PORT
+// - Añade SIP y External al bridge
+// - Límite de duración opcional
+// - Limpieza simétrica y manejo de StasisStart/End para EM
+
+
+require("dotenv").config();
 const ari = require("ari-client");
 
-const ARI_URL = process.env.ARI_URL || "http://127.0.0.1:8088";
-const ARI_USER = process.env.ARI_USER || "ari";
-const ARI_PASS = process.env.ARI_PASS || "secret";
-const APP_NAME = process.env.ARI_APP || "app";
+// --- ENV ---
+const {
+  ARI_URL,
+  ARI_USER = "asterisk",
+  ARI_PASS = "asterisk",
+  ARI_APP = "app",
 
-const EXT_HOST = process.env.EM_EXTERNAL_HOST || "127.0.0.1";
-const EXT_PORT = parseInt(process.env.EM_EXTERNAL_PORT || "40010", 10);
-const EM_FORMAT = process.env.EM_FORMAT || "slin16";
+  EXTERNAL_HOST,                                 // ej: "127.0.0.1"
+  EXTERNAL_PORT,                                 // ej: "40010"
+  EXTERNAL_FORMAT = "opus",                      // códec deseado
+  EXTERNAL_TRANSPORT = "udp",                    // udp | tcp
+  EXTERNAL_ENCAPSULATION = "rtp",                // rtp
+  EXTERNAL_DIRECTION = "both",                   // in | out | both
 
-function log(...args) {
-  console.log("[ARI]", ...args);
+  MAX_CALL_MS = "0",
+  LOG_LEVEL = "INFO",
+} = process.env;
+
+const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"];
+const CUR_LEVEL_IDX = Math.max(0, LEVELS.indexOf(String(LOG_LEVEL).toUpperCase()));
+const log = {
+  error: (msg) => CUR_LEVEL_IDX >= 0 && console.error(ts(), "| ERROR |", msg),
+  warn:  (msg) => CUR_LEVEL_IDX >= 1 && console.warn (ts(), "| WARN  |", msg),
+  info:  (msg) => CUR_LEVEL_IDX >= 2 && console.log  (ts(), "| INFO  |", msg),
+  debug: (msg) => CUR_LEVEL_IDX >= 3 && console.log  (ts(), "| DEBUG |", msg),
+};
+function ts() { return new Date().toISOString(); }
+
+
+class CallState {
+  constructor(sipChannelId) {
+    this.sipChannelId = sipChannelId;
+    this.bridgeId = null;
+    this.extChannelId = null;
+    this.startedAtMs = Date.now();
+    this.limitTimer = null;
+  }
 }
-function err(...args) {
-  console.error("[ARI][ERR]", ...args);
+const CALLS = new Map(); 
+const EXT_TO_SIP = new Map();
+let client;
+
+// --- Utils ---
+function msSince(t0) { return Date.now() - t0; }
+function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
+function safeGet(obj, pathArr, def = undefined) {
+  let cur = obj;
+  for (const p of pathArr) {
+    if (!cur || typeof cur !== "object" || !(p in cur)) return def;
+    cur = cur[p];
+  }
+  return cur;
+}
+function isExternalMediaName(name) {
+  if (!name) return false;
+  return name.startsWith("UnicastRTP");
 }
 
-ari
-  .connect(ARI_URL, ARI_USER, ARI_PASS)
-  .then((client) => {
-    log("Conectado a ARI:", ARI_URL, "app=", APP_NAME);
+// --- Handlers ---
+async function onStasisStart(event, channel) {
+  const chId = safeGet(event, ["channel", "id"]);
+  const chName = safeGet(event, ["channel", "name"]);
+  log.info(`StasisStart: channel_id=${chId} name=${chName}`);
 
-    client.on("StasisStart", async (event, incoming) => {
-      if (event.application !== APP_NAME) return;
+  if (isExternalMediaName(chName)) {
+    let sipId = EXT_TO_SIP.get(chId);
+    if (!sipId) {
+      log.info(`External ${chId} llegó antes de mapear; esperando 300ms…`);
+      await delay(300);
+      sipId = EXT_TO_SIP.get(chId);
+    }
+    if (!sipId || !CALLS.has(sipId)) {
+      log.warn(`No encuentro SIP asociado para external ${chId}. Ignoro por ahora.`);
+      return;
+    }
+    const state = CALLS.get(sipId);
+    if (!state.bridgeId) {
+      log.warn(`No hay bridge todavía para SIP ${sipId}. Ignoro external ${chId}.`);
+      return;
+    }
+    try {
+      const bridge = await client.bridges.get({ bridgeId: state.bridgeId });
+      await bridge.addChannel({ channel: chId });
+      log.info(`Añadido external ${chId} al bridge ${state.bridgeId}`);
+    } catch (e) {
+      log.error(`Error añadiendo external ${chId} al bridge ${state.bridgeId}: ${e.message}`);
+    }
+    return;
+  }
 
-      try {
-        const chName = incoming.name || incoming.json?.name || "";
-        const isExternalMedia = chName.startsWith("UnicastRTP/");
+  // SIP entrante
+  const sipId = chId;
+  CALLS.set(sipId, new CallState(sipId));
+  const ch = await client.channels.get({ channelId: sipId });
 
-        if (isExternalMedia) {
-          log(
-            "StasisStart de ExternalMedia, no originar otro EM:",
-            incoming.id
-          );
-          return;
-        }
+  try {
+    await ch.answer();
+    log.info(`SIP ${sipId} contestado`);
+    const bridge = await client.bridges.create({ type: "mixing,proxy_media" });
+    CALLS.get(sipId).bridgeId = bridge.id;
+    log.info(`Bridge creado: ${bridge.id}`);
 
-        await incoming.answer();
-
-        const bridge = client.Bridge();
-        await bridge.create({ type: "mixing" });
-
-        const em = await client.channels.externalMedia({
-          app: APP_NAME,
-          external_host: `${EXT_HOST}:${EXT_PORT}`, 
-          format: EM_FORMAT,
-          direction: "both",
-        });
-
-        await bridge.addChannel({ channel: incoming.id });
-        await bridge.addChannel({ channel: em.id });
-        log("Canales agregados al bridge. SIP=", incoming.id, " EM=", em.id);
-
-        const hangupAll = async () => {
-          try {
-            if (em?.id) await em.hangup().catch(() => {});
-            if (incoming?.id) await incoming.hangup().catch(() => {});
-            if (bridge?.id) await bridge.destroy().catch(() => {});
-            log("Limpieza OK");
-          } catch (e) {
-            err("Errores en cleanup:", e.message);
-          }
-        };
-
-        const onEnd = (ev, ch) => {
-          if (!ch || (ch.id !== incoming.id && ch.id !== em.id)) return;
-          log("StasisEnd:", ch.id);
-          hangupAll();
-        };
-        client.on("StasisEnd", onEnd);
-
-        await incoming
-          .setChannelVar({ variable: "BRIDGE_ID", value: bridge.id })
-          .catch(() => {});
-        await em
-          .setChannelVar({ variable: "BRIDGE_ID", value: bridge.id })
-          .catch(() => {});
-        await incoming
-          .setChannelVar({
-            variable: "EM_EXTERNAL",
-            value: `${EXT_HOST}:${EXT_PORT}`,
-          })
-          .catch(() => {});
-        await em
-          .setChannelVar({ variable: "EM_FORMAT", value: EM_FORMAT })
-          .catch(() => {});
-      } catch (e) {
-        err("Fallo en StasisStart handler:", e.stack || e.message);
+    await bridge.addChannel({ channel: sipId });
+    log.info(`SIP ${sipId} agregado al bridge ${bridge.id}`);
+    const maxMs = parseInt(MAX_CALL_MS, 0) || 0;
+    if (maxMs > 0) {
+      const st = CALLS.get(sipId);
+      st.limitTimer = setInterval(async () => {
         try {
-          await incoming.hangup();
-        } catch (_) {}
-      }
+          if (!CALLS.has(sipId)) return;
+          if (msSince(st.startedAtMs) > maxMs) {
+            log.info(`Max call time superado para ${sipId}. Colgando.`);
+            await client.channels.hangup({ channelId: sipId });
+          }
+        } catch (err) {
+          log.warn(`Al forzar límite: ${err.message}`);
+        }
+      }, 3000);
+    }
+
+    if (!EXTERNAL_HOST || !EXTERNAL_PORT) {
+      throw new Error("Faltan EXTERNAL_HOST o EXTERNAL_PORT");
+    }
+
+    const em = await client.channels.externalMedia({
+      app: ARI_APP,
+      external_host: `${EXTERNAL_HOST}:${EXTERNAL_PORT}`,
+      format: EXTERNAL_FORMAT,          // "opus" por defecto
+      transport: EXTERNAL_TRANSPORT,    // "udp"
+      encapsulation: EXTERNAL_ENCAPSULATION, // "rtp"
+      direction: EXTERNAL_DIRECTION,    // "both"
+      originator: sipId,                // mantiene referencia de origen
     });
 
-    client.start(APP_NAME);
-    log(
-      "App ARI iniciada:",
-      APP_NAME,
-      "| ExternalMedia →",
-      `${EXT_HOST}:${EXT_PORT}`,
-      "format=",
-      EM_FORMAT
-    );
-  })
-  .catch((e) => {
-    err("No se pudo conectar a ARI:", e.message);
+    CALLS.get(sipId).extChannelId = em.id;
+    EXT_TO_SIP.set(em.id, sipId);
+
+    try {
+      const bridge2 = await client.bridges.get({ bridgeId: CALLS.get(sipId).bridgeId });
+      await bridge2.addChannel({ channel: em.id });
+      log.info(
+        `ExternalMedia creado y agregado: ${em.id} -> ${EXTERNAL_HOST}:${EXTERNAL_PORT} (${EXTERNAL_FORMAT})`
+      );
+    } catch (ee) {
+      log.debug(
+        `No se pudo agregar ExternalMedia de inmediato (se añadirá al llegar su StasisStart): ${ee.message}`
+      );
+    }
+
+  } catch (e) {
+    log.error(`Error preparando llamada para SIP ${sipId}: ${e.message}`);
+    try { await ch.hangup(); } catch {}
+    await cleanupCall(sipId);
+  }
+}
+
+async function onStasisEnd(event, channel) {
+  const chId = safeGet(event, ["channel", "id"]);
+  const chName = safeGet(event, ["channel", "name"]);
+  log.info(`StasisEnd: channel_id=${chId} name=${chName}`);
+
+  if (EXT_TO_SIP.has(chId)) {
+    const sipId = EXT_TO_SIP.get(chId);
+    EXT_TO_SIP.delete(chId);
+    log.info(`External ${chId} terminó (SIP asociado: ${sipId})`);
+    return;
+  }
+
+  await cleanupCall(chId);
+}
+
+async function cleanupCall(sipId) {
+  const state = CALLS.get(sipId);
+  if (!state) return;
+
+  if (state.limitTimer) {
+    clearInterval(state.limitTimer);
+    state.limitTimer = null;
+  }
+
+  if (state.extChannelId) {
+    try {
+      await client.channels.hangup({ channelId: state.extChannelId });
+      log.info(`External ${state.extChannelId} colgado`);
+    } catch {}
+    EXT_TO_SIP.delete(state.extChannelId);
+  }
+
+  if (state.bridgeId) {
+    try {
+      const br = await client.bridges.get({ bridgeId: state.bridgeId });
+      await br.destroy();
+      log.info(`Bridge ${state.bridgeId} destruido`);
+    } catch {}
+  }
+
+  try { await client.channels.hangup({ channelId: sipId }); } catch {}
+  CALLS.delete(sipId);
+}
+
+async function shutdown(sig) {
+  log.info(`Señal ${sig} recibida. Cerrando…`);
+  try {
+    const ids = Array.from(CALLS.keys());
+    for (const id of ids) await cleanupCall(id);
+  } finally {
+    try { client && client.close && client.close(); } catch {}
+    process.exit(0);
+  }
+}
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+// --- Main ---
+(async () => {
+  if (!ARI_URL) {
+    log.error("Falta ARI_URL en variables de entorno.");
     process.exit(1);
-  });
+  }
+  try {
+    log.info(`Conectando a ARI: ${ARI_URL} (app=${ARI_APP})`);
+    client = await ari.connect(ARI_URL, ARI_USER, ARI_PASS);
+
+    client.on("StasisStart", onStasisStart);
+    client.on("StasisEnd", onStasisEnd);
+    client.on("error", (err) => log.error(`ARI error: ${err.message}`));
+    client.on("close", () => log.info("Conexión ARI cerrada"));
+
+    await client.start(ARI_APP);
+    log.info(
+      `Escuchando eventos… ExternalMedia -> ${EXTERNAL_HOST}:${EXTERNAL_PORT} format=${EXTERNAL_FORMAT} encap=${EXTERNAL_ENCAPSULATION} transport=${EXTERNAL_TRANSPORT} dir=${EXTERNAL_DIRECTION}`
+    );
+  } catch (e) {
+    log.error(`No se pudo conectar o iniciar ARI: ${e.message}`);
+    process.exit(1);
+  }
+})();

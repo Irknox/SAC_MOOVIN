@@ -157,6 +157,35 @@ def _force_to_8k_pcm16(pcm: bytes, assumed_in_rate: int = 16000, state=None):
         return out, state
     except Exception:
         return pcm, state
+
+def resample_24k_to_48k(self, pcm24: bytes) -> bytes:
+    """Upsample x2 duplicando muestras. Simple y estable para voz."""
+    if not pcm24:
+        return pcm24
+    out = bytearray(len(pcm24) * 2)
+    mv = memoryview(pcm24)
+    o = 0
+    for i in range(0, len(pcm24), 2):
+        s0 = mv[i:i+2]
+        out[o:o+2] = s0
+        out[o+2:o+4] = s0
+        o += 4
+    return bytes(out)
+
+def resample_48k_to_24k(self, pcm48: bytes) -> bytes:
+    """Downsample x2 decimando. Conserva cada muestra par."""
+    if not pcm48:
+        return pcm48
+    out = bytearray(len(pcm48) // 2)
+    mv = memoryview(pcm48)
+    o = 0
+    take = True
+    for i in range(0, len(pcm48), 2):
+        if take:
+            out[o:o+2] = mv[i:i+2]
+            o += 2
+        take = not take
+    return bytes(out)
     
 class SilverAIVoiceSession:
     """
@@ -177,9 +206,9 @@ class SilverAIVoiceSession:
         self._disable_voice_during_agent_response = getenv("DISABLE_VOICE_DURING_AGENT_RESPONSE", "0") == "1"
         self._agent_is_speaking = False
         self._flush_tts_event = _asyncio.Event()
-        self._de_esser_on = getenv("DE_ESSER", "0") == "1"    # 1=activo
-        self._de_esser_amount = float(getenv("DE_ESSER_AMOUNT", "0.20"))  # 0.1–0.35
-        self._lp8k_on = getenv("LPF_8K", "0") == "1"         # 1=low-pass 3.2kHz
+        self._de_esser_on = getenv("DE_ESSER", "0") == "1"    
+        self._de_esser_amount = float(getenv("DE_ESSER_AMOUNT", "0.20")) 
+        self._lp8k_on = getenv("LPF_8K", "0") == "1"       
         
     
     def is_speaking(self) -> bool:
@@ -214,8 +243,7 @@ class SilverAIVoiceSession:
             await q.put(pcm24)
             return
         print("[RT] WARN: no input audio API for 24k")
-        
-        
+             
     def feed_pcm16(self, pcm16_bytes: bytes) -> None:
         """
         Empuja audio entrante (PCM16 mono 16-bit, 8 kHz) al agente.
@@ -291,9 +319,7 @@ class SilverAIVoiceSession:
                     b = _to_pcm16_bytes(pcm)
                     if not b:
                         continue
-                    b8, rate_state = _force_to_8k_pcm16(b, assumed_in_rate=24000, state=rate_state)
-                    if b8:
-                        await self._audio_out_q.put(b8)
+                    await self._audio_out_q.put(b)
                 return
         for qname in ("audio_out", "pcm16_out", "tts_out"):
             q = getattr(self._session, qname, None)
@@ -305,9 +331,7 @@ class SilverAIVoiceSession:
                     b = _to_pcm16_bytes(pcm)
                     if not b:
                         continue
-                    b8, rate_state = _force_to_8k_pcm16(b, assumed_in_rate=24000, state=rate_state)
-                    if b8:
-                        await self._audio_out_q.put(b8)
+                    await self._audio_out_q.put(b)
                 return
             
         print("[RT] DEBUG: no hay stream/cola directa; iterando eventos de sesión…")
@@ -332,21 +356,8 @@ class SilverAIVoiceSession:
                         continue
                     if len(pcm_in) & 1:
                         pcm_in = pcm_in[:-1]
-                    try:
-                        pcm_out, ratecv_state = audioop.ratecv(
-                            pcm_in, 2, 1, 24000, 8000, ratecv_state
-                        )
-                    except Exception:
-                        pcm_out = pcm_in 
-
-                    if pcm_out:
-                        out8 = pcm_out
-                        if self._de_esser_on:
-                            out8 = _soft_de_esser_pcm16(out8, amount=self._de_esser_amount)
-                        if self._lp8k_on:
-                            out8 = _lpf_8k_simple(out8)
-                        await self._audio_out_q.put(out8)
-                        self._last_tts_out_ts = time.monotonic()
+                    await self._audio_out_q.put(pcm_in)
+                    self._last_tts_out_ts = time.monotonic()
 
                 if et == "audio_end":
                     self._agent_is_speaking = False
@@ -379,6 +390,34 @@ class SilverAIVoice:
     def resample_24k_to_16k(pcm16_mono_24k: bytes) -> bytes:
         out, _ = audioop.ratecv(pcm16_mono_24k, 2, 1, 24000, 16000, None)
         return out
+    
+    def resample_24k_to_48k(self, pcm24: bytes) -> bytes:
+        if not pcm24:
+            return pcm24
+        out = bytearray(len(pcm24) * 2)
+        mv = memoryview(pcm24)
+        o = 0
+        for i in range(0, len(pcm24), 2):
+            s0 = mv[i:i+2]
+            out[o:o+2] = s0
+            out[o+2:o+4] = s0
+            o += 4
+        return bytes(out)
+
+    def resample_48k_to_24k(self, pcm48: bytes) -> bytes:
+        if not pcm48:
+            return pcm48
+        out = bytearray(len(pcm48) // 2)
+        mv = memoryview(pcm48)
+        o = 0
+        take = True
+        for i in range(0, len(pcm48), 2):
+            if take:
+                out[o:o+2] = mv[i:i+2]
+                o += 2
+            take = not take
+        return bytes(out)
+  
     
     async def start(self) -> SilverAIVoiceSession:
         voice_agent = RealtimeAgent(
