@@ -9,6 +9,7 @@
 import os, asyncio, socket, struct, time, contextlib
 from collections import defaultdict
 from SilverAI_Voice import SilverAIVoice
+import opuslib
 
 # ========= ENV =========
 BIND_IP            = os.getenv("BIND_IP", "0.0.0.0")
@@ -107,13 +108,6 @@ class RtpIO:
         self.seq = (self.seq + 1) & 0xFFFF
         self.ts  = (self.ts + int(OPUS_SAMPLE_RATE * (FRAME_MS/1000.0))) & 0xFFFFFFFF
 
-# ========= OPUS CODEC =========
-try:
-    import opuslib
-    _HAVE_OPUS = True
-except Exception:
-    _HAVE_OPUS = False
-
 class OpusCodec:
     def __init__(self, sr=OPUS_SAMPLE_RATE, ch=OPUS_CHANNELS, app=OPUS_APP, bitrate=OPUS_BITRATE):
         if not _HAVE_OPUS:
@@ -138,15 +132,9 @@ class ExternalMediaOpusBridge:
         self.rtp = RtpIO(BIND_IP, BIND_PORT, RTP_PT)
         self.voice = SilverAIVoice()
         self.session = None
-
-        if not _HAVE_OPUS:
-            log_err("No se encontró 'opuslib'. Requerido para Opus. Aborto.")
-            raise SystemExit(1)
         self.opus = OpusCodec()
-
         self._stop = asyncio.Event()
         self._sdk_playing = False
-
         self.evlog = CoalescedLogger("[EM-Opus Events]", 600)
         self.in_probe = FlowProbe(1200)
         self.out_probe = FlowProbe(1200)

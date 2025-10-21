@@ -24,40 +24,19 @@ services:
       retries: 5
     restart: unless-stopped
 
-  realtime-agent:
-    build: .
-    container_name: realtime-agent
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - PYTHONUNBUFFERED=1
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - RTP_BIND_HOST=0.0.0.0
-      - RTP_BIND_PORT=40000
-      - RTP_PAYLOAD=alaw
-      - RTP_PTIME_MS=20
-    ports:
-      - "7000:7000/tcp"      
-      - "40000:40000/udp" 
-    volumes:
-      - /moovin_agents_SDK
-    working_dir: /app
-    command: ["python", "SilverAI_Voice.py"]
-
   ui_api:
-    build: .
-    env_file:
-      - .env
-    environment:
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-    command: uvicorn api_manager_ui:app --host 0.0.0.0 --port 7575
-    depends_on:
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./moovin_agents_SDK/prompts:/app/prompts:rw
-    restart: unless-stopped
+      build: .
+      env_file:
+        - .env
+      environment:
+        REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      command: uvicorn api_manager_ui:app --host 0.0.0.0 --port 7575
+      depends_on:
+        redis:
+          condition: service_healthy
+      volumes:
+        - ./moovin_agents_SDK/prompts:/app/prompts:rw
+      restart: unless-stopped
 
   voicesvc:
     build: .
@@ -74,7 +53,6 @@ services:
       - "40000:40000"
     networks:
       - telephony
-
   silverai-ari:
     image: node:20
     container_name: silverai-ari
@@ -89,12 +67,6 @@ services:
       ARI_PASS: "${ARI_PASS:-asterisk}"
       ARI_APP:  "${ARI_APP:-SilverAI}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
-      EXTERNAL_HOST: "voicesvc:40000"
-      EXTERNAL_TRANSPORT: "tcp"
-      EXTERNAL_ENCAPSULATION: "audiosocket"
-      EXTERNAL_FORMAT: "slin16"
-      EXTERNAL_DIRECTION: "both"
-      MAX_CALL_MS: "${MAX_CALL_MS:-0}"
     depends_on:
       - voicesvc
     command: >
