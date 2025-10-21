@@ -110,8 +110,6 @@ class RtpIO:
 
 class OpusCodec:
     def __init__(self, sr=OPUS_SAMPLE_RATE, ch=OPUS_CHANNELS, app=OPUS_APP, bitrate=OPUS_BITRATE):
-        if not _HAVE_OPUS:
-            raise RuntimeError("Falta 'opuslib'. Instala: pip install opuslib")
         app_map = {"voip": opuslib.APPLICATION_VOIP,
                    "audio": opuslib.APPLICATION_AUDIO,
                    "restricted_lowdelay": opuslib.APPLICATION_RESTRICTED_LOWDELAY}
