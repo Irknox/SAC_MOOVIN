@@ -48,10 +48,7 @@ services:
     command: python silverAI_externalmedia_bridge.py
     expose:
       - "40000"
-    ports:
-      - "40000:40000/udp"
-    networks:
-      - telephony
+    network_mode: "host"
   silverai-ari:
     image: node:20
     container_name: silverai-ari
