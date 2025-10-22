@@ -171,7 +171,6 @@ class OpusCodec:
         self.enc = opuslib.Encoder(sr, self.ch, app_mode)
         self.enc.bitrate = bitrate
         self.enc.vbr = False
-        self.enc.set_dtx(False)
         self.enc.complexity = 5
         self.enc.signal = opuslib.SIGNAL_VOICE
         self.frame_size = int(sr * (FRAME_MS/1000.0))
