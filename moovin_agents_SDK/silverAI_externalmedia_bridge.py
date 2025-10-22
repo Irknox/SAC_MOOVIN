@@ -86,6 +86,7 @@ class FlowProbe:
 class RtpIO:
     """RTP Opus 48 kHz mono. Symmetric RTP. 20 ms por paquete."""
     def __init__(self, bind_ip, bind_port, pt=111):
+        self.last_rx_addr = None
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((bind_ip, bind_port))
         self.sock.setblocking(False)
@@ -117,11 +118,17 @@ class RtpIO:
     async def recv(self):
         loop = asyncio.get_running_loop()
         data, addr = await loop.sock_recvfrom(self.sock, 2048)
+        self.last_rx_addr = addr
         if data.startswith(b"CTRL "):
             try:
                 txt = data.decode("utf-8").strip()[5:]
                 ip, port_s = txt.split(":")
-                self.remote = (ip, int(port_s))
+                ctrl_ip = ip
+                ctrl_port = int(port_s)
+                if ctrl_ip.startswith("127.") and self.last_rx_addr:
+                    log_info(f"[RTP] CTRL loopback {ctrl_ip} detectado; usando {self.last_rx_addr[0]} como destino real")
+                    ctrl_ip = self.last_rx_addr[0]
+                self.remote = (ctrl_ip, ctrl_port)
                 self.remote_learned = True
                 self.seq  = int.from_bytes(os.urandom(2), "big")
                 self.ts   = int(time.time() * OPUS_SAMPLE_RATE) & 0xFFFFFFFF
