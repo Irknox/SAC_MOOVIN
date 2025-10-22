@@ -44,13 +44,12 @@ services:
     working_dir: /app
     environment:
       - PYTHONUNBUFFERED=1
-      - AUDIOSOCKET_PORT=40000
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     command: python silverAI_externalmedia_bridge.py
     expose:
       - "40000"
     ports:
-      - "40000:40000"
+      - "40000:40000/udp"
     networks:
       - telephony
   silverai-ari:

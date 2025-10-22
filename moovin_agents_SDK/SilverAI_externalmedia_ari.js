@@ -142,7 +142,7 @@ async function onStasisStart(event, channel) {
 
     const em = await client.channels.externalMedia({
       app: ARI_APP,
-      external_host: EXTERNAL_HOST, // ya viene "voicesvc:40000"
+      external_host: EXTERNAL_HOST, 
       format: EXTERNAL_FORMAT,
       transport: EXTERNAL_TRANSPORT,
       encapsulation: EXTERNAL_ENCAPSULATION,
