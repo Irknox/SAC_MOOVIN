@@ -40,6 +40,7 @@ APP_MAP = {
 }
 
 
+
 class CoalescedLogger:
     def __init__(self, tag="[EM Events]", window_ms=600):
         self.tag = tag
@@ -102,7 +103,13 @@ class RtpIO:
         self.tx_queue = asyncio.Queue(maxsize=200)
         self.last_rx_ts = None
         self.pacer_task = None
-        
+    async def send_payload_with_headers(self, opus_payload: bytes, seq: int, ts: int, ssrc: int):
+        if not self.remote_learned or not self.remote:
+            return
+        hdr = struct.pack("!BBHII", 0x80, self.pt, seq & 0xFFFF, ts & 0xFFFFFFFF, ssrc)
+        pkt = hdr + opus_payload
+        await asyncio.get_running_loop().sock_sendto(self.sock, pkt, self.remote)
+    
     def drain_nonblocking(self, max_bytes=1024*1024):
         """Lee en modo no bloqueante hasta agotar el socket o superar max_bytes.
         Devuelve (last_packet_bytes, last_addr, dropped_bytes)."""
@@ -247,22 +254,16 @@ class ExternalMediaOpusBridge:
             except Exception as e:
                 log_warn(f"Opus decode error: {e}")
                 continue
-
             if ECHO_BACK:
                 try:
-                    if not self._echo_synced:
-                        self.rtp.ssrc = pkt["ssrc"]
-                        self.rtp.seq  = pkt["seq"]
-                        self.rtp.ts   = pkt["ts"]
-                        self._echo_synced = True
-                    opus = self.opus.encode(pcm48)
-                    log_dbg(f"OPUS TX len={len(opus)} bytes")
-                    await self.rtp.send_payload(opus)
-                    self.bytes_out += len(opus) + 12
-                    self.out_probe.note(len(opus) + 12)
+                    await self.rtp.send_payload_with_headers(
+                        pkt["payload"], pkt["seq"], pkt["ts"], pkt["ssrc"]
+                    )
+                    self.bytes_out += len(pkt["payload"]) + 12
+                    self.out_probe.note(len(pkt["payload"]) + 12)
                     self.evlog.tick("out:rtp")
                 except Exception as e:
-                    log_warn(f"ECO encode/send error: {e}")
+                    log_warn(f"ECO passthrough send error: {e}")
                 self._periodic_log()
                 continue
             try:
