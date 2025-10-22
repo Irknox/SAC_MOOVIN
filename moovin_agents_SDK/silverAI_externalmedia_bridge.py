@@ -19,9 +19,9 @@ LOG_LEVEL          = os.getenv("LOG_LEVEL", "INFO").upper()
 ECHO_BACK          = os.getenv("ECHO_BACK", "0") == "1"
 FRAME_MS           = int(os.getenv("FRAME_MS", "20"))   
 OPUS_SAMPLE_RATE   = int(os.getenv("OPUS_SAMPLE_RATE", "48000"))
-OPUS_CHANNELS      = 1
+OPUS_CHANNELS      = 2
 OPUS_BITRATE       = int(os.getenv("OPUS_BITRATE", "160000")) 
-OPUS_APP           = os.getenv("OPUS_APPLICATION", "voip")   
+OPUS_APP           = os.getenv("OPUS_APP", "voip")   
 
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
@@ -32,6 +32,13 @@ def log_err(*a): _CUR_LVL >= 0 and print(_ts(), "| ERROR |", *a, flush=True)
 def log_warn(*a): _CUR_LVL >= 1 and print(_ts(), "| WARN  |", *a, flush=True)
 def log_info(*a): _CUR_LVL >= 2 and print(_ts(), "| INFO  |", *a, flush=True)
 def log_dbg(*a): _CUR_LVL >= 3 and print(_ts(), "| DEBUG |", *a, flush=True)
+
+APP_MAP = {
+    "voip": opuslib.APPLICATION_VOIP,
+    "audio": opuslib.APPLICATION_AUDIO,
+    "restricted_lowdelay": opuslib.APPLICATION_RESTRICTED_LOWDELAY,
+}
+
 
 class CoalescedLogger:
     def __init__(self, tag="[EM Events]", window_ms=600):
@@ -73,9 +80,6 @@ class FlowProbe:
               f"min={min(self.sizes)}B max={max(self.sizes)}B", flush=True)
     def dump_now(self, title="Snapshot"):
         self._dump(title)
-
-
-
 
 
 # ========= RTP IO =========
@@ -134,19 +138,39 @@ class RtpIO:
         self.ts  = (self.ts + int(OPUS_SAMPLE_RATE * (FRAME_MS/1000.0))) & 0xFFFFFFFF
 
 class OpusCodec:
-    def __init__(self, sr=OPUS_SAMPLE_RATE, ch=OPUS_CHANNELS, app=OPUS_APP, bitrate=OPUS_BITRATE):
-        app_map = {"voip": opuslib.APPLICATION_VOIP,
-                   "audio": opuslib.APPLICATION_AUDIO,
-                   "restricted_lowdelay": opuslib.APPLICATION_RESTRICTED_LOWDELAY}
-        self.dec = opuslib.Decoder(sr, ch)
-        self.enc = opuslib.Encoder(sr, ch, app_map.get(app, opuslib.APPLICATION_VOIP))
+    def __init__(self, sr=OPUS_SAMPLE_RATE, ch=OPUS_CHANNELS,
+                 app=OPUS_APP, bitrate=OPUS_BITRATE):
+        self.sr = sr
+        self.ch = ch  # 2 para empatar opus/48000/2
+        app_mode = APP_MAP.get(app, opuslib.APPLICATION_VOIP)
+        self.dec = opuslib.Decoder(sr, self.ch)
+        self.enc = opuslib.Encoder(sr, self.ch, app_mode)
         self.enc.bitrate = bitrate
         self.frame_size = int(sr * (FRAME_MS/1000.0))
 
     def decode(self, opus_payload: bytes) -> bytes:
-        return self.dec.decode(opus_payload, self.frame_size, decode_fec=False)
+        pcm = self.dec.decode(opus_payload, self.frame_size, decode_fec=False)
+        if self.ch == 2:
+            import array
+            s = array.array('h', pcm)       
+            m = array.array('h', [0]*(len(s)//2))
+            j = 0
+            for i in range(0, len(s), 2):
+                m[j] = (int(s[i]) + int(s[i+1])) // 2
+                j += 1
+            return m.tobytes()
+        return pcm
 
     def encode(self, pcm48_mono16: bytes) -> bytes:
+        if self.ch == 2:
+            import array
+            m = array.array('h', pcm48_mono16)
+            out = array.array('h', [0]*(len(m)*2))
+            j = 0
+            for i in range(len(m)):
+                out[j] = m[i]; out[j+1] = m[i]
+                j += 2
+            return self.enc.encode(out.tobytes(), self.frame_size)
         return self.enc.encode(pcm48_mono16, self.frame_size)
 
 # ========= BRIDGE =========
