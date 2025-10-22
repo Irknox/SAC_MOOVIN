@@ -72,6 +72,20 @@ function isExternalMediaName(name) {
 }
 
 // --- Handlers ---
+async function addExtToBridgeWithRetry(bridgeId, extId, retries = 5, delayMs = 300) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const br = await client.bridges.get({ bridgeId });
+      await br.addChannel({ channel: extId });
+      log.info(`Añadido external ${extId} al bridge ${bridgeId}`);
+      return true;
+    } catch (e) {
+      if (i === retries - 1) throw e;
+      await delay(delayMs);
+    }
+  }
+}
+
 async function onStasisStart(event, channel) {
   const chId = safeGet(event, ["channel", "id"]);
   const chName = safeGet(event, ["channel", "name"]);
@@ -99,8 +113,7 @@ async function onStasisStart(event, channel) {
     }
     try {
       const bridge = await client.bridges.get({ bridgeId: state.bridgeId });
-      await bridge.addChannel({ channel: chId });
-      log.info(`Añadido external ${chId} al bridge ${state.bridgeId}`);
+      await addExtToBridgeWithRetry(state.bridgeId, chId, 5, 300);
     } catch (e) {
       log.error(
         `Error añadiendo external ${chId} al bridge ${state.bridgeId}: ${e.message}`
