@@ -74,6 +74,10 @@ class FlowProbe:
     def dump_now(self, title="Snapshot"):
         self._dump(title)
 
+
+
+
+
 # ========= RTP IO =========
 class RtpIO:
     """RTP Opus 48 kHz mono. Symmetric RTP. 20 ms por paquete."""
@@ -81,17 +85,38 @@ class RtpIO:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((bind_ip, bind_port))
         self.sock.setblocking(False)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
         self.remote = None
+        self.remote_learned = False 
         self.pt = pt & 0x7F
         self.ssrc = struct.unpack("!I", os.urandom(4))[0]
         self.seq  = int.from_bytes(os.urandom(2), "big")
         self.ts   = int(time.time() * OPUS_SAMPLE_RATE) & 0xFFFFFFFF
         self.frame_s = FRAME_MS / 1000.0
+        
+    def drain_nonblocking(self, max_bytes=1024*1024):
+        """Lee en modo no bloqueante hasta agotar el socket o superar max_bytes.
+        Devuelve (last_packet_bytes, last_addr, dropped_bytes)."""
+        total = 0
+        last = None; last_addr = None
+        while True:
+            try:
+                chunk, addr = self.sock.recvfrom(2048) 
+                last = chunk; last_addr = addr
+                total += len(chunk)
+                if total >= max_bytes:
+                    break
+            except BlockingIOError:
+                break
+        return last, last_addr, total
 
     async def recv(self):
         loop = asyncio.get_running_loop()
         data, addr = await loop.sock_recvfrom(self.sock, 2048)
-        self.remote = addr
+        if not self.remote_learned:
+            self.remote = addr
+            self.remote_learned = True
+            log_info(f"[RTP] Destino aprendido (1-shot): {addr[0]}:{addr[1]}")
         if len(data) < 12:
             return None
         v_p_x_cc, pt, seq, ts, ssrc = struct.unpack("!BBHII", data[:12])
@@ -99,8 +124,8 @@ class RtpIO:
         return {"pt": pt & 0x7F, "seq": seq, "ts": ts, "ssrc": ssrc, "payload": payload, "addr": addr}
 
     async def send_payload(self, opus_payload: bytes):
-        if not self.remote:
-            return
+        if not self.remote_learned or not self.remote:
+            return 
         hdr = struct.pack("!BBHII", 0x80, self.pt, self.seq & 0xFFFF,
                         self.ts & 0xFFFFFFFF, self.ssrc)
         pkt = hdr + opus_payload
@@ -147,6 +172,17 @@ class ExternalMediaOpusBridge:
             pkt = await self.rtp.recv()
             if not pkt: 
                 continue
+            last, addr_last, dropped = self.rtp.drain_nonblocking(max_bytes=1024*1024)
+            if last is not None:
+                pkt_bytes = last
+                addr = addr_last
+                if len(pkt_bytes) >= 12:
+                    v_p_x_cc, pt, seq, ts, ssrc = struct.unpack("!BBHII", pkt_bytes[:12])
+                    pkt = {"pt": pt & 0x7F, "seq": seq, "ts": ts, "ssrc": ssrc,
+                        "payload": pkt_bytes[12:], "addr": addr}
+                if dropped > 0:
+                    log_warn(f"[RTP] Back-pressure: drenados {dropped}B; procesando último paquete")
+
             self.evlog.tick("in:rtp")
             self.in_probe.note(len(pkt["payload"]) + 12)
             self.bytes_in += len(pkt["payload"]) + 12
