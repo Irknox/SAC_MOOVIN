@@ -152,20 +152,6 @@ async function onStasisStart(event, channel) {
 
     CALLS.get(sipId).extChannelId = em.id;
     EXT_TO_SIP.set(em.id, sipId);
-
-    try {
-      const bridge2 = await client.bridges.get({
-        bridgeId: CALLS.get(sipId).bridgeId,
-      });
-      await bridge2.addChannel({ channel: em.id });
-      log.info(
-        `ExternalMedia creado y agregado: ${em.id} -> ${EXTERNAL_HOST}: (${EXTERNAL_FORMAT})`
-      );
-    } catch (ee) {
-      log.debug(
-        `No se pudo agregar ExternalMedia de inmediato (se añadirá al llegar su StasisStart): ${ee.message}`
-      );
-    }
   } catch (e) {
     log.error(`Error preparando llamada para SIP ${sipId}: ${e.message}`);
     try {
