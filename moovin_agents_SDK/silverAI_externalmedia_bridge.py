@@ -12,16 +12,16 @@ from SilverAI_Voice import SilverAIVoice
 import opuslib
 
 # ========= ENV =========
-BIND_IP            = os.getenv("BIND_IP", "0.0.0.0")
-BIND_PORT          = int(os.getenv("BIND_PORT", "40010"))
-RTP_PT             = int(os.getenv("RTP_PT", "111"))          # PT sugerido para Opus
+BIND_IP            = os.getenv("BIND_IP")
+BIND_PORT          = int(os.getenv("BIND_PORT"))
+RTP_PT             = int(os.getenv("RTP_PT"))      
 LOG_LEVEL          = os.getenv("LOG_LEVEL", "INFO").upper()
 ECHO_BACK          = os.getenv("ECHO_BACK", "0") == "1"
-FRAME_MS           = int(os.getenv("FRAME_MS", "20"))         # 20 ms
+FRAME_MS           = int(os.getenv("FRAME_MS", "20"))   
 OPUS_SAMPLE_RATE   = int(os.getenv("OPUS_SAMPLE_RATE", "48000"))
 OPUS_CHANNELS      = 1
-OPUS_BITRATE       = int(os.getenv("OPUS_BITRATE", "160000")) # 160 kbps por defecto
-OPUS_APP           = os.getenv("OPUS_APPLICATION", "voip")    # voip | audio | restricted_lowdelay
+OPUS_BITRATE       = int(os.getenv("OPUS_BITRATE", "160000")) 
+OPUS_APP           = os.getenv("OPUS_APPLICATION", "voip")   
 
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
