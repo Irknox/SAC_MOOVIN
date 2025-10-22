@@ -151,8 +151,6 @@ async function onStasisStart(event, channel) {
         }
       }, 3000);
     }
-
-
     const em = await client.channels.externalMedia({
       app: ARI_APP,
       external_host: EXTERNAL_HOST, 
@@ -162,7 +160,24 @@ async function onStasisStart(event, channel) {
       direction: EXTERNAL_DIRECTION,
       originator: sipId,
     });
-
+    const addrVar = await client.channels.getChannelVar({
+      channelId: em.id, variable: "UNICASTRTP_LOCAL_ADDRESS"
+    });
+    const portVar = await client.channels.getChannelVar({
+      channelId: em.id, variable: "UNICASTRTP_LOCAL_PORT"
+    });
+    const astIp   = String(addrVar?.value || "127.0.0.1");
+    const astPort = parseInt(String(portVar?.value || "0"), 10);
+    log.info(`Asterisk RTP dst aprendido por ARI: ${astIp}:${astPort}`);
+    const dgram = require("dgram");
+    const sock  = dgram.createSocket("udp4");
+    const [bridgeHost, bridgePortStr] = String(EXTERNAL_HOST).split(":");
+    const bridgePort = parseInt(bridgePortStr, 10);
+    const ctrlMsg = Buffer.from(`CTRL ${astIp}:${astPort}`);
+    sock.send(ctrlMsg, bridgePort, bridgeHost, (err) => {
+      if (err) log.warn(`No pude enviar CTRL al bridge: ${err.message}`);
+      try { sock.close(); } catch {}
+    });
     CALLS.get(sipId).extChannelId = em.id;
     EXT_TO_SIP.set(em.id, sipId);
   } catch (e) {

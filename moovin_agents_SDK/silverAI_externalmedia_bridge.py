@@ -117,6 +117,19 @@ class RtpIO:
     async def recv(self):
         loop = asyncio.get_running_loop()
         data, addr = await loop.sock_recvfrom(self.sock, 2048)
+        if data.startswith(b"CTRL "):
+            try:
+                txt = data.decode("utf-8").strip()[5:]
+                ip, port_s = txt.split(":")
+                self.remote = (ip, int(port_s))
+                self.remote_learned = True
+                self.seq  = int.from_bytes(os.urandom(2), "big")
+                self.ts   = int(time.time() * OPUS_SAMPLE_RATE) & 0xFFFFFFFF
+                self.ssrc = struct.unpack("!I", os.urandom(4))[0]
+                log_info(f"[RTP] Destino FORZADO por control: {ip}:{port_s}")
+            except Exception as e:
+                log_warn(f"[RTP] CTRL inválido: {e}")
+            return None
         if not self.remote_learned:
             self.remote = addr
             self.remote_learned = True
@@ -320,6 +333,14 @@ class ExternalMediaOpusBridge:
     async def run(self):
         if ECHO_BACK:
             log_info("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
+
+        log_info("Inicializando sesión SDK…")
+        self.rtp.remote = None
+        self.rtp.remote_learned = False
+        self.rtp.seq  = int.from_bytes(os.urandom(2), "big")
+        self.rtp.ts   = int(time.time() * OPUS_SAMPLE_RATE) & 0xFFFFFFFF
+        self.rtp.ssrc = struct.unpack("!I", os.urandom(4))[0]
+        log_info("[RTP] Reset aprendizaje destino para nueva llamada")
 
         log_info("Inicializando sesión SDK…")
         self.session = await self.voice.start()
