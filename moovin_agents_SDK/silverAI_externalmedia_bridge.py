@@ -98,6 +98,10 @@ class RtpIO:
         self.seq  = int.from_bytes(os.urandom(2), "big")
         self.ts   = int(time.time() * OPUS_SAMPLE_RATE) & 0xFFFFFFFF
         self.frame_s = FRAME_MS / 1000.0
+        self.echo_enabled = bool(int(os.getenv("ECHO_BACK", "0")))
+        self.tx_queue = asyncio.Queue(maxsize=200)
+        self.last_rx_ts = None
+        self.pacer_task = None
         
     def drain_nonblocking(self, max_bytes=1024*1024):
         """Lee en modo no bloqueante hasta agotar el socket o superar max_bytes.
@@ -166,6 +170,10 @@ class OpusCodec:
         self.dec = opuslib.Decoder(sr, self.ch)
         self.enc = opuslib.Encoder(sr, self.ch, app_mode)
         self.enc.bitrate = bitrate
+        self.enc.vbr = False
+        self.enc.set_dtx(False)
+        self.enc.complexity = 5
+        self.enc.signal = opuslib.SIGNAL_VOICE
         self.frame_size = int(sr * (FRAME_MS/1000.0))
 
     def decode(self, opus_payload: bytes) -> bytes:
@@ -205,6 +213,7 @@ class ExternalMediaOpusBridge:
         self.evlog = CoalescedLogger("[EM-Opus Events]", 600)
         self.in_probe = FlowProbe(1200)
         self.out_probe = FlowProbe(1200)
+        self._echo_synced = False
         self.bytes_in = 0
         self.bytes_out = 0
         self.last_log = time.monotonic()
@@ -242,7 +251,13 @@ class ExternalMediaOpusBridge:
 
             if ECHO_BACK:
                 try:
+                    if not self._echo_synced:
+                        self.rtp.ssrc = pkt["ssrc"]
+                        self.rtp.seq  = pkt["seq"]
+                        self.rtp.ts   = pkt["ts"]
+                        self._echo_synced = True
                     opus = self.opus.encode(pcm48)
+                    log_dbg(f"OPUS TX len={len(opus)} bytes")
                     await self.rtp.send_payload(opus)
                     self.bytes_out += len(opus) + 12
                     self.out_probe.note(len(opus) + 12)
@@ -310,6 +325,8 @@ class ExternalMediaOpusBridge:
         frame_samples_48 = self.opus.frame_size
         silence48 = b"\x00" * (frame_samples_48 * 2)
         target_s = FRAME_MS / 1000.0
+        if ECHO_BACK:
+            return
         while not self._stop.is_set():
             await asyncio.sleep(target_s)
             if getattr(self.session, "is_speaking", None) and self.session.is_speaking():
@@ -338,20 +355,23 @@ class ExternalMediaOpusBridge:
 
     # ---- Ciclo principal ----
     async def run(self):
-        if ECHO_BACK:
-            log_info("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
-
-        log_info("Inicializando sesión SDK…")
         self.rtp.remote = None
         self.rtp.remote_learned = False
         self.rtp.seq  = int.from_bytes(os.urandom(2), "big")
         self.rtp.ts   = int(time.time() * OPUS_SAMPLE_RATE) & 0xFFFFFFFF
         self.rtp.ssrc = struct.unpack("!I", os.urandom(4))[0]
         log_info("[RTP] Reset aprendizaje destino para nueva llamada")
-
+        if ECHO_BACK:
+            log_info("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
+            tasks = [asyncio.create_task(self.rtp_inbound_task())]
+        else:
+            tasks = [
+                asyncio.create_task(self.rtp_inbound_task()),
+                asyncio.create_task(self.sdk_tts_producer()),
+                asyncio.create_task(self.keepalive_while_speaking()),
+            ]
         log_info("Inicializando sesión SDK…")
         self.session = await self.voice.start()
-
         if hasattr(self.session, "set_on_audio_interrupted"):
             try:
                 self.session.set_on_audio_interrupted(self.on_audio_interrupted)
@@ -360,11 +380,6 @@ class ExternalMediaOpusBridge:
 
         log_info(f"RTP Opus en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={OPUS_SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
         async with self.session:
-            tasks = [
-                asyncio.create_task(self.rtp_inbound_task()),
-                asyncio.create_task(self.sdk_tts_producer()),
-                asyncio.create_task(self.keepalive_while_speaking()),
-            ]
             try:
                 await asyncio.gather(*tasks)
             finally:
