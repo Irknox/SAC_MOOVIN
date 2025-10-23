@@ -198,12 +198,21 @@ class ExtermalMediaBridge:
             self.in_probe.note(len(pkt["payload"]) + 12)
             self.bytes_in += len(pkt["payload"]) + 12
 
-            if pkt["pt"] != RTP_PT:
-                self.evlog.tick(f"pt:{pkt['pt']}")
+            if not getattr(self.rtp, "_pt_locked", False):
+                self.rtp.pt = pkt["pt"]
+                self.rtp._pt_locked = True
+                log_info(f"[RTP] PT de salida fijado a {self.rtp.pt} por aprendizaje")
+            elif pkt["pt"] != self.rtp.pt:
+                self.evlog.tick(f"pt_mismatch:{pkt['pt']}")
                 continue
+            
+            if not getattr(self.rtp, "_ts_locked", False):
+                self.rtp.ts = pkt["ts"]
+                self.rtp._ts_locked = True
+                log_info(f"[RTP] TS de salida alineado a {self.rtp.ts}")
+                
             if ECHO_BACK:
                 try:
-                    self.rtp.pt = RTP_PT
                     await self.rtp.send_payload_with_headers(
                         pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
                     )
