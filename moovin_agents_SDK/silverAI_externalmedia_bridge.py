@@ -1,4 +1,3 @@
-# Puente ExternalMedia (RTP Opus 48 kHz mono) <-> SilverAIVoiceSession (24 kHz)
 # - Logs coalescidos + FlowProbe
 # - Pacing fijo a 20 ms
 # - Modo ECO opcional (rebota audio sin pasar al agente)
@@ -9,7 +8,6 @@
 import os, asyncio, socket, struct, time, contextlib
 from collections import defaultdict
 from SilverAI_Voice import SilverAIVoice
-import opuslib
 
 # ========= ENV =========
 BIND_IP            = os.getenv("BIND_IP")
@@ -18,10 +16,8 @@ RTP_PT             = int(os.getenv("RTP_PT"))
 LOG_LEVEL          = os.getenv("LOG_LEVEL", "INFO").upper()
 ECHO_BACK          = os.getenv("ECHO_BACK", "0") == "1"
 FRAME_MS           = int(os.getenv("FRAME_MS", "20"))   
-OPUS_SAMPLE_RATE   = int(os.getenv("OPUS_SAMPLE_RATE", "48000"))
-OPUS_CHANNELS      = 2
-OPUS_BITRATE       = int(os.getenv("OPUS_BITRATE", "160000")) 
-OPUS_APP           = os.getenv("OPUS_APP", "voip")   
+SAMPLE_RATE = 8000
+SAMPLES_PER_PKT = int(SAMPLE_RATE * (FRAME_MS/1000.0))   # 20 ms -> 160 a 8 kHz
 
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
@@ -32,13 +28,6 @@ def log_err(*a): _CUR_LVL >= 0 and print(_ts(), "| ERROR |", *a, flush=True)
 def log_warn(*a): _CUR_LVL >= 1 and print(_ts(), "| WARN  |", *a, flush=True)
 def log_info(*a): _CUR_LVL >= 2 and print(_ts(), "| INFO  |", *a, flush=True)
 def log_dbg(*a): _CUR_LVL >= 3 and print(_ts(), "| DEBUG |", *a, flush=True)
-
-APP_MAP = {
-    "voip": opuslib.APPLICATION_VOIP,
-    "audio": opuslib.APPLICATION_AUDIO,
-    "restricted_lowdelay": opuslib.APPLICATION_RESTRICTED_LOWDELAY,
-}
-
 
 
 class CoalescedLogger:
@@ -85,7 +74,7 @@ class FlowProbe:
 
 # ========= RTP IO =========
 class RtpIO:
-    """RTP Opus 48 kHz mono. Symmetric RTP. 20 ms por paquete."""
+    """RTP PCMU (G.711 μ-law) 8 kHz. Symmetric RTP. 20 ms por paquete."""
     def __init__(self, bind_ip, bind_port, pt=111):
         self.last_rx_addr = None
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -97,17 +86,18 @@ class RtpIO:
         self.pt = pt & 0x7F
         self.ssrc = struct.unpack("!I", os.urandom(4))[0]
         self.seq  = int.from_bytes(os.urandom(2), "big")
-        self.ts   = int(time.time() * OPUS_SAMPLE_RATE) & 0xFFFFFFFF
+        self.ts = int(time.time() * SAMPLE_RATE) & 0xFFFFFFFF
         self.frame_s = FRAME_MS / 1000.0
         self.echo_enabled = bool(int(os.getenv("ECHO_BACK", "0")))
         self.tx_queue = asyncio.Queue(maxsize=200)
         self.last_rx_ts = None
         self.pacer_task = None
-    async def send_payload_with_headers(self, opus_payload: bytes, seq: int, ts: int, ssrc: int):
+        
+    async def send_payload_with_headers(self, payload: bytes, pt: int, seq: int, ts: int, ssrc: int):
         if not self.remote_learned or not self.remote:
             return
-        hdr = struct.pack("!BBHII", 0x80, self.pt, seq & 0xFFFF, ts & 0xFFFFFFFF, ssrc)
-        pkt = hdr + opus_payload
+        hdr = struct.pack("!BBHII", 0x80, pt & 0x7F, seq & 0xFFFF, ts & 0xFFFFFFFF, ssrc)
+        pkt = hdr + payload
         await asyncio.get_running_loop().sock_sendto(self.sock, pkt, self.remote)
     
     def drain_nonblocking(self, max_bytes=1024*1024):
@@ -142,7 +132,7 @@ class RtpIO:
                 self.remote = (ctrl_ip, ctrl_port)
                 self.remote_learned = True
                 self.seq  = int.from_bytes(os.urandom(2), "big")
-                self.ts   = int(time.time() * OPUS_SAMPLE_RATE) & 0xFFFFFFFF
+                self.ts = int(time.time() * SAMPLE_RATE) & 0xFFFFFFFF
                 self.ssrc = struct.unpack("!I", os.urandom(4))[0]
                 log_info(f"[RTP] Destino FORZADO por control: {ip}:{port_s}")
             except Exception as e:
@@ -158,65 +148,26 @@ class RtpIO:
         payload = data[12:]
         return {"pt": pt & 0x7F, "seq": seq, "ts": ts, "ssrc": ssrc, "payload": payload, "addr": addr}
 
-    async def send_payload(self, opus_payload: bytes):
+    async def send_payload(self, payload: bytes):
         if not self.remote_learned or not self.remote:
             return 
         hdr = struct.pack("!BBHII", 0x80, self.pt, self.seq & 0xFFFF,
                         self.ts & 0xFFFFFFFF, self.ssrc)
-        pkt = hdr + opus_payload
+        pkt = hdr + payload
         await asyncio.get_running_loop().sock_sendto(self.sock, pkt, self.remote)
         self.seq = (self.seq + 1) & 0xFFFF
-        self.ts  = (self.ts + int(OPUS_SAMPLE_RATE * (FRAME_MS/1000.0))) & 0xFFFFFFFF
+        self.ts = (self.ts + SAMPLES_PER_PKT) & 0xFFFFFFFF
 
-class OpusCodec:
-    def __init__(self, sr=OPUS_SAMPLE_RATE, ch=OPUS_CHANNELS,
-                 app=OPUS_APP, bitrate=OPUS_BITRATE):
-        self.sr = sr
-        self.ch = ch  # 2 para empatar opus/48000/2
-        app_mode = APP_MAP.get(app, opuslib.APPLICATION_VOIP)
-        self.dec = opuslib.Decoder(sr, self.ch)
-        self.enc = opuslib.Encoder(sr, self.ch, app_mode)
-        self.enc.bitrate = bitrate
-        self.enc.vbr = False
-        self.enc.complexity = 5
-        self.enc.signal = opuslib.SIGNAL_VOICE
-        self.frame_size = int(sr * (FRAME_MS/1000.0))
-
-    def decode(self, opus_payload: bytes) -> bytes:
-        pcm = self.dec.decode(opus_payload, self.frame_size, decode_fec=False)
-        if self.ch == 2:
-            import array
-            s = array.array('h', pcm)       
-            m = array.array('h', [0]*(len(s)//2))
-            j = 0
-            for i in range(0, len(s), 2):
-                m[j] = (int(s[i]) + int(s[i+1])) // 2
-                j += 1
-            return m.tobytes()
-        return pcm
-
-    def encode(self, pcm48_mono16: bytes) -> bytes:
-        if self.ch == 2:
-            import array
-            m = array.array('h', pcm48_mono16)
-            out = array.array('h', [0]*(len(m)*2))
-            j = 0
-            for i in range(len(m)):
-                out[j] = m[i]; out[j+1] = m[i]
-                j += 2
-            return self.enc.encode(out.tobytes(), self.frame_size)
-        return self.enc.encode(pcm48_mono16, self.frame_size)
 
 # ========= BRIDGE =========
-class ExternalMediaOpusBridge:
+class ExtermalMediaBridge:
     def __init__(self):
         self.rtp = RtpIO(BIND_IP, BIND_PORT, RTP_PT)
         self.voice = SilverAIVoice()
         self.session = None
-        self.opus = OpusCodec()
         self._stop = asyncio.Event()
         self._sdk_playing = False
-        self.evlog = CoalescedLogger("[EM-Opus Events]", 600)
+        self.evlog = CoalescedLogger("[EM Events]", 600)
         self.in_probe = FlowProbe(1200)
         self.out_probe = FlowProbe(1200)
         self._echo_synced = False
@@ -224,9 +175,9 @@ class ExternalMediaOpusBridge:
         self.bytes_out = 0
         self.last_log = time.monotonic()
 
-    # ---- Inbound: RTP Opus -> SDK (usuario habla) ----
+    # ---- Inbound: RTP PCMU -> SDK (usuario habla) ----
     async def rtp_inbound_task(self):
-        log_info(f"RTP Opus IN escuchando en {BIND_IP}:{BIND_PORT} PT={RTP_PT}")
+        log_info(f"RTP PCMU IN escuchando en {BIND_IP}:{BIND_PORT} PT={RTP_PT}")
         while not self._stop.is_set():
             pkt = await self.rtp.recv()
             if not pkt: 
@@ -249,23 +200,25 @@ class ExternalMediaOpusBridge:
             if pkt["pt"] != RTP_PT:
                 self.evlog.tick(f"pt:{pkt['pt']}")
                 continue
-            try:
-                pcm48 = self.opus.decode(pkt["payload"])
-            except Exception as e:
-                log_warn(f"Opus decode error: {e}")
-                continue
             if ECHO_BACK:
                 try:
+                    self.rtp.pt = RTP_PT
                     await self.rtp.send_payload_with_headers(
-                        pkt["payload"], pkt["seq"], pkt["ts"], pkt["ssrc"]
+                        pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
                     )
-                    self.bytes_out += len(pkt["payload"]) + 12
-                    self.out_probe.note(len(pkt["payload"]) + 12)
+                    plen = len(pkt["payload"])
+                    self.bytes_out += plen + 12
+                    self.out_probe.note(plen + 12)
                     self.evlog.tick("out:rtp")
                 except Exception as e:
-                    log_warn(f"ECO passthrough send error: {e}")
+                    log_warn(f"ECO send error: {e}")
                 self._periodic_log()
                 continue
+
+            # --- Camino normal (NO ECO): ---
+            else:
+                continue
+
             try:
                 pcm24 = self.voice.resample_48k_to_24k(pcm48)
                 await self.session.append_input_audio_24k(pcm24)
@@ -274,71 +227,30 @@ class ExternalMediaOpusBridge:
 
             self._periodic_log()
 
-    # ---- Outbound: SDK TTS 24k -> RTP Opus 48k (agente habla) ----
+    # ---- Outbound: SDK TTS 24k -> RTP PCMU (agente habla) ----
     async def sdk_tts_producer(self):
-        """Lee TTS 24 kHz, convierte a 48 kHz, segmenta en 20 ms y envía con pacing."""
-        log_dbg("sdk_tts_producer iniciado")
-        frame_samples_48 = self.opus.frame_size 
-        frame_bytes_48   = frame_samples_48 * 2  
-        target_frame_s   = FRAME_MS / 1000.0
-
-        async for pcm24 in self.session.stream_agent_tts():
-            if pcm24 is None:
-                continue
-            self._sdk_playing = True
-            pcm48 = self.voice.resample_24k_to_48k(pcm24)
-            off = 0
-            start = time.perf_counter()
-            frames = 0
-            while off < len(pcm48):
-                chunk48 = pcm48[off:off+frame_bytes_48]
-                if len(chunk48) < frame_bytes_48:
-                    chunk48 = chunk48 + b"\x00" * (frame_bytes_48 - len(chunk48))
-                off += len(chunk48)
-
-                try:
-                    opus_payload = self.opus.encode(chunk48)
-                except Exception as e:
-                    log_warn(f"Opus encode error: {e}")
-                    continue
-
-                await self.rtp.send_payload(opus_payload)
-                self.bytes_out += len(opus_payload) + 12
-                self.out_probe.note(len(opus_payload) + 12)
-                self.evlog.tick("out:rtp")
-
-                frames += 1
-                target = frames * target_frame_s
-                dt = time.perf_counter() - start
-                if target > dt:
-                    await asyncio.sleep(target - dt)
-
-            self._periodic_log()
-
-        self._sdk_playing = False
-        log_dbg("sdk_tts_producer finalizado")
+        log_dbg("sdk_tts_producer omitido en modo PCMU")
+        while not self._stop.is_set():
+            await asyncio.sleep(0.5)
 
     # ---- Keep-alive de silencio cuando el agente habla ----
     async def keepalive_while_speaking(self):
-        """Si el SDK reporta 'speaking', enviar silencio de 20 ms a tasa fija cuando no hay TTS activo.
-        Mantiene timing del canal RTP en escenarios de pausas cortas."""
-        frame_samples_48 = self.opus.frame_size
-        silence48 = b"\x00" * (frame_samples_48 * 2)
-        target_s = FRAME_MS / 1000.0
         if ECHO_BACK:
             return
+        target_s = FRAME_MS / 1000.0
+        silence = b"\xFF" * SAMPLES_PER_PKT  
         while not self._stop.is_set():
             await asyncio.sleep(target_s)
             if getattr(self.session, "is_speaking", None) and self.session.is_speaking():
                 try:
-                    opus_payload = self.opus.encode(silence48)
-                    await self.rtp.send_payload(opus_payload)
-                    self.bytes_out += len(opus_payload) + 12
-                    self.out_probe.note(len(opus_payload) + 12)
+                    await self.rtp.send_payload(silence)
+                    self.bytes_out += len(silence) + 12
+                    self.out_probe.note(len(silence) + 12)
                     self.evlog.tick("out:sil")
                 except Exception as e:
-                    log_warn(f"keepalive encode/send error: {e}")
+                    log_warn(f"keepalive send error: {e}")
             self._periodic_log()
+
 
     async def on_audio_interrupted(self):
         """Si el SDK notifica interrupción, no hay cola aquí, pero respetamos trazas."""
@@ -358,7 +270,7 @@ class ExternalMediaOpusBridge:
         self.rtp.remote = None
         self.rtp.remote_learned = False
         self.rtp.seq  = int.from_bytes(os.urandom(2), "big")
-        self.rtp.ts   = int(time.time() * OPUS_SAMPLE_RATE) & 0xFFFFFFFF
+        self.rtp.ts   = int(time.time() * SAMPLE_RATE) & 0xFFFFFFFF
         self.rtp.ssrc = struct.unpack("!I", os.urandom(4))[0]
         log_info("[RTP] Reset aprendizaje destino para nueva llamada")
         if ECHO_BACK:
@@ -378,7 +290,7 @@ class ExternalMediaOpusBridge:
             except Exception:
                 pass
 
-        log_info(f"RTP Opus en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={OPUS_SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
+        log_info(f"RTP PCMU en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
         async with self.session:
             try:
                 await asyncio.gather(*tasks)
@@ -389,6 +301,6 @@ class ExternalMediaOpusBridge:
 # ========= MAIN =========
 if __name__ == "__main__":
     try:
-        asyncio.run(ExternalMediaOpusBridge().run())
+        asyncio.run(ExtermalMediaBridge().run())
     except KeyboardInterrupt:
         pass
