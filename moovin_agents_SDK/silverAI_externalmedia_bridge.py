@@ -8,7 +8,8 @@
 import os, asyncio, socket, struct, time, contextlib
 from collections import defaultdict
 from SilverAI_Voice import SilverAIVoice
-
+import audioop
+from audioop import ulaw2lin, lin2ulaw
 # ========= ENV =========
 BIND_IP            = os.getenv("BIND_IP")
 BIND_PORT          = int(os.getenv("BIND_PORT"))
@@ -214,24 +215,109 @@ class ExtermalMediaBridge:
                     log_warn(f"ECO send error: {e}")
                 self._periodic_log()
                 continue
-
-            # --- Camino normal (NO ECO): ---
             else:
-                continue
+                try:
+                    pcm8k = audioop.ulaw2lin(pkt["payload"], 2)
+                    try:
+                        self.session.feed_pcm16(pcm8k)
+                        self.evlog.tick("to:sdk")
+                    except Exception as e:
+                        log_warn(f"feed_pcm16 error: {e}")
+                except Exception as e:
+                    log_warn(f"append_input_audio_24k error: {e}")
 
-            try:
-                pcm24 = self.voice.resample_48k_to_24k(pcm48)
-                await self.session.append_input_audio_24k(pcm24)
-            except Exception as e:
-                log_warn(f"append_input_audio_24k error: {e}")
-
-            self._periodic_log()
+                self._periodic_log()
 
     # ---- Outbound: SDK TTS 24k -> RTP PCMU (agente habla) ----
     async def sdk_tts_producer(self):
-        log_dbg("sdk_tts_producer omitido en modo PCMU")
-        while not self._stop.is_set():
-            await asyncio.sleep(0.5)
+        """
+        SDK -> RTP(PCMU). Espera frames PCM16 @24k del SDK, los baja a 8k,
+        convierte a μ-law y pacea en bloques de 20 ms (160 muestras a 8 kHz).
+        """
+        target_s = FRAME_MS / 1000.0
+        frame_samples_8k = SAMPLES_PER_PKT
+        frame_bytes_16bit_8k = frame_samples_8k * 2
+
+        buf_24k = bytearray()
+        self.out_ulaw_queue = asyncio.Queue(maxsize=400)
+
+        async def feeder_from_sdk():
+            """Lee audio de salida del SDK en 24k PCM16 y lo pone en buf_24k."""
+            if hasattr(self.session, "read_output_audio_24k"):
+                async for chunk24 in self.session.read_output_audio_24k():
+                    if not chunk24:
+                        continue
+                    buf_24k.extend(chunk24)
+                    await convert_and_enqueue()
+            elif hasattr(self.session, "recv_output_chunk_24k"): 
+                while not self._stop.is_set():
+                    chunk24 = await self.session.recv_output_chunk_24k()
+                    if not chunk24:
+                        continue
+                    buf_24k.extend(chunk24)
+                    await convert_and_enqueue()
+            elif hasattr(self.session, "on_tts_frame"):
+                q = asyncio.Queue()
+                self.session.on_tts_frame(lambda b: q.put_nowait(b))
+                while not self._stop.is_set():
+                    chunk24 = await q.get()
+                    if chunk24:
+                        buf_24k.extend(chunk24)
+                        await convert_and_enqueue()
+            else:
+                log_warn("SDK: no hay API de lectura de TTS conocida; productor inactivo")
+                while not self._stop.is_set():
+                    await asyncio.sleep(0.5)
+
+        async def convert_and_enqueue():
+            """Consume buf_24k, baja a 8k, μ-law y corta en paquetes de 20 ms."""
+            nonlocal buf_24k
+            if len(buf_24k) < 2400:
+                return
+            chunk24 = bytes(buf_24k)
+            buf_24k = bytearray()
+            if hasattr(self.voice, "resample_24k_to_8k"):
+                pcm8k = self.voice.resample_24k_to_8k(chunk24)
+            else:
+                pcm8k, _ = audioop.ratecv(chunk24, 2, 1, 24000, 8000, None)
+
+            # Trocear a 20 ms @8k = 320 bytes PCM16 y μ-law por paquete
+            off = 0
+            L = len(pcm8k)
+            while off + frame_bytes_16bit_8k <= L:
+                frame16 = pcm8k[off:off + frame_bytes_16bit_8k]
+                off += frame_bytes_16bit_8k
+                ul = audioop.lin2ulaw(frame16, 2)
+                try:
+                    self.out_ulaw_queue.put_nowait(ul)
+                except asyncio.QueueFull:
+                    _ = await self.out_ulaw_queue.get()
+                    await self.out_ulaw_queue.put(ul)
+
+        async def pacer_to_rtp():
+            """Saca 1 paquete cada FRAME_MS y lo envía por RTP."""
+            while not self._stop.is_set():
+                try:
+                    ul = self.out_ulaw_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    ul = None
+                if ul is not None:
+                    try:
+                        await self.rtp.send_payload(ul)
+                        self.bytes_out += len(ul) + 12
+                        self.out_probe.note(len(ul) + 12)
+                        self.evlog.tick("out:rtp")
+                    except Exception as e:
+                        log_warn(f"RTP send error: {e}")
+                await asyncio.sleep(target_s)
+
+        # Lanzar tareas
+        feeder = asyncio.create_task(feeder_from_sdk())
+        pacer  = asyncio.create_task(pacer_to_rtp())
+        try:
+            await asyncio.gather(feeder, pacer)
+        except asyncio.CancelledError:
+            pass
 
     # ---- Keep-alive de silencio cuando el agente habla ----
     async def keepalive_while_speaking(self):
@@ -242,19 +328,33 @@ class ExtermalMediaBridge:
         while not self._stop.is_set():
             await asyncio.sleep(target_s)
             if getattr(self.session, "is_speaking", None) and self.session.is_speaking():
-                try:
-                    await self.rtp.send_payload(silence)
-                    self.bytes_out += len(silence) + 12
-                    self.out_probe.note(len(silence) + 12)
-                    self.evlog.tick("out:sil")
-                except Exception as e:
-                    log_warn(f"keepalive send error: {e}")
+                    if getattr(self, "suppress_keepalive_until", 0.0) and time.monotonic() < self.suppress_keepalive_until:
+                        continue
+                    try:
+                        await self.rtp.send_payload(silence)
+                        self.bytes_out += len(silence) + 12
+                        self.out_probe.note(len(silence) + 12)
+                        self.evlog.tick("out:sil")
+                    except Exception as e:
+                        log_warn(f"keepalive send error: {e}")
             self._periodic_log()
 
 
     async def on_audio_interrupted(self):
-        """Si el SDK notifica interrupción, no hay cola aquí, pero respetamos trazas."""
-        log_info("[Bridge] FLUSH TTS por audio_interrupted")
+        """Flush inmediato del backlog TTS y supresión breve del keep-alive."""
+        try:
+            if hasattr(self, "out_ulaw_queue"):
+                while True:
+                    try:
+                        _ = self.out_ulaw_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+            self.suppress_keepalive_until = time.monotonic() + 0.20
+            log_info("[Bridge] FLUSH TTS por audio_interrupted")
+        except Exception as e:
+            log_warn(f"on_audio_interrupted error: {e}")
+
+
     def _periodic_log(self):
         now = time.monotonic()
         if now - self.last_log >= 1.0:
@@ -272,6 +372,7 @@ class ExtermalMediaBridge:
         self.rtp.seq  = int.from_bytes(os.urandom(2), "big")
         self.rtp.ts   = int(time.time() * SAMPLE_RATE) & 0xFFFFFFFF
         self.rtp.ssrc = struct.unpack("!I", os.urandom(4))[0]
+        self.suppress_keepalive_until = 0.0
         log_info("[RTP] Reset aprendizaje destino para nueva llamada")
         if ECHO_BACK:
             log_info("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
