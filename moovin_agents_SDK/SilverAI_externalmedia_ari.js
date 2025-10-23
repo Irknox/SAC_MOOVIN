@@ -15,7 +15,7 @@ const {
   ARI_PASS = "asterisk",
   ARI_APP = "app",
   EXTERNAL_HOST,
-  EXTERNAL_FORMAT = "opus",
+  EXTERNAL_FORMAT = "ulaw",
   EXTERNAL_TRANSPORT = "udp",
   EXTERNAL_ENCAPSULATION = "rtp",
   EXTERNAL_DIRECTION = "both",
