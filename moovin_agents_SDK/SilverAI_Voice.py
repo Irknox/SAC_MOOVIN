@@ -210,7 +210,9 @@ class SilverAIVoiceSession:
         self._de_esser_amount = float(getenv("DE_ESSER_AMOUNT", "0.20")) 
         self._lp8k_on = getenv("LPF_8K", "0") == "1"       
         
-    
+    def set_on_audio_interrupted(self, cb):
+        self._on_audio_interrupted = cb
+        
     def is_speaking(self) -> bool:
         return self._agent_is_speaking and (time.monotonic() - self._last_tts_out_ts) < 0.5
     
@@ -300,6 +302,21 @@ class SilverAIVoiceSession:
             if pcm:
                 yield pcm
 
+    async def read_output_audio_24k(self):
+        """
+        Itera audio TTS normalizado a 24 kHz PCM16 mono para el bridge EM.
+        Si por configuración el modelo entrega 8 kHz, re-muestrea a 24 kHz.
+        """
+        state = None
+        async for pcm in self.stream_agent_tts():
+            if not pcm:
+                continue
+            try:
+                pcm24, state = audioop.ratecv(pcm, 2, 1, 8000, 24000, state)
+            except Exception:
+                pcm24 = pcm
+            yield pcm24
+        
     async def _pump_events_to_queue(self):
         """
         Itera eventos del Realtime y publica PCM en _audio_out_q.
@@ -370,6 +387,15 @@ class SilverAIVoiceSession:
                         self._flush_tts_event.set()
                     except Exception:
                         pass
+                    cb = getattr(self, "_on_audio_interrupted", None)
+                    if callable(cb):
+                        try:
+                            if asyncio.iscoroutinefunction(cb):
+                                await cb()
+                            else:
+                                cb()
+                        except Exception:
+                            pass
         finally:
             _rll.flush()
             
@@ -380,6 +406,14 @@ class SilverAIVoice:
     """
     def __init__(self):
         self._runner: Optional[RealtimeRunner] = None
+        self.out_pcm16_24k = asyncio.Queue(maxsize=50)
+
+        
+    def _on_tts_24k(self, pcm24_bytes: bytes):
+        try:
+            self.out_pcm16_24k.put_nowait(pcm24_bytes)
+        except asyncio.QueueFull:
+            pass
         
     @staticmethod
     def resample_16k_to_24k(pcm16_mono_16k: bytes) -> bytes:
@@ -390,6 +424,12 @@ class SilverAIVoice:
     def resample_24k_to_16k(pcm16_mono_24k: bytes) -> bytes:
         out, _ = audioop.ratecv(pcm16_mono_24k, 2, 1, 24000, 16000, None)
         return out
+    
+    def resample_8k_to_24k(self, pcm8: bytes) -> bytes:
+        return audioop.ratecv(pcm8, 2, 1, 8000, 24000, None)[0]
+
+    def resample_24k_to_8k(self, pcm24: bytes) -> bytes:
+        return audioop.ratecv(pcm24, 2, 1, 24000, 8000, None)[0]
     
     def resample_24k_to_48k(self, pcm24: bytes) -> bytes:
         if not pcm24:
@@ -418,7 +458,6 @@ class SilverAIVoice:
             take = not take
         return bytes(out)
   
-    
     async def start(self) -> SilverAIVoiceSession:
         voice_agent = RealtimeAgent(
             name="Silver AI Voice Agent",
