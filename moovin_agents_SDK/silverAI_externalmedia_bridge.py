@@ -266,6 +266,7 @@ class ExtermalMediaBridge:
                         jitter_primed = False
                         self._reset_tts_priming = False
                     if not jitter_primed:
+                        self._reset_pacer_deadline = True
                         frames_priming = max(3, int(200 / FRAME_MS))
                         for _ in range(frames_priming):
                             try:
@@ -286,6 +287,7 @@ class ExtermalMediaBridge:
                         jitter_primed = False
                         self._reset_tts_priming = False
                     if not jitter_primed:
+                        self._reset_pacer_deadline = True
                         frames_priming = max(3, int(200 / FRAME_MS))
                         for _ in range(frames_priming):
                             try:
@@ -306,6 +308,7 @@ class ExtermalMediaBridge:
                         jitter_primed = False
                         self._reset_tts_priming = False
                     if not jitter_primed:
+                        self._reset_pacer_deadline = True
                         frames_priming = max(3, int(200 / FRAME_MS))
                         for _ in range(frames_priming):
                             try:
@@ -353,16 +356,17 @@ class ExtermalMediaBridge:
 
         async def pacer_to_rtp():
             """Envía 1 paquete cada FRAME_MS con deadline estable."""
-            next_deadline = time.monotonic()
+            next_deadline = time.monotonic() + target_s 
             while not self._stop.is_set():
+                if getattr(self, "_reset_pacer_deadline", False):
+                    next_deadline = time.monotonic() + target_s
+                    self._reset_pacer_deadline = False
                 now = time.monotonic()
                 if now < next_deadline:
                     await asyncio.sleep(next_deadline - now)
-                    scheduled = next_deadline
                     next_deadline += target_s
                 else:
-                    scheduled = now
-                    next_deadline = scheduled + target_s
+                    next_deadline = now + target_s
 
                 try:
                     ul = self.out_ulaw_queue.get_nowait()
@@ -427,6 +431,7 @@ class ExtermalMediaBridge:
                         break
             self.suppress_keepalive_until = time.monotonic() + 0.20
             self._reset_tts_priming = True
+            self._reset_pacer_deadline = True
             log_info("[Bridge] FLUSH TTS por audio_interrupted")
         except Exception as e:
             log_warn(f"on_audio_interrupted error: {e}")
