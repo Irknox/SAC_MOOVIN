@@ -349,19 +349,19 @@ class ExtermalMediaBridge:
                 now = time.monotonic()
                 if now < next_deadline:
                     await asyncio.sleep(next_deadline - now)
+                    scheduled = next_deadline
+                    next_deadline += target_s
                 else:
-                    pass
-                next_deadline += target_s
+                    scheduled = now
+                    next_deadline = scheduled + target_s
 
                 try:
                     ul = self.out_ulaw_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     ul = None
-
                 speaking = getattr(self.session, "is_speaking", None) and self.session.is_speaking()
                 if ul is None and speaking:
                     ul = SILENCE_ULAW
-
                 if ul is not None:
                     try:
                         await self.rtp.send_payload(ul)
