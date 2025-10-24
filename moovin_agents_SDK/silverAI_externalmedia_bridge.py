@@ -251,6 +251,9 @@ class ExtermalMediaBridge:
         self.out_ulaw_queue = asyncio.Queue(maxsize=400)
         BYTES_24K_PER_10MS = 480  
         ratecv_state = None       
+        SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT  
+        jitter_primed = False 
+        
         
         async def feeder_from_sdk():
             """Lee audio de salida del SDK en 24k PCM16 y lo pone en buf_24k."""
@@ -258,20 +261,46 @@ class ExtermalMediaBridge:
                 async for chunk24 in self.session.read_output_audio_24k():
                     if not chunk24:
                         continue
+                    if not jitter_primed:
+                        for _ in range(10): 
+                            try:
+                                self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
+                            except asyncio.QueueFull:
+                                _ = await self.out_ulaw_queue.get()
+                                await self.out_ulaw_queue.put(SILENCE_ULAW)
+                        jitter_primed = True
                     buf_24k.extend(chunk24)
                     await convert_and_enqueue()
+                    
             elif hasattr(self.session, "recv_output_chunk_24k"): 
                 while not self._stop.is_set():
                     chunk24 = await self.session.recv_output_chunk_24k()
                     if not chunk24:
                         continue
+                    if not jitter_primed:
+                        for _ in range(10): 
+                            try:
+                                self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
+                            except asyncio.QueueFull:
+                                _ = await self.out_ulaw_queue.get()
+                                await self.out_ulaw_queue.put(SILENCE_ULAW)
+                        jitter_primed = True
                     buf_24k.extend(chunk24)
                     await convert_and_enqueue()
+                    
             elif hasattr(self.session, "on_tts_frame"):
                 q = asyncio.Queue()
                 self.session.on_tts_frame(lambda b: q.put_nowait(b))
                 while not self._stop.is_set():
                     chunk24 = await q.get()
+                    if not jitter_primed:
+                        for _ in range(10): 
+                            try:
+                                self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
+                            except asyncio.QueueFull:
+                                _ = await self.out_ulaw_queue.get()
+                                await self.out_ulaw_queue.put(SILENCE_ULAW)
+                        jitter_primed = True
                     if chunk24:
                         buf_24k.extend(chunk24)
                         await convert_and_enqueue()
@@ -316,14 +345,19 @@ class ExtermalMediaBridge:
                     ul = self.out_ulaw_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     ul = None
+                speaking = getattr(self.session, "is_speaking", None) and self.session.is_speaking()
+                if ul is None and speaking:
+                    ul = SILENCE_ULAW
+
                 if ul is not None:
                     try:
                         await self.rtp.send_payload(ul)
                         self.bytes_out += len(ul) + 12
                         self.out_probe.note(len(ul) + 12)
-                        self.evlog.tick("out:rtp")
+                        self.evlog.tick("out:rtp" if ul is not SILENCE_ULAW else "out:sil")
                     except Exception as e:
                         log_warn(f"RTP send error: {e}")
+
                 await asyncio.sleep(target_s)
 
         # Lanzar tareas
