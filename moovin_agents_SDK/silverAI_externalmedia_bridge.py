@@ -16,7 +16,7 @@ BIND_PORT          = int(os.getenv("BIND_PORT"))
 RTP_PT             = int(os.getenv("RTP_PT"))      
 LOG_LEVEL          = os.getenv("LOG_LEVEL", "INFO").upper()
 ECHO_BACK          = os.getenv("ECHO_BACK", "0") == "1"
-FRAME_MS           = int(os.getenv("FRAME_MS", "20"))   
+FRAME_MS           = int(os.getenv("FRAME_MS", "10"))   
 SAMPLE_RATE = 8000
 SAMPLES_PER_PKT = int(SAMPLE_RATE * (FRAME_MS/1000.0))   # 20 ms -> 160 a 8 kHz
 
@@ -249,7 +249,9 @@ class ExtermalMediaBridge:
 
         buf_24k = bytearray()
         self.out_ulaw_queue = asyncio.Queue(maxsize=400)
-
+        BYTES_24K_PER_10MS = 480  
+        ratecv_state = None       
+        
         async def feeder_from_sdk():
             """Lee audio de salida del SDK en 24k PCM16 y lo pone en buf_24k."""
             if hasattr(self.session, "read_output_audio_24k"):
@@ -279,29 +281,33 @@ class ExtermalMediaBridge:
                     await asyncio.sleep(0.5)
 
         async def convert_and_enqueue():
-            """Consume buf_24k, baja a 8k, μ-law y corta en paquetes de 20 ms."""
-            nonlocal buf_24k
-            if len(buf_24k) < 2400:
-                return
-            chunk24 = bytes(buf_24k)
-            buf_24k = bytearray()
-            if hasattr(self.voice, "resample_24k_to_8k"):
-                pcm8k = self.voice.resample_24k_to_8k(chunk24)
-            else:
-                pcm8k, _ = audioop.ratecv(chunk24, 2, 1, 24000, 8000, None)
+            """
+            Consume buf_24k en rodajas de 10 ms (480 B @24k PCM16),
+            baja a 8k con estado continuo y corta a 10 ms @8k (160 B PCM16),
+            luego μ-law y encola.
+            """
+            nonlocal buf_24k, ratecv_state
+            while len(buf_24k) >= BYTES_24K_PER_10MS:
+                slice24 = bytes(buf_24k[:BYTES_24K_PER_10MS])
+                del buf_24k[:BYTES_24K_PER_10MS]
+                if hasattr(self.voice, "resample_24k_to_8k"):
+                    pcm8k = self.voice.resample_24k_to_8k(slice24)
+                else:
+                    pcm8k, ratecv_state = audioop.ratecv(slice24, 2, 1, 24000, 8000, ratecv_state)
 
-            # Trocear a 20 ms @8k = 320 bytes PCM16 y μ-law por paquete
-            off = 0
-            L = len(pcm8k)
-            while off + frame_bytes_16bit_8k <= L:
-                frame16 = pcm8k[off:off + frame_bytes_16bit_8k]
-                off += frame_bytes_16bit_8k
-                ul = audioop.lin2ulaw(frame16, 2)
+                # 10 ms @8k = 80 muestras = 160 B PCM16
+                if len(pcm8k) < 160:
+                    continue
+
+                frame16 = pcm8k[:160]              
+                ul = audioop.lin2ulaw(frame16, 2)  
+
                 try:
                     self.out_ulaw_queue.put_nowait(ul)
                 except asyncio.QueueFull:
                     _ = await self.out_ulaw_queue.get()
                     await self.out_ulaw_queue.put(ul)
+
 
         async def pacer_to_rtp():
             """Saca 1 paquete cada FRAME_MS y lo envía por RTP."""
@@ -333,7 +339,7 @@ class ExtermalMediaBridge:
         if ECHO_BACK:
             return
         target_s = FRAME_MS / 1000.0
-        silence = b"\xFF" * SAMPLES_PER_PKT  
+        silence = b"\x7F" * SAMPLES_PER_PKT
         while not self._stop.is_set():
             await asyncio.sleep(target_s)
             if getattr(self.session, "is_speaking", None) and self.session.is_speaking():
