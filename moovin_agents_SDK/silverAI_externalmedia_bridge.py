@@ -257,6 +257,7 @@ class ExtermalMediaBridge:
         
         async def feeder_from_sdk():
             """Lee audio de salida del SDK en 24k PCM16 y lo pone en buf_24k."""
+            nonlocal jitter_primed
             if hasattr(self.session, "read_output_audio_24k"):
                 async for chunk24 in self.session.read_output_audio_24k():
                     if not chunk24:
