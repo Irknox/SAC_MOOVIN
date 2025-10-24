@@ -176,6 +176,7 @@ class ExtermalMediaBridge:
         self.bytes_in = 0
         self.bytes_out = 0
         self.last_log = time.monotonic()
+        self._reset_pacer_deadline = False
 
     # ---- Inbound: RTP PCMU -> SDK (usuario habla) ----
     async def rtp_inbound_task(self):
@@ -367,32 +368,30 @@ class ExtermalMediaBridge:
         target_s = FRAME_MS / 1000.0
         SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT
         next_deadline = time.monotonic() + target_s
+
         while not self._stop.is_set():
-            # re-sync solicitado (inicio, priming, barge-in)
+            force_sleep = False
             if getattr(self, "_reset_pacer_deadline", False):
                 next_deadline = time.monotonic() + target_s
                 self._reset_pacer_deadline = False
-
+                force_sleep = True
             now = time.monotonic()
-            if now < next_deadline:
-                await asyncio.sleep(next_deadline - now)
-                next_deadline += target_s
+            if force_sleep or now >= next_deadline:
+                sleep_dur = target_s
+                next_deadline = now + target_s
             else:
-                next_deadline = now + target_s  # nunca catch-up
-
-            # fuente: primero cola TTS, si no hay y "hablando", silencio
+                sleep_dur = next_deadline - now
+                next_deadline += target_s
+            await asyncio.sleep(sleep_dur)
             try:
                 ul = self.out_ulaw_queue.get_nowait()
             except (AttributeError, asyncio.QueueEmpty):
                 ul = None
-
             speaking = getattr(self.session, "is_speaking", None) and self.session.is_speaking()
-            if ul is None and (self._sdk_playing or speaking):
+            if ul is None and (getattr(self, "_sdk_playing", False) or speaking):
                 ul = SILENCE_ULAW
-
             if ul is None:
-                continue  # no enviar nada si no hay TTS ni speaking
-
+                continue 
             try:
                 await self.rtp.send_payload(ul)
                 self.bytes_out += len(ul) + 12
