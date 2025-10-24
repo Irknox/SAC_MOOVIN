@@ -353,49 +353,54 @@ class ExtermalMediaBridge:
                     _ = await self.out_ulaw_queue.get()
                     await self.out_ulaw_queue.put(ul)
 
-
-        async def pacer_to_rtp():
-            """Envía 1 paquete cada FRAME_MS con deadline estable."""
-            next_deadline = time.monotonic() + target_s 
-            while not self._stop.is_set():
-                if getattr(self, "_reset_pacer_deadline", False):
-                    next_deadline = time.monotonic() + target_s
-                    self._reset_pacer_deadline = False
-                now = time.monotonic()
-                if now < next_deadline:
-                    await asyncio.sleep(next_deadline - now)
-                    next_deadline += target_s
-                else:
-                    next_deadline = now + target_s
-
-                try:
-                    ul = self.out_ulaw_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    ul = None
-                playing = getattr(self, "_sdk_playing", False)
-                speaking = getattr(self.session, "is_speaking", None) and self.session.is_speaking()
-                if ul is None and (playing or speaking):
-                    ul = SILENCE_ULAW
-                if ul is not None:
-                    try:
-                        await self.rtp.send_payload(ul)
-                        self.bytes_out += len(ul) + 12
-                        self.out_probe.note(len(ul) + 12)
-                        self.evlog.tick("out:rtp" if ul is not SILENCE_ULAW else "out:sil")
-                    except Exception as e:
-                        log_warn(f"RTP send error: {e}")
-
-
         # Lanzar tareas
         feeder = asyncio.create_task(feeder_from_sdk())
-        pacer  = asyncio.create_task(pacer_to_rtp())
         try:
-            await asyncio.gather(feeder, pacer)
+            await asyncio.gather(feeder)
         except asyncio.CancelledError:
             pass
         finally:
             self._sdk_playing = False
+            
+    async def rtp_pacer_loop(self):
+        """Único emisor RTP. 1 paquete cada FRAME_MS. Reloj estable."""
+        target_s = FRAME_MS / 1000.0
+        SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT
+        next_deadline = time.monotonic() + target_s
+        while not self._stop.is_set():
+            # re-sync solicitado (inicio, priming, barge-in)
+            if getattr(self, "_reset_pacer_deadline", False):
+                next_deadline = time.monotonic() + target_s
+                self._reset_pacer_deadline = False
 
+            now = time.monotonic()
+            if now < next_deadline:
+                await asyncio.sleep(next_deadline - now)
+                next_deadline += target_s
+            else:
+                next_deadline = now + target_s  # nunca catch-up
+
+            # fuente: primero cola TTS, si no hay y "hablando", silencio
+            try:
+                ul = self.out_ulaw_queue.get_nowait()
+            except (AttributeError, asyncio.QueueEmpty):
+                ul = None
+
+            speaking = getattr(self.session, "is_speaking", None) and self.session.is_speaking()
+            if ul is None and (self._sdk_playing or speaking):
+                ul = SILENCE_ULAW
+
+            if ul is None:
+                continue  # no enviar nada si no hay TTS ni speaking
+
+            try:
+                await self.rtp.send_payload(ul)
+                self.bytes_out += len(ul) + 12
+                self.out_probe.note(len(ul) + 12)
+                self.evlog.tick("out:rtp" if ul is not SILENCE_ULAW else "out:sil")
+            except Exception as e:
+                log_warn(f"RTP send error: {e}")
+                
     # ---- Keep-alive de silencio cuando el agente habla ----
     async def keepalive_while_speaking(self):
         if ECHO_BACK:
@@ -470,10 +475,11 @@ class ExtermalMediaBridge:
             log_info("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
             tasks = [asyncio.create_task(self.rtp_inbound_task())]
         else:
+            self.out_ulaw_queue = asyncio.Queue(maxsize=400)
             tasks = [
                 asyncio.create_task(self.rtp_inbound_task()),
                 asyncio.create_task(self.sdk_tts_producer()),
-                asyncio.create_task(self.keepalive_while_speaking()),
+                asyncio.create_task(self.rtp_pacer_loop()),
             ]
         async with self.session:
             try:
