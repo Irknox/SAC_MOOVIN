@@ -16,10 +16,11 @@ BIND_PORT          = int(os.getenv("BIND_PORT"))
 RTP_PT             = int(os.getenv("RTP_PT"))      
 LOG_LEVEL          = os.getenv("LOG_LEVEL", "INFO").upper()
 ECHO_BACK          = os.getenv("ECHO_BACK", "0") == "1"
-FRAME_MS           = int(os.getenv("FRAME_MS", "10"))   
+FRAME_MS           = int(os.getenv("FRAME_MS", "20"))   
 SAMPLE_RATE = 8000
 SAMPLES_PER_PKT = int(SAMPLE_RATE * (FRAME_MS/1000.0))   # 20 ms -> 160 a 8 kHz
-
+BYTES_24K_PER_FRAME = int(24000 * (FRAME_MS/1000.0)) * 2   # p.ej. 20 ms -> 960 B a 24k PCM16
+BYTES_8K_PER_FRAME  = SAMPLES_PER_PKT * 2  
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
 _CUR_LVL = max(0, _LEVELS.index(LOG_LEVEL) if LOG_LEVEL in _LEVELS else 2)
@@ -245,16 +246,15 @@ class ExtermalMediaBridge:
         """
         target_s = FRAME_MS / 1000.0
         frame_samples_8k = SAMPLES_PER_PKT
-        frame_bytes_16bit_8k = frame_samples_8k * 2
+        frame_bytes_16bit_8k = BYTES_8K_PER_FRAME
 
         buf_24k = bytearray()
         self.out_ulaw_queue = asyncio.Queue(maxsize=400)
-        BYTES_24K_PER_10MS = 480  
-        ratecv_state = None       
-        SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT  
-        jitter_primed = False 
+        ratecv_state = None
+        SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT
+        jitter_primed = False
         
-        
+        self._sdk_playing = True
         async def feeder_from_sdk():
             """Lee audio de salida del SDK en 24k PCM16 y lo pone en buf_24k."""
             nonlocal jitter_primed
@@ -263,7 +263,8 @@ class ExtermalMediaBridge:
                     if not chunk24:
                         continue
                     if not jitter_primed:
-                        for _ in range(10): 
+                        frames_100ms = max(1, int(100 / FRAME_MS)) 
+                        for _ in range(frames_100ms):
                             try:
                                 self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
                             except asyncio.QueueFull:
@@ -279,7 +280,8 @@ class ExtermalMediaBridge:
                     if not chunk24:
                         continue
                     if not jitter_primed:
-                        for _ in range(10): 
+                        frames_100ms = max(1, int(100 / FRAME_MS)) 
+                        for _ in range(frames_100ms):
                             try:
                                 self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
                             except asyncio.QueueFull:
@@ -295,7 +297,8 @@ class ExtermalMediaBridge:
                 while not self._stop.is_set():
                     chunk24 = await q.get()
                     if not jitter_primed:
-                        for _ in range(10): 
+                        frames_100ms = max(1, int(100 / FRAME_MS)) 
+                        for _ in range(frames_100ms):
                             try:
                                 self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
                             except asyncio.QueueFull:
@@ -312,25 +315,25 @@ class ExtermalMediaBridge:
 
         async def convert_and_enqueue():
             """
-            Consume buf_24k en rodajas de 10 ms (480 B @24k PCM16),
-            baja a 8k con estado continuo y corta a 10 ms @8k (160 B PCM16),
+            Consume buf_24k en rodajas de FRAME_MS (BYTES_24K_PER_FRAME @24k PCM16),
+            baja a 8k con estado continuo y corta a FRAME_MS @8k (BYTES_8K_PER_FRAME),
             luego μ-law y encola.
             """
             nonlocal buf_24k, ratecv_state
-            while len(buf_24k) >= BYTES_24K_PER_10MS:
-                slice24 = bytes(buf_24k[:BYTES_24K_PER_10MS])
-                del buf_24k[:BYTES_24K_PER_10MS]
+            while len(buf_24k) >= BYTES_24K_PER_FRAME:
+                slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
+                del buf_24k[:BYTES_24K_PER_FRAME]
+
                 if hasattr(self.voice, "resample_24k_to_8k"):
                     pcm8k = self.voice.resample_24k_to_8k(slice24)
                 else:
                     pcm8k, ratecv_state = audioop.ratecv(slice24, 2, 1, 24000, 8000, ratecv_state)
 
-                # 10 ms @8k = 80 muestras = 160 B PCM16
-                if len(pcm8k) < 160:
+                if len(pcm8k) < BYTES_8K_PER_FRAME:
                     continue
 
-                frame16 = pcm8k[:160]              
-                ul = audioop.lin2ulaw(frame16, 2)  
+                frame16 = pcm8k[:BYTES_8K_PER_FRAME]  
+                ul = audioop.lin2ulaw(frame16, 2)
 
                 try:
                     self.out_ulaw_queue.put_nowait(ul)
@@ -340,12 +343,21 @@ class ExtermalMediaBridge:
 
 
         async def pacer_to_rtp():
-            """Saca 1 paquete cada FRAME_MS y lo envía por RTP."""
+            """Envía 1 paquete cada FRAME_MS con deadline estable."""
+            next_deadline = time.monotonic()
             while not self._stop.is_set():
+                now = time.monotonic()
+                if now < next_deadline:
+                    await asyncio.sleep(next_deadline - now)
+                else:
+                    pass
+                next_deadline += target_s
+
                 try:
                     ul = self.out_ulaw_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     ul = None
+
                 speaking = getattr(self.session, "is_speaking", None) and self.session.is_speaking()
                 if ul is None and speaking:
                     ul = SILENCE_ULAW
@@ -359,7 +371,6 @@ class ExtermalMediaBridge:
                     except Exception as e:
                         log_warn(f"RTP send error: {e}")
 
-                await asyncio.sleep(target_s)
 
         # Lanzar tareas
         feeder = asyncio.create_task(feeder_from_sdk())
@@ -368,6 +379,8 @@ class ExtermalMediaBridge:
             await asyncio.gather(feeder, pacer)
         except asyncio.CancelledError:
             pass
+        finally:
+            self._sdk_playing = False
 
     # ---- Keep-alive de silencio cuando el agente habla ----
     async def keepalive_while_speaking(self):
@@ -375,8 +388,11 @@ class ExtermalMediaBridge:
             return
         target_s = FRAME_MS / 1000.0
         silence = b"\x7F" * SAMPLES_PER_PKT
+
         while not self._stop.is_set():
             await asyncio.sleep(target_s)
+            if getattr(self, "_sdk_playing", False):
+                continue
             if getattr(self.session, "is_speaking", None) and self.session.is_speaking():
                     if getattr(self, "suppress_keepalive_until", 0.0) and time.monotonic() < self.suppress_keepalive_until:
                         continue

@@ -303,19 +303,9 @@ class SilverAIVoiceSession:
                 yield pcm
 
     async def read_output_audio_24k(self):
-        """
-        Itera audio TTS normalizado a 24 kHz PCM16 mono para el bridge EM.
-        Si por configuración el modelo entrega 8 kHz, re-muestrea a 24 kHz.
-        """
-        state = None
         async for pcm in self.stream_agent_tts():
-            if not pcm:
-                continue
-            try:
-                pcm24, state = audioop.ratecv(pcm, 2, 1, 8000, 24000, state)
-            except Exception:
-                pcm24 = pcm
-            yield pcm24
+            if pcm:
+                yield pcm
         
     async def _pump_events_to_queue(self):
         """
