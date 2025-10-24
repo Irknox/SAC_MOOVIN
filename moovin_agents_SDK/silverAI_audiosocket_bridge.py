@@ -97,6 +97,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 hdr3 = await reader.readexactly(3)
                 msg_type = hdr3[0]
                 payload_len = (hdr3[1] << 8) | hdr3[2]
+
                 payload = b""
                 if payload_len:
                     payload = await reader.readexactly(payload_len)
@@ -263,4 +264,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    # Ejecuta en modo no bloqueante
     asyncio.run(main())

@@ -262,9 +262,12 @@ class ExtermalMediaBridge:
                 async for chunk24 in self.session.read_output_audio_24k():
                     if not chunk24:
                         continue
+                    if getattr(self, "_reset_tts_priming", False):
+                        jitter_primed = False
+                        self._reset_tts_priming = False
                     if not jitter_primed:
-                        frames_100ms = max(1, int(100 / FRAME_MS)) 
-                        for _ in range(frames_100ms):
+                        frames_priming = max(3, int(200 / FRAME_MS))
+                        for _ in range(frames_priming):
                             try:
                                 self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
                             except asyncio.QueueFull:
@@ -279,9 +282,12 @@ class ExtermalMediaBridge:
                     chunk24 = await self.session.recv_output_chunk_24k()
                     if not chunk24:
                         continue
+                    if getattr(self, "_reset_tts_priming", False):
+                        jitter_primed = False
+                        self._reset_tts_priming = False
                     if not jitter_primed:
-                        frames_100ms = max(1, int(100 / FRAME_MS)) 
-                        for _ in range(frames_100ms):
+                        frames_priming = max(3, int(200 / FRAME_MS))
+                        for _ in range(frames_priming):
                             try:
                                 self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
                             except asyncio.QueueFull:
@@ -296,9 +302,12 @@ class ExtermalMediaBridge:
                 self.session.on_tts_frame(lambda b: q.put_nowait(b))
                 while not self._stop.is_set():
                     chunk24 = await q.get()
+                    if getattr(self, "_reset_tts_priming", False):
+                        jitter_primed = False
+                        self._reset_tts_priming = False
                     if not jitter_primed:
-                        frames_100ms = max(1, int(100 / FRAME_MS)) 
-                        for _ in range(frames_100ms):
+                        frames_priming = max(3, int(200 / FRAME_MS))
+                        for _ in range(frames_priming):
                             try:
                                 self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
                             except asyncio.QueueFull:
@@ -359,8 +368,9 @@ class ExtermalMediaBridge:
                     ul = self.out_ulaw_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     ul = None
+                playing = getattr(self, "_sdk_playing", False)
                 speaking = getattr(self.session, "is_speaking", None) and self.session.is_speaking()
-                if ul is None and speaking:
+                if ul is None and (playing or speaking):
                     ul = SILENCE_ULAW
                 if ul is not None:
                     try:
@@ -416,6 +426,7 @@ class ExtermalMediaBridge:
                     except asyncio.QueueEmpty:
                         break
             self.suppress_keepalive_until = time.monotonic() + 0.20
+            self._reset_tts_priming = True
             log_info("[Bridge] FLUSH TTS por audio_interrupted")
         except Exception as e:
             log_warn(f"on_audio_interrupted error: {e}")
@@ -440,15 +451,6 @@ class ExtermalMediaBridge:
         self.rtp.ssrc = struct.unpack("!I", os.urandom(4))[0]
         self.suppress_keepalive_until = 0.0
         log_info("[RTP] Reset aprendizaje destino para nueva llamada")
-        if ECHO_BACK:
-            log_info("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
-            tasks = [asyncio.create_task(self.rtp_inbound_task())]
-        else:
-            tasks = [
-                asyncio.create_task(self.rtp_inbound_task()),
-                asyncio.create_task(self.sdk_tts_producer()),
-                asyncio.create_task(self.keepalive_while_speaking()),
-            ]
         log_info("Inicializando sesión SDK…")
         self.session = await self.voice.start()
         if hasattr(self.session, "set_on_audio_interrupted"):
@@ -458,6 +460,16 @@ class ExtermalMediaBridge:
                 pass
 
         log_info(f"RTP PCMU en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
+
+        if ECHO_BACK:
+            log_info("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
+            tasks = [asyncio.create_task(self.rtp_inbound_task())]
+        else:
+            tasks = [
+                asyncio.create_task(self.rtp_inbound_task()),
+                asyncio.create_task(self.sdk_tts_producer()),
+                asyncio.create_task(self.keepalive_while_speaking()),
+            ]
         async with self.session:
             try:
                 await asyncio.gather(*tasks)
