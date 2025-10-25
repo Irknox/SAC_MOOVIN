@@ -177,6 +177,7 @@ class ExtermalMediaBridge:
         self.bytes_out = 0
         self.last_log = time.monotonic()
         self._reset_pacer_deadline = False
+        self._tx_lock = asyncio.Lock()
 
     # ---- Inbound: RTP PCMU -> SDK (usuario habla) ----
     async def rtp_inbound_task(self):
@@ -215,9 +216,10 @@ class ExtermalMediaBridge:
                 
             if ECHO_BACK:
                 try:
-                    await self.rtp.send_payload_with_headers(
-                        pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
-                    )
+                    async with self._tx_lock:
+                        await self.rtp.send_payload_with_headers(
+                            pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
+                        )
                     plen = len(pkt["payload"])
                     self.bytes_out += plen + 12
                     self.out_probe.note(plen + 12)
@@ -268,7 +270,7 @@ class ExtermalMediaBridge:
                         self._reset_tts_priming = False
                     if not jitter_primed:
                         self._reset_pacer_deadline = True
-                        frames_priming = max(3, int(200 / FRAME_MS))
+                        frames_priming = 5
                         for _ in range(frames_priming):
                             try:
                                 self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
@@ -289,7 +291,7 @@ class ExtermalMediaBridge:
                         self._reset_tts_priming = False
                     if not jitter_primed:
                         self._reset_pacer_deadline = True
-                        frames_priming = max(3, int(200 / FRAME_MS))
+                        frames_priming = 5
                         for _ in range(frames_priming):
                             try:
                                 self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
@@ -310,7 +312,7 @@ class ExtermalMediaBridge:
                         self._reset_tts_priming = False
                     if not jitter_primed:
                         self._reset_pacer_deadline = True
-                        frames_priming = max(3, int(200 / FRAME_MS))
+                        frames_priming = 5
                         for _ in range(frames_priming):
                             try:
                                 self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
@@ -393,7 +395,8 @@ class ExtermalMediaBridge:
             if ul is None:
                 continue 
             try:
-                await self.rtp.send_payload(ul)
+                async with self._tx_lock:
+                    await self.rtp.send_payload(ul)
                 self.bytes_out += len(ul) + 12
                 self.out_probe.note(len(ul) + 12)
                 self.evlog.tick("out:rtp" if ul is not SILENCE_ULAW else "out:sil")
@@ -415,7 +418,8 @@ class ExtermalMediaBridge:
                     if getattr(self, "suppress_keepalive_until", 0.0) and time.monotonic() < self.suppress_keepalive_until:
                         continue
                     try:
-                        await self.rtp.send_payload(silence)
+                        async with self._tx_lock:
+                            await self.rtp.send_payload(silence)
                         self.bytes_out += len(silence) + 12
                         self.out_probe.note(len(silence) + 12)
                         self.evlog.tick("out:sil")
@@ -474,7 +478,7 @@ class ExtermalMediaBridge:
             log_info("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
             tasks = [asyncio.create_task(self.rtp_inbound_task())]
         else:
-            self.out_ulaw_queue = asyncio.Queue(maxsize=400)
+            self.out_ulaw_queue = asyncio.Queue(maxsize=60)
             tasks = [
                 asyncio.create_task(self.rtp_inbound_task()),
                 asyncio.create_task(self.sdk_tts_producer()),
