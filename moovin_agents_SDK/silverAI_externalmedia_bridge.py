@@ -250,7 +250,7 @@ class ExtermalMediaBridge:
         target_s = FRAME_MS / 1000.0
         frame_samples_8k = SAMPLES_PER_PKT
         frame_bytes_16bit_8k = BYTES_8K_PER_FRAME
-
+        pcm8k_buf = bytearray()
         buf_24k = bytearray()
         self.out_ulaw_queue = asyncio.Queue(maxsize=400)
         ratecv_state = None
@@ -334,7 +334,7 @@ class ExtermalMediaBridge:
             baja a 8k con estado continuo y corta a FRAME_MS @8k (BYTES_8K_PER_FRAME),
             luego μ-law y encola.
             """
-            nonlocal buf_24k, ratecv_state
+            nonlocal buf_24k, ratecv_state, pcm8k_buf
             while len(buf_24k) >= BYTES_24K_PER_FRAME:
                 slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
                 del buf_24k[:BYTES_24K_PER_FRAME]
@@ -343,18 +343,21 @@ class ExtermalMediaBridge:
                     pcm8k = self.voice.resample_24k_to_8k(slice24)
                 else:
                     pcm8k, ratecv_state = audioop.ratecv(slice24, 2, 1, 24000, 8000, ratecv_state)
+                                
+                if pcm8k:
+                    pcm8k_buf.extend(pcm8k)
 
-                if len(pcm8k) < BYTES_8K_PER_FRAME:
-                    continue
+                while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
+                    frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
+                    del pcm8k_buf[:BYTES_8K_PER_FRAME]
 
-                frame16 = pcm8k[:BYTES_8K_PER_FRAME]  
-                ul = audioop.lin2ulaw(frame16, 2)
+                    ul = audioop.lin2ulaw(frame16, 2)
+                    try:
+                        self.out_ulaw_queue.put_nowait(ul)
+                    except asyncio.QueueFull:
+                        _ = await self.out_ulaw_queue.get()
+                        await self.out_ulaw_queue.put(ul)
 
-                try:
-                    self.out_ulaw_queue.put_nowait(ul)
-                except asyncio.QueueFull:
-                    _ = await self.out_ulaw_queue.get()
-                    await self.out_ulaw_queue.put(ul)
 
         # Lanzar tareas
         feeder = asyncio.create_task(feeder_from_sdk())
