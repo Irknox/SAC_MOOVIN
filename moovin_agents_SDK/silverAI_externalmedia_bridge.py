@@ -322,7 +322,6 @@ class ExtermalMediaBridge:
                 self.evlog.tick("out:rtp" if ul is not SILENCE_ULAW else "out:sil")
             except Exception as e:
                 log_warn(f"RTP send error: {e}")
-                
     # ---- Keep-alive de silencio cuando el agente habla ----
     async def keepalive_while_speaking(self):
         if ECHO_BACK:
