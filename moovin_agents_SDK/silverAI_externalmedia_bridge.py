@@ -343,7 +343,7 @@ class ExtermalMediaBridge:
                     pcm8k = self.voice.resample_24k_to_8k(slice24)
                 else:
                     pcm8k, ratecv_state = audioop.ratecv(slice24, 2, 1, 24000, 8000, ratecv_state)
-                                
+
                 if pcm8k:
                     pcm8k_buf.extend(pcm8k)
 
@@ -353,10 +353,12 @@ class ExtermalMediaBridge:
 
                     ul = audioop.lin2ulaw(frame16, 2)
                     try:
-                        self.out_ulaw_queue.put_nowait(ul)
-                    except asyncio.QueueFull:
-                        _ = await self.out_ulaw_queue.get()
+                        # Si la cola está llena, descartar el paquete más antiguo
+                        if self.out_ulaw_queue.full():
+                            _ = await self.out_ulaw_queue.get()
                         await self.out_ulaw_queue.put(ul)
+                    except asyncio.QueueFull:
+                        log_warn("out_ulaw_queue está llena, descartando paquetes")
 
 
         # Lanzar tareas
@@ -375,28 +377,18 @@ class ExtermalMediaBridge:
         next_deadline = time.monotonic() + target_s
 
         while not self._stop.is_set():
-            force_sleep = False
-            if getattr(self, "_reset_pacer_deadline", False):
-                next_deadline = time.monotonic() + target_s
-                self._reset_pacer_deadline = False
-                force_sleep = True
             now = time.monotonic()
-            if force_sleep or now >= next_deadline:
-                sleep_dur = target_s
-                next_deadline = now + target_s
-            else:
-                sleep_dur = next_deadline - now
+            if now >= next_deadline:
                 next_deadline += target_s
-            await asyncio.sleep(sleep_dur)
+            else:
+                await asyncio.sleep(next_deadline - now)
+                next_deadline += target_s
+
             try:
                 ul = self.out_ulaw_queue.get_nowait()
             except (AttributeError, asyncio.QueueEmpty):
-                ul = None
-            speaking = getattr(self.session, "is_speaking", None) and self.session.is_speaking()
-            if ul is None and (getattr(self, "_sdk_playing", False) or speaking):
-                ul = SILENCE_ULAW
-            if ul is None:
-                continue 
+                ul = SILENCE_ULAW  # Enviar silencio si no hay datos
+
             try:
                 async with self._tx_lock:
                     await self.rtp.send_payload(ul)
@@ -462,8 +454,8 @@ class ExtermalMediaBridge:
     async def run(self):
         self.rtp.remote = None
         self.rtp.remote_learned = False
-        self.rtp.seq  = int.from_bytes(os.urandom(2), "big")
-        self.rtp.ts   = int(time.time() * SAMPLE_RATE) & 0xFFFFFFFF
+        self.rtp.seq = int.from_bytes(os.urandom(2), "big")
+        self.rtp.ts = int(time.time() * SAMPLE_RATE) & 0xFFFFFFFF
         self.rtp.ssrc = struct.unpack("!I", os.urandom(4))[0]
         self.suppress_keepalive_until = 0.0
         log_info("[RTP] Reset aprendizaje destino para nueva llamada")
@@ -487,11 +479,16 @@ class ExtermalMediaBridge:
                 asyncio.create_task(self.sdk_tts_producer()),
                 asyncio.create_task(self.rtp_pacer_loop()),
             ]
-        async with self.session:
-            try:
+
+        try:
+            async with self.session:
                 await asyncio.gather(*tasks)
-            finally:
-                self._stop.set()
+        except Exception as e:
+            log_err(f"Error en el ciclo principal: {e}")
+        finally:
+            self._stop.set()
+            if self.session:
+                await self.session.__aexit__(None, None, None)  # Cerrar sesión explícitamente
         log_info("Bridge detenido")
 
 # ========= MAIN =========
