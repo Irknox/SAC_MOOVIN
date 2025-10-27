@@ -13,6 +13,8 @@
 /moovin_agents_SDK/prompts
 /asterisk_to_openai_rt
 /RT SDK TEST
+/moovin_agents_SDK/SilverAI_externalmedia_bridge_root.py
+/moovin_agents_SDK/SilverAI_Voice_old.py
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
