@@ -328,11 +328,20 @@ class ExtermalMediaBridge:
 
 
     async def on_audio_interrupted(self):
-        """Flush controlado al evento audio_interrupted."""
-        log_info("[Bridge] FLUSH por audio_interrupted")
-        while not self.out_ulaw_queue.empty():
-            _ = await self.out_ulaw_queue.get()
-        log_dbg("Buffer vaciado por interrupción de audio")
+        """Flush inmediato del backlog TTS y supresión breve del keep-alive."""
+        try:
+            if hasattr(self, "out_ulaw_queue"):
+                while True:
+                    try:
+                        _ = self.out_ulaw_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+            self.suppress_keepalive_until = time.monotonic() + 0.20
+            self._reset_tts_priming = True
+            self._reset_pacer_deadline = True
+            log_info("[Bridge] FLUSH TTS por audio_interrupted")
+        except Exception as e:
+            log_warn(f"on_audio_interrupted error: {e}")
 
 
     def _periodic_log(self):
