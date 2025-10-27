@@ -178,6 +178,7 @@ class ExtermalMediaBridge:
         self.last_log = time.monotonic()
         self._reset_pacer_deadline = False
         self._tx_lock = asyncio.Lock()
+        self.out_ulaw_queue = asyncio.Queue(maxsize=200)
 
     # ---- Inbound: RTP PCMU -> SDK (usuario habla) ----
     async def rtp_inbound_task(self):
