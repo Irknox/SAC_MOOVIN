@@ -270,10 +270,10 @@ class ExtermalMediaBridge:
                         # Si el buffer está lleno, descartar el frame más antiguo
                         if self.out_ulaw_queue.full():
                             _ = await self.out_ulaw_queue.get()
+                            log_warn("Buffer lleno, descartando frame más antiguo")
                         await self.out_ulaw_queue.put(ulaw_frame)
                     except asyncio.QueueFull:
-                        log_warn("Buffer lleno, descartando frame")
-                    
+                        log_warn("Buffer lleno, no se pudo agregar frame")
     async def rtp_pacer_loop(self):
         """Consume el buffer y envía los datos a intervalos regulares."""
         target_s = FRAME_MS / 1000.0
@@ -301,6 +301,9 @@ class ExtermalMediaBridge:
                 self.evlog.tick("out:rtp" if ulaw_frame is not SILENCE_ULAW else "out:sil")
             except Exception as e:
                 log_warn(f"Error enviando RTP: {e}")
+
+            # Log del tamaño del buffer
+            log_dbg(f"Tamaño del buffer: {self.out_ulaw_queue.qsize()}")
                 
     # ---- Keep-alive de silencio cuando el agente habla ----
     async def keepalive_while_speaking(self):
@@ -328,10 +331,11 @@ class ExtermalMediaBridge:
 
 
     async def on_audio_interrupted(self):
-        """Flush inmediato al evento audio_interrupted."""
+        """Flush controlado al evento audio_interrupted."""
         log_info("[Bridge] FLUSH por audio_interrupted")
         while not self.out_ulaw_queue.empty():
             _ = await self.out_ulaw_queue.get()
+        log_dbg("Buffer vaciado por interrupción de audio")
 
 
     def _periodic_log(self):
