@@ -178,6 +178,8 @@ class ExtermalMediaBridge:
         self.last_log = time.monotonic()
         self._reset_pacer_deadline = False
         self._tx_lock = asyncio.Lock()
+        self.accum_out = bytearray()  
+        self._buffer_lock = asyncio.Lock() 
 
     # ---- Inbound: RTP PCMU -> SDK (usuario habla) ----
     async def rtp_inbound_task(self):
@@ -243,11 +245,10 @@ class ExtermalMediaBridge:
 
     # ---- Outbound: SDK TTS 24k -> RTP PCMU (agente habla) ----
     async def sdk_tts_producer(self):
-        """Produce audio desde el SDK y lo coloca en el buffer."""
+        """Produce audio desde el SDK y lo coloca en el buffer dinámico."""
         buf_24k = bytearray()
         pcm8k_buf = bytearray()
         ratecv_state = None
-        SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT
 
         async for pcm24 in self.session.stream_agent_tts():
             if pcm24:
@@ -266,16 +267,11 @@ class ExtermalMediaBridge:
                     del pcm8k_buf[:BYTES_8K_PER_FRAME]
 
                     ulaw_frame = audioop.lin2ulaw(frame16, 2)
-                    try:
-                        # Si el buffer está lleno, descartar el frame más antiguo
-                        if self.out_ulaw_queue.full():
-                            _ = await self.out_ulaw_queue.get()
-                            log_warn("Buffer lleno, descartando frame más antiguo")
-                        await self.out_ulaw_queue.put(ulaw_frame)
-                    except asyncio.QueueFull:
-                        log_warn("Buffer lleno, no se pudo agregar frame")
+                    async with self._buffer_lock:
+                        self.accum_out.extend(ulaw_frame)
+                        
     async def rtp_pacer_loop(self):
-        """Consume el buffer y envía los datos a intervalos regulares."""
+        """Consume el buffer dinámico y envía los datos a intervalos regulares."""
         target_s = FRAME_MS / 1000.0
         SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT
         next_deadline = time.monotonic() + target_s
@@ -288,22 +284,23 @@ class ExtermalMediaBridge:
                 await asyncio.sleep(next_deadline - now)
                 next_deadline += target_s
 
-            try:
-                ulaw_frame = self.out_ulaw_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                ulaw_frame = SILENCE_ULAW  # Enviar silencio si el buffer está vacío
+            payload = None
+            async with self._buffer_lock:
+                if len(self.accum_out) >= SAMPLES_PER_PKT:
+                    payload = bytes(self.accum_out[:SAMPLES_PER_PKT])
+                    del self.accum_out[:SAMPLES_PER_PKT]
+
+            if payload is None:
+                payload = SILENCE_ULAW  # Enviar silencio si el buffer está vacío
 
             try:
                 async with self._tx_lock:
-                    await self.rtp.send_payload(ulaw_frame)
-                self.bytes_out += len(ulaw_frame) + 12
-                self.out_probe.note(len(ulaw_frame) + 12)
-                self.evlog.tick("out:rtp" if ulaw_frame is not SILENCE_ULAW else "out:sil")
+                    await self.rtp.send_payload(payload)
+                self.bytes_out += len(payload) + 12
+                self.out_probe.note(len(payload) + 12)
+                self.evlog.tick("out:rtp" if payload is not SILENCE_ULAW else "out:sil")
             except Exception as e:
                 log_warn(f"Error enviando RTP: {e}")
-
-            # Log del tamaño del buffer
-            log_dbg(f"Tamaño del buffer: {self.out_ulaw_queue.qsize()}")
                 
     # ---- Keep-alive de silencio cuando el agente habla ----
     async def keepalive_while_speaking(self):
