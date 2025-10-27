@@ -243,135 +243,39 @@ class ExtermalMediaBridge:
 
     # ---- Outbound: SDK TTS 24k -> RTP PCMU (agente habla) ----
     async def sdk_tts_producer(self):
-        """
-        SDK -> RTP(PCMU). Espera frames PCM16 @24k del SDK, los baja a 8k,
-        convierte a μ-law y pacea en bloques de 20 ms (160 muestras a 8 kHz).
-        """
-        target_s = FRAME_MS / 1000.0
-        frame_samples_8k = SAMPLES_PER_PKT
-        frame_bytes_16bit_8k = BYTES_8K_PER_FRAME
-        pcm8k_buf = bytearray()
+        """Produce audio desde el SDK y lo coloca en el buffer."""
         buf_24k = bytearray()
-        self.out_ulaw_queue = asyncio.Queue(maxsize=400)
+        pcm8k_buf = bytearray()
         ratecv_state = None
         SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT
-        jitter_primed = False
-        
-        self._sdk_playing = True
-        async def feeder_from_sdk():
-            """Lee audio de salida del SDK en 24k PCM16 y lo pone en buf_24k."""
-            nonlocal jitter_primed
-            if hasattr(self.session, "read_output_audio_24k"):
-                async for chunk24 in self.session.read_output_audio_24k():
-                    if not chunk24:
-                        continue
-                    if getattr(self, "_reset_tts_priming", False):
-                        jitter_primed = False
-                        self._reset_tts_priming = False
-                    if not jitter_primed:
-                        self._reset_pacer_deadline = True
-                        frames_priming = 5
-                        for _ in range(frames_priming):
-                            try:
-                                self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
-                            except asyncio.QueueFull:
-                                _ = await self.out_ulaw_queue.get()
-                                await self.out_ulaw_queue.put(SILENCE_ULAW)
-                        jitter_primed = True
-                    buf_24k.extend(chunk24)
-                    await convert_and_enqueue()
-                    
-            elif hasattr(self.session, "recv_output_chunk_24k"): 
-                while not self._stop.is_set():
-                    chunk24 = await self.session.recv_output_chunk_24k()
-                    if not chunk24:
-                        continue
-                    if getattr(self, "_reset_tts_priming", False):
-                        jitter_primed = False
-                        self._reset_tts_priming = False
-                    if not jitter_primed:
-                        self._reset_pacer_deadline = True
-                        frames_priming = 5
-                        for _ in range(frames_priming):
-                            try:
-                                self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
-                            except asyncio.QueueFull:
-                                _ = await self.out_ulaw_queue.get()
-                                await self.out_ulaw_queue.put(SILENCE_ULAW)
-                        jitter_primed = True
-                    buf_24k.extend(chunk24)
-                    await convert_and_enqueue()
-                    
-            elif hasattr(self.session, "on_tts_frame"):
-                q = asyncio.Queue()
-                self.session.on_tts_frame(lambda b: q.put_nowait(b))
-                while not self._stop.is_set():
-                    chunk24 = await q.get()
-                    if getattr(self, "_reset_tts_priming", False):
-                        jitter_primed = False
-                        self._reset_tts_priming = False
-                    if not jitter_primed:
-                        self._reset_pacer_deadline = True
-                        frames_priming = 5
-                        for _ in range(frames_priming):
-                            try:
-                                self.out_ulaw_queue.put_nowait(SILENCE_ULAW)
-                            except asyncio.QueueFull:
-                                _ = await self.out_ulaw_queue.get()
-                                await self.out_ulaw_queue.put(SILENCE_ULAW)
-                        jitter_primed = True
-                    if chunk24:
-                        buf_24k.extend(chunk24)
-                        await convert_and_enqueue()
-            else:
-                log_warn("SDK: no hay API de lectura de TTS conocida; productor inactivo")
-                while not self._stop.is_set():
-                    await asyncio.sleep(0.5)
 
-        async def convert_and_enqueue():
-            """
-            Consume buf_24k en rodajas de FRAME_MS (BYTES_24K_PER_FRAME @24k PCM16),
-            baja a 8k con estado continuo y corta a FRAME_MS @8k (BYTES_8K_PER_FRAME),
-            luego μ-law y encola.
-            """
-            nonlocal buf_24k, ratecv_state, pcm8k_buf
+        async for pcm24 in self.session.stream_agent_tts():
+            if pcm24:
+                buf_24k.extend(pcm24)
+
+            # Convertir audio de 24k a 8k y μ-law
             while len(buf_24k) >= BYTES_24K_PER_FRAME:
                 slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
                 del buf_24k[:BYTES_24K_PER_FRAME]
 
-                if hasattr(self.voice, "resample_24k_to_8k"):
-                    pcm8k = self.voice.resample_24k_to_8k(slice24)
-                else:
-                    pcm8k, ratecv_state = audioop.ratecv(slice24, 2, 1, 24000, 8000, ratecv_state)
-
-                if pcm8k:
-                    pcm8k_buf.extend(pcm8k)
+                pcm8k, ratecv_state = audioop.ratecv(slice24, 2, 1, 24000, 8000, ratecv_state)
+                pcm8k_buf.extend(pcm8k)
 
                 while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
                     frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
                     del pcm8k_buf[:BYTES_8K_PER_FRAME]
 
-                    ul = audioop.lin2ulaw(frame16, 2)
+                    ulaw_frame = audioop.lin2ulaw(frame16, 2)
                     try:
-                        # Si la cola está llena, descartar el paquete más antiguo
+                        # Si el buffer está lleno, descartar el frame más antiguo
                         if self.out_ulaw_queue.full():
                             _ = await self.out_ulaw_queue.get()
-                        await self.out_ulaw_queue.put(ul)
+                        await self.out_ulaw_queue.put(ulaw_frame)
                     except asyncio.QueueFull:
-                        log_warn("out_ulaw_queue está llena, descartando paquetes")
-
-
-        # Lanzar tareas
-        feeder = asyncio.create_task(feeder_from_sdk())
-        try:
-            await asyncio.gather(feeder)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            self._sdk_playing = False
-            
+                        log_warn("Buffer lleno, descartando frame")
+                    
     async def rtp_pacer_loop(self):
-        """Único emisor RTP. 1 paquete cada FRAME_MS. Reloj estable."""
+        """Consume el buffer y envía los datos a intervalos regulares."""
         target_s = FRAME_MS / 1000.0
         SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT
         next_deadline = time.monotonic() + target_s
@@ -385,18 +289,18 @@ class ExtermalMediaBridge:
                 next_deadline += target_s
 
             try:
-                ul = self.out_ulaw_queue.get_nowait()
-            except (AttributeError, asyncio.QueueEmpty):
-                ul = SILENCE_ULAW  # Enviar silencio si no hay datos
+                ulaw_frame = self.out_ulaw_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                ulaw_frame = SILENCE_ULAW  # Enviar silencio si el buffer está vacío
 
             try:
                 async with self._tx_lock:
-                    await self.rtp.send_payload(ul)
-                self.bytes_out += len(ul) + 12
-                self.out_probe.note(len(ul) + 12)
-                self.evlog.tick("out:rtp" if ul is not SILENCE_ULAW else "out:sil")
+                    await self.rtp.send_payload(ulaw_frame)
+                self.bytes_out += len(ulaw_frame) + 12
+                self.out_probe.note(len(ulaw_frame) + 12)
+                self.evlog.tick("out:rtp" if ulaw_frame is not SILENCE_ULAW else "out:sil")
             except Exception as e:
-                log_warn(f"RTP send error: {e}")
+                log_warn(f"Error enviando RTP: {e}")
                 
     # ---- Keep-alive de silencio cuando el agente habla ----
     async def keepalive_while_speaking(self):
@@ -424,20 +328,10 @@ class ExtermalMediaBridge:
 
 
     async def on_audio_interrupted(self):
-        """Flush inmediato del backlog TTS y supresión breve del keep-alive."""
-        try:
-            if hasattr(self, "out_ulaw_queue"):
-                while True:
-                    try:
-                        _ = self.out_ulaw_queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
-            self.suppress_keepalive_until = time.monotonic() + 0.20
-            self._reset_tts_priming = True
-            self._reset_pacer_deadline = True
-            log_info("[Bridge] FLUSH TTS por audio_interrupted")
-        except Exception as e:
-            log_warn(f"on_audio_interrupted error: {e}")
+        """Flush inmediato al evento audio_interrupted."""
+        log_info("[Bridge] FLUSH por audio_interrupted")
+        while not self.out_ulaw_queue.empty():
+            _ = await self.out_ulaw_queue.get()
 
 
     def _periodic_log(self):
