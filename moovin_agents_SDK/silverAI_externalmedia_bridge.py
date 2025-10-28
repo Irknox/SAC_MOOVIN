@@ -283,7 +283,13 @@ class ExtermalMediaBridge:
             else:
                 await asyncio.sleep(next_deadline - now)
                 next_deadline += target_s
-
+            # Detectar el evento de flush
+            if getattr(self.session, "_flush_tts_event", None) and self.session._flush_tts_event.is_set():
+                async with self._buffer_lock:
+                    self.accum_out.clear()  # Vaciar el buffer dinámico
+                self.session._flush_tts_event.clear()
+                log_info("[Bridge] FLUSH TTS detectado en rtp_pacer_loop")
+                
             payload = None
             async with self._buffer_lock:
                 if len(self.accum_out) >= SAMPLES_PER_PKT:
@@ -330,16 +336,10 @@ class ExtermalMediaBridge:
     async def on_audio_interrupted(self):
         """Flush inmediato del backlog TTS y supresión breve del keep-alive."""
         try:
-            if hasattr(self, "out_ulaw_queue"):
-                while True:
-                    try:
-                        _ = self.out_ulaw_queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
+            async with self._buffer_lock:
+                self.accum_out.clear()  # Vaciar el buffer dinámico
             self.suppress_keepalive_until = time.monotonic() + 0.20
-            self._reset_tts_priming = True
-            self._reset_pacer_deadline = True
-            log_info("[Bridge] FLUSH TTS por audio_interrupted")
+            log_info("[Bridge] FLUSH TTS por audio_interrupted: buffer vaciado")
         except Exception as e:
             log_warn(f"on_audio_interrupted error: {e}")
 
@@ -368,8 +368,9 @@ class ExtermalMediaBridge:
         if hasattr(self.session, "set_on_audio_interrupted"):
             try:
                 self.session.set_on_audio_interrupted(self.on_audio_interrupted)
-            except Exception:
-                pass
+                log_info("[Bridge] Callback on_audio_interrupted configurado")
+            except Exception as e:
+                log_warn(f"Error configurando callback on_audio_interrupted: {e}")
 
         log_info(f"RTP PCMU en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
 
