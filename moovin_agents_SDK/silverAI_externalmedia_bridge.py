@@ -187,7 +187,9 @@ class ExtermalMediaBridge:
         while not self._stop.is_set():
             pkt = await self.rtp.recv()
             if not pkt: 
-                continue
+                log_info("[RTP] Usuario desconectado, deteniendo el bridge")
+                self._stop.set()
+                break
             last, addr_last, dropped = self.rtp.drain_nonblocking(max_bytes=1024*1024)
             if last is not None:
                 pkt_bytes = last
@@ -251,6 +253,8 @@ class ExtermalMediaBridge:
         ratecv_state = None
 
         async for pcm24 in self.session.stream_agent_tts():
+            if self._stop.is_set():
+                break
             if pcm24:
                 buf_24k.extend(pcm24)
 
@@ -393,8 +397,16 @@ class ExtermalMediaBridge:
         finally:
             self._stop.set()
             if self.session:
-                await self.session.__aexit__(None, None, None)  # Cerrar sesión explícitamente
-        log_info("Bridge detenido")
+                try:
+                    await self.session.__aexit__(None, None, None) 
+                    log_info("[Bridge] Sesión del agente cerrada correctamente")
+                except Exception as e:
+                    log_warn(f"Error cerrando la sesión del agente: {e}")
+            self.session = None 
+            self.accum_out.clear() 
+            self.bytes_in = 0
+            self.bytes_out = 0
+            log_info("Bridge detenido")
 
 # ========= MAIN =========
 if __name__ == "__main__":
