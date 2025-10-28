@@ -187,9 +187,7 @@ class ExtermalMediaBridge:
         while not self._stop.is_set():
             pkt = await self.rtp.recv()
             if not pkt: 
-                log_info("[RTP] Usuario desconectado, deteniendo el bridge")
-                self._stop.set()
-                break
+                continue
             last, addr_last, dropped = self.rtp.drain_nonblocking(max_bytes=1024*1024)
             if last is not None:
                 pkt_bytes = last
