@@ -186,8 +186,16 @@ class ExtermalMediaBridge:
         log_info(f"RTP PCMU IN escuchando en {BIND_IP}:{BIND_PORT} PT={RTP_PT}")
         while not self._stop.is_set():
             pkt = await self.rtp.recv()
-            if not pkt: 
+            if not pkt:
                 continue
+
+            # Manejar mensaje de control CALL_ENDED
+            if pkt["payload"].startswith(b"CALL_ENDED"):
+                log_info("[RTP] CALL_ENDED recibido, deteniendo el bridge")
+                await self.cleanup_session()  # Cerrar la sesión del agente
+                self._stop.set()
+                break
+
             last, addr_last, dropped = self.rtp.drain_nonblocking(max_bytes=1024*1024)
             if last is not None:
                 pkt_bytes = last
@@ -210,12 +218,12 @@ class ExtermalMediaBridge:
             elif pkt["pt"] != self.rtp.pt:
                 self.evlog.tick(f"pt_mismatch:{pkt['pt']}")
                 continue
-            
+
             if not getattr(self.rtp, "_ts_locked", False):
                 self.rtp.ts = pkt["ts"]
                 self.rtp._ts_locked = True
                 log_info(f"[RTP] TS de salida alineado a {self.rtp.ts}")
-                
+
             if ECHO_BACK:
                 try:
                     async with self._tx_lock:
@@ -242,7 +250,22 @@ class ExtermalMediaBridge:
                     log_warn(f"append_input_audio_24k error: {e}")
 
                 self._periodic_log()
-
+                
+    async def cleanup_session(self):
+        """Cierra la sesión del agente y limpia el estado del bridge."""
+        try:
+            if self.session:
+                await self.session.__aexit__(None, None, None)  # Cerrar sesión del agente
+                log_info("[Bridge] Sesión del agente cerrada correctamente")
+        except Exception as e:
+            log_warn(f"Error cerrando la sesión del agente: {e}")
+        finally:
+            self.session = None
+            self.accum_out.clear()  # Limpiar el buffer dinámico
+            self.bytes_in = 0
+            self.bytes_out = 0
+            log_info("[Bridge] Estado limpiado tras desconexión")
+            
     # ---- Outbound: SDK TTS 24k -> RTP PCMU (agente habla) ----
     async def sdk_tts_producer(self):
         """Produce audio desde el SDK y lo coloca en el buffer dinámico."""
