@@ -235,18 +235,20 @@ class ExtermalMediaBridge:
                     log_info(f"[RTP] TS de salida alineado a {self.rtp.ts}")
 
                 if ECHO_BACK:
-                    print("[Bridge Debug] Modo Eco Activado, Devolviendo audio sin enviar al agente..")
-                    try:
-                        async with self._tx_lock:
-                            await self.rtp.send_payload(pkt["payload"])
-                        plen = len(pkt["payload"])
-                        self.bytes_out += plen + 12
-                        self.out_probe.note(plen + 12)
-                        self.evlog.tick("out:rtp")
-                    except Exception as e:
-                        log_warn(f"ECO send error: {e}")
-                    self._periodic_log()
-                    continue
+                        print("[Bridge Debug] Modo Eco Activado, Devolviendo audio sin enviar al agente..")
+                        try:
+                            async with self._tx_lock:
+                                await self.rtp.send_payload_with_headers(
+                                    pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
+                                )
+                            plen = len(pkt["payload"])
+                            self.bytes_out += plen + 12
+                            self.out_probe.note(plen + 12)
+                            self.evlog.tick("out:rtp")
+                        except Exception as e:
+                            log_warn(f"ECO send error: {e}")
+                        self._periodic_log()
+                        continue
                 else:
                     try:
                         pcm24 = pkt["payload"] 
@@ -315,6 +317,10 @@ class ExtermalMediaBridge:
         target_s = FRAME_MS / 1000.0
         SILENCE_PCM24 = b"\x00\x00" * SAMPLES_PER_PKT
         next_deadline = time.monotonic() + target_s
+        if ECHO_BACK:
+            while not self._stop.is_set():
+                await asyncio.sleep(FRAME_MS / 1000.0)
+            return
         try:
             while not self._stop.is_set():
                 now = time.monotonic()
@@ -419,12 +425,13 @@ class ExtermalMediaBridge:
 
             await asyncio.sleep(0.5)
 
-            tasks = [
-                asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
-                asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"),
-                asyncio.create_task(self.rtp_pacer_loop(), name="rtp_pacer_loop"),
-            ]
-            self.session_tasks.extend(tasks) 
+            tasks = [asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task")]
+
+            if not ECHO_BACK:
+                tasks.append(asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"))
+                tasks.append(asyncio.create_task(self.rtp_pacer_loop(), name="rtp_pacer_loop"))
+
+            self.session_tasks.extend(tasks)
 
             try:
                 async with self.session:
