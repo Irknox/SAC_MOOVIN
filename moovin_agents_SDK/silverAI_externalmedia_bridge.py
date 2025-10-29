@@ -201,6 +201,7 @@ class ExtermalMediaBridge:
                     await self.cleanup_session() 
                     self._stop.set()
                     break
+                
                 if not self.rtp.remote_learned:
                     log_warn("[RTP] No se ha aprendido un destino válido para RTP")
                     continue
@@ -249,14 +250,12 @@ class ExtermalMediaBridge:
                     continue
                 else:
                     try:
-                        pcm24 = pkt["payload"]   
-                        try:
-                            await self.session.append_input_audio_24k(pcm24)
-                            self.evlog.tick("to:sdk")
-                        except Exception as e:
-                            log_warn(f"feed_pcm16 error: {e}")
+                        pcm8k = audioop.ulaw2lin(pkt["payload"], 2)
+                        pcm24, _ = audioop.ratecv(pcm8k, 2, 1, 8000, 24000, None)
+                        await self.session.append_input_audio_24k(pcm24)
+                        self.evlog.tick("to:sdk")
                     except Exception as e:
-                        log_warn(f"append_input_audio_24k error: {e}")
+                        log_warn(f"Error procesando audio entrante: {e}")
 
                     self._periodic_log()
         except asyncio.CancelledError:
@@ -304,6 +303,7 @@ class ExtermalMediaBridge:
                 if pcm24:
                     buf_24k.extend(pcm24)
 
+                 # Colocar audio en formato slin24 en el buffer dinámico
                 while len(buf_24k) >= BYTES_24K_PER_FRAME:
                     slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
                     del buf_24k[:BYTES_24K_PER_FRAME]
@@ -315,7 +315,7 @@ class ExtermalMediaBridge:
     async def rtp_pacer_loop(self):
         """Consume el buffer dinámico y envía los datos a intervalos regulares."""
         target_s = FRAME_MS / 1000.0
-        SILENCE_PCM16 = b"\x00\x00" * SAMPLES_PER_PKT
+        SILENCE_PCM24 = b"\x00\x00" * SAMPLES_PER_PKT
         next_deadline = time.monotonic() + target_s
         try:
             while not self._stop.is_set():
@@ -328,31 +328,28 @@ class ExtermalMediaBridge:
 
                 if getattr(self.session, "_flush_tts_event", None) and self.session._flush_tts_event.is_set():
                     async with self._buffer_lock:
-                        self.accum_out.clear() 
+                        self.accum_out.clear()
                     self.session._flush_tts_event.clear()
                     log_info("[Bridge] FLUSH TTS detectado en rtp_pacer_loop")
-                    
+
                 payload = None
                 async with self._buffer_lock:
                     if len(self.accum_out) >= BYTES_PER_PKT:
                         payload = bytes(self.accum_out[:BYTES_PER_PKT])
                         del self.accum_out[:BYTES_PER_PKT]
                     else:
-                        payload = SILENCE_PCM16
-
-                if payload is None:
-                    payload = SILENCE_PCM16 
+                        payload = SILENCE_PCM24
 
                 try:
                     async with self._tx_lock:
                         await self.rtp.send_payload(payload)
                     self.bytes_out += len(payload) + 12
                     self.out_probe.note(len(payload) + 12)
-                    self.evlog.tick("out:rtp" if payload is not SILENCE_PCM16 else "out:sil")
+                    self.evlog.tick("out:rtp" if payload is not SILENCE_PCM24 else "out:sil")
                 except Exception as e:
                     log_warn(f"Error enviando RTP: {e}")
         except asyncio.CancelledError:
-            log_info("[RTP] Tarea rtp_inbound_task cancelada")         
+            log_info("[RTP] Tarea rtp_pacer_loop cancelada")        
                     
     # ---- Keep-alive de silencio cuando el agente habla ----
     async def keepalive_while_speaking(self):
