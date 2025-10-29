@@ -238,9 +238,7 @@ class ExtermalMediaBridge:
                     print("[Bridge Debug] Modo Eco Activado, Devolviendo audio sin enviar al agente..")
                     try:
                         async with self._tx_lock:
-                            await self.rtp.send_payload_with_headers(
-                                pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
-                            )
+                            await self.rtp.send_payload(pkt["payload"])
                         plen = len(pkt["payload"])
                         self.bytes_out += plen + 12
                         self.out_probe.note(plen + 12)
