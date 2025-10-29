@@ -183,100 +183,107 @@ class ExtermalMediaBridge:
         self._tx_lock = asyncio.Lock()
         self.accum_out = bytearray()  
         self._buffer_lock = asyncio.Lock() 
-
+        self.session_tasks = []
+        
     # ---- Inbound: RTP PCMU -> SDK (usuario habla) ----
     async def rtp_inbound_task(self):
         log_info(f"RTP PCMU IN escuchando en {BIND_IP}:{BIND_PORT} PT={RTP_PT}")
-        while not self._stop.is_set():
-            pkt = await self.rtp.recv()
-            if not pkt:
-                continue
+        try:
+            while not self._stop.is_set():
+                pkt = await self.rtp.recv()
+                if not pkt:
+                    continue
 
-            if pkt["payload"].startswith(b"CALL_ENDED"):
-                log_info("[RTP] CALL_ENDED recibido, deteniendo el bridge")
-                async with self._buffer_lock:
-                    self.accum_out.clear() 
-                await self.cleanup_session() 
-                self._stop.set()
-                break
+                if pkt["payload"].startswith(b"CALL_ENDED"):
+                    log_info("[RTP] CALL_ENDED recibido, deteniendo el bridge")
+                    async with self._buffer_lock:
+                        self.accum_out.clear() 
+                    await self.cleanup_session() 
+                    self._stop.set()
+                    break
 
-            last, addr_last, dropped = self.rtp.drain_nonblocking(max_bytes=1024*1024)
-            if last is not None:
-                pkt_bytes = last
-                addr = addr_last
-                if len(pkt_bytes) >= 12:
-                    v_p_x_cc, pt, seq, ts, ssrc = struct.unpack("!BBHII", pkt_bytes[:12])
-                    pkt = {"pt": pt & 0x7F, "seq": seq, "ts": ts, "ssrc": ssrc,
-                        "payload": pkt_bytes[12:], "addr": addr}
-                if dropped > 0:
-                    log_warn(f"[RTP] Back-pressure: drenados {dropped}B; procesando último paquete")
+                last, addr_last, dropped = self.rtp.drain_nonblocking(max_bytes=1024*1024)
+                if last is not None:
+                    pkt_bytes = last
+                    addr = addr_last
+                    if len(pkt_bytes) >= 12:
+                        v_p_x_cc, pt, seq, ts, ssrc = struct.unpack("!BBHII", pkt_bytes[:12])
+                        pkt = {"pt": pt & 0x7F, "seq": seq, "ts": ts, "ssrc": ssrc,
+                            "payload": pkt_bytes[12:], "addr": addr}
+                    if dropped > 0:
+                        log_warn(f"[RTP] Back-pressure: drenados {dropped}B; procesando último paquete")
 
-            self.evlog.tick("in:rtp")
-            self.in_probe.note(len(pkt["payload"]) + 12)
-            self.bytes_in += len(pkt["payload"]) + 12
+                self.evlog.tick("in:rtp")
+                self.in_probe.note(len(pkt["payload"]) + 12)
+                self.bytes_in += len(pkt["payload"]) + 12
 
-            if not getattr(self.rtp, "_pt_locked", False):
-                self.rtp.pt = pkt["pt"]
-                self.rtp._pt_locked = True
-                log_info(f"[RTP] PT de salida fijado a {self.rtp.pt} por aprendizaje")
-            elif pkt["pt"] != self.rtp.pt:
-                self.evlog.tick(f"pt_mismatch:{pkt['pt']}")
-                continue
+                if not getattr(self.rtp, "_pt_locked", False):
+                    self.rtp.pt = pkt["pt"]
+                    self.rtp._pt_locked = True
+                    log_info(f"[RTP] PT de salida fijado a {self.rtp.pt} por aprendizaje")
+                elif pkt["pt"] != self.rtp.pt:
+                    self.evlog.tick(f"pt_mismatch:{pkt['pt']}")
+                    continue
 
-            if not getattr(self.rtp, "_ts_locked", False):
-                self.rtp.ts = pkt["ts"]
-                self.rtp._ts_locked = True
-                log_info(f"[RTP] TS de salida alineado a {self.rtp.ts}")
+                if not getattr(self.rtp, "_ts_locked", False):
+                    self.rtp.ts = pkt["ts"]
+                    self.rtp._ts_locked = True
+                    log_info(f"[RTP] TS de salida alineado a {self.rtp.ts}")
 
-            if ECHO_BACK:
-                try:
-                    async with self._tx_lock:
-                        await self.rtp.send_payload_with_headers(
-                            pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
-                        )
-                    plen = len(pkt["payload"])
-                    self.bytes_out += plen + 12
-                    self.out_probe.note(plen + 12)
-                    self.evlog.tick("out:rtp")
-                except Exception as e:
-                    log_warn(f"ECO send error: {e}")
-                self._periodic_log()
-                continue
-            else:
-                try:
-                    pcm8k = audioop.ulaw2lin(pkt["payload"], 2)
+                if ECHO_BACK:
                     try:
-                        self.session.feed_pcm16(pcm8k)
-                        self.evlog.tick("to:sdk")
+                        async with self._tx_lock:
+                            await self.rtp.send_payload_with_headers(
+                                pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
+                            )
+                        plen = len(pkt["payload"])
+                        self.bytes_out += plen + 12
+                        self.out_probe.note(plen + 12)
+                        self.evlog.tick("out:rtp")
                     except Exception as e:
-                        log_warn(f"feed_pcm16 error: {e}")
-                except Exception as e:
-                    log_warn(f"append_input_audio_24k error: {e}")
+                        log_warn(f"ECO send error: {e}")
+                    self._periodic_log()
+                    continue
+                else:
+                    try:
+                        pcm8k = audioop.ulaw2lin(pkt["payload"], 2)
+                        try:
+                            self.session.feed_pcm16(pcm8k)
+                            self.evlog.tick("to:sdk")
+                        except Exception as e:
+                            log_warn(f"feed_pcm16 error: {e}")
+                    except Exception as e:
+                        log_warn(f"append_input_audio_24k error: {e}")
 
-                self._periodic_log()
-                
+                    self._periodic_log()
+        except asyncio.CancelledError:
+            log_info("[RTP] Tarea rtp_inbound_task cancelada")      
+            
     async def cleanup_session(self):
         """Cierra la sesión del agente y limpia el estado del bridge."""
         try:
             if self.session:
-                await self.session.__aexit__(None, None, None)  # Cerrar sesión del agente
+                await self.session.__aexit__(None, None, None)  
                 log_info("[Bridge] Sesión del agente cerrada correctamente")
         except Exception as e:
             log_warn(f"Error cerrando la sesión del agente: {e}")
         finally:
             self.session = None
             async with self._buffer_lock:
-                self.accum_out.clear()  # Vaciar el buffer dinámico
+                self.accum_out.clear()  
             self.bytes_in = 0
             self.bytes_out = 0
+            self.suppress_keepalive_until = 0.0
+            self._sdk_playing = False
             log_info("[Bridge] Estado limpiado tras desconexión")
-            # Cancelar todas las tareas relacionadas con la sesión
-            for task in asyncio.all_tasks():
-                if task is not asyncio.current_task():
+
+            for task in self.session_tasks:
+                if not task.done():
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
-                
+            self.session_tasks.clear()  
+                    
     # ---- Outbound: SDK TTS 24k -> RTP PCMU (agente habla) ----
     async def sdk_tts_producer(self):
         """Produce audio desde el SDK y lo coloca en el buffer dinámico."""
@@ -401,7 +408,7 @@ class ExtermalMediaBridge:
             self.suppress_keepalive_until = 0.0
             log_info("[RTP] Reset aprendizaje destino para nueva llamada")
             log_info("Inicializando sesión SDK…")
-            self.session = await self.voice.start()  
+            self.session = await self.voice.start()  # Crear nueva sesión
 
             if hasattr(self.session, "set_on_audio_interrupted"):
                 try:
@@ -417,6 +424,7 @@ class ExtermalMediaBridge:
                 asyncio.create_task(self.sdk_tts_producer()),
                 asyncio.create_task(self.rtp_pacer_loop()),
             ]
+            self.session_tasks.extend(tasks)  # Rastrear tareas relacionadas con la sesión
 
             try:
                 async with self.session:
