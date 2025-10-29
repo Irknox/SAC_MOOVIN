@@ -189,10 +189,11 @@ class ExtermalMediaBridge:
             if not pkt:
                 continue
 
-            # Manejar mensaje de control CALL_ENDED
             if pkt["payload"].startswith(b"CALL_ENDED"):
                 log_info("[RTP] CALL_ENDED recibido, deteniendo el bridge")
-                await self.cleanup_session()  # Cerrar la sesión del agente
+                async with self._buffer_lock:
+                    self.accum_out.clear() 
+                await self.cleanup_session() 
                 self._stop.set()
                 break
 
@@ -262,11 +263,11 @@ class ExtermalMediaBridge:
         finally:
             self.session = None
             async with self._buffer_lock:
-                self.accum_out.clear() 
-            self.accum_out.clear() 
+                self.accum_out.clear()  # Vaciar el buffer dinámico
             self.bytes_in = 0
             self.bytes_out = 0
             log_info("[Bridge] Estado limpiado tras desconexión")
+            # Cancelar todas las tareas relacionadas con la sesión
             for task in asyncio.all_tasks():
                 if task is not asyncio.current_task():
                     task.cancel()
@@ -386,44 +387,41 @@ class ExtermalMediaBridge:
 
     # ---- Ciclo principal ----
     async def run(self):
-        self.rtp.remote = None
-        self.rtp.remote_learned = False
-        self.rtp.seq = int.from_bytes(os.urandom(2), "big")
-        self.rtp.ts = int(time.time() * SAMPLE_RATE) & 0xFFFFFFFF
-        self.rtp.ssrc = struct.unpack("!I", os.urandom(4))[0]
-        self.suppress_keepalive_until = 0.0
-        log_info("[RTP] Reset aprendizaje destino para nueva llamada")
-        log_info("Inicializando sesión SDK…")
-        self.session = await self.voice.start()
-        if hasattr(self.session, "set_on_audio_interrupted"):
-            try:
-                self.session.set_on_audio_interrupted(self.on_audio_interrupted)
-                log_info("[Bridge] Callback on_audio_interrupted configurado")
-            except Exception as e:
-                log_warn(f"Error configurando callback on_audio_interrupted: {e}")
+        while True: 
+            self.rtp.remote = None
+            self.rtp.remote_learned = False
+            self.rtp.seq = int.from_bytes(os.urandom(2), "big")
+            self.rtp.ts = int(time.time() * SAMPLE_RATE) & 0xFFFFFFFF
+            self.rtp.ssrc = struct.unpack("!I", os.urandom(4))[0]
+            self.suppress_keepalive_until = 0.0
+            log_info("[RTP] Reset aprendizaje destino para nueva llamada")
+            log_info("Inicializando sesión SDK…")
+            self.session = await self.voice.start()  # Crear nueva sesión
 
-        log_info(f"RTP PCMU en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
+            if hasattr(self.session, "set_on_audio_interrupted"):
+                try:
+                    self.session.set_on_audio_interrupted(self.on_audio_interrupted)
+                    log_info("[Bridge] Callback on_audio_interrupted configurado")
+                except Exception as e:
+                    log_warn(f"Error configurando callback on_audio_interrupted: {e}")
 
-        if ECHO_BACK:
-            log_info("[Bridge] Modo ECO activo: rebotando audio, sin pasar al agente")
-            tasks = [asyncio.create_task(self.rtp_inbound_task())]
-        else:
-            self.out_ulaw_queue = asyncio.Queue(maxsize=60)
+            log_info(f"RTP PCMU en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
+
             tasks = [
                 asyncio.create_task(self.rtp_inbound_task()),
                 asyncio.create_task(self.sdk_tts_producer()),
                 asyncio.create_task(self.rtp_pacer_loop()),
             ]
 
-        try:
-            async with self.session:
-                await asyncio.gather(*tasks)
-        except Exception as e:
-            log_err(f"Error en el ciclo principal: {e}")
-        finally:
-            self._stop.set()
-            await self.cleanup_session()
-            log_info("Bridge detenido")
+            try:
+                async with self.session:
+                    await asyncio.gather(*tasks)
+            except Exception as e:
+                log_err(f"Error en el ciclo principal: {e}")
+            finally:
+                self._stop.set()
+                await self.cleanup_session()
+                log_info("Bridge detenido")
 
 # ========= MAIN =========
 if __name__ == "__main__":
