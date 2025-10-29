@@ -423,10 +423,7 @@ class ExtermalMediaBridge:
                     log_info("[Bridge] Sesión del agente cerrada correctamente")
                 except Exception as e:
                     log_warn(f"Error cerrando la sesión del agente: {e}")
-            self.session = None 
-            self.accum_out.clear() 
-            self.bytes_in = 0
-            self.bytes_out = 0
+            await self.cleanup_session() 
             log_info("Bridge detenido")
 
 # ========= MAIN =========
