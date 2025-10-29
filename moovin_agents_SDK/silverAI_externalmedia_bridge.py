@@ -235,20 +235,20 @@ class ExtermalMediaBridge:
                     log_info(f"[RTP] TS de salida alineado a {self.rtp.ts}")
 
                 if ECHO_BACK:
-                        print("[Bridge Debug] Modo Eco Activado, Devolviendo audio sin enviar al agente..")
-                        try:
-                            async with self._tx_lock:
-                                await self.rtp.send_payload_with_headers(
-                                    pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
-                                )
-                            plen = len(pkt["payload"])
-                            self.bytes_out += plen + 12
-                            self.out_probe.note(plen + 12)
-                            self.evlog.tick("out:rtp")
-                        except Exception as e:
-                            log_warn(f"ECO send error: {e}")
-                        self._periodic_log()
-                        continue
+                    print("[Bridge Debug] Modo Eco Activado, Devolviendo audio sin enviar al agente..")
+                    try:
+                        async with self._tx_lock:
+                            await self.rtp.send_payload_with_headers(
+                                pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
+                            )
+                        plen = len(pkt["payload"])
+                        self.bytes_out += plen + 12
+                        self.out_probe.note(plen + 12)
+                        self.evlog.tick("out:rtp")
+                    except Exception as e:
+                        log_warn(f"ECO send error: {e}")
+                    self._periodic_log()
+                    continue
                 else:
                     try:
                         pcm24 = pkt["payload"] 
