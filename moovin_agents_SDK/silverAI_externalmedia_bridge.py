@@ -250,8 +250,7 @@ class ExtermalMediaBridge:
                     continue
                 else:
                     try:
-                        pcm8k = audioop.ulaw2lin(pkt["payload"], 2)
-                        pcm24, _ = audioop.ratecv(pcm8k, 2, 1, 8000, 24000, None)
+                        pcm24 = pkt["payload"] 
                         await self.session.append_input_audio_24k(pcm24)
                         self.evlog.tick("to:sdk")
                     except Exception as e:
