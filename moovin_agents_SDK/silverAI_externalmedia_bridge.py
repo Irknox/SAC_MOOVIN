@@ -235,6 +235,7 @@ class ExtermalMediaBridge:
                     log_info(f"[RTP] TS de salida alineado a {self.rtp.ts}")
 
                 if ECHO_BACK:
+                    print("[Bridge Debug] Modo Eco Activado, Devolviendo audio sin enviar al agente..")
                     try:
                         async with self._tx_lock:
                             await self.rtp.send_payload_with_headers(
