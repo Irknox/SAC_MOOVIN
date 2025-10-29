@@ -251,7 +251,7 @@ class ExtermalMediaBridge:
                     try:
                         pcm24 = pkt["payload"]   
                         try:
-                            self.session.append_input_audio_24k(pcm24)
+                            await self.session.append_input_audio_24k(pcm24)
                             self.evlog.tick("to:sdk")
                         except Exception as e:
                             log_warn(f"feed_pcm16 error: {e}")
