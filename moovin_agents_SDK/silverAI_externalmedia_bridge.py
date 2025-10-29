@@ -274,7 +274,9 @@ class ExtermalMediaBridge:
             for task in asyncio.all_tasks():
                 if task is not asyncio.current_task():
                     task.cancel()
-            
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+                
     # ---- Outbound: SDK TTS 24k -> RTP PCMU (agente habla) ----
     async def sdk_tts_producer(self):
         """Produce audio desde el SDK y lo coloca en el buffer dinámico."""
@@ -317,10 +319,10 @@ class ExtermalMediaBridge:
             else:
                 await asyncio.sleep(next_deadline - now)
                 next_deadline += target_s
-            # Detectar el evento de flush
+
             if getattr(self.session, "_flush_tts_event", None) and self.session._flush_tts_event.is_set():
                 async with self._buffer_lock:
-                    self.accum_out.clear()  # Vaciar el buffer dinámico
+                    self.accum_out.clear() 
                 self.session._flush_tts_event.clear()
                 log_info("[Bridge] FLUSH TTS detectado en rtp_pacer_loop")
                 
@@ -331,7 +333,7 @@ class ExtermalMediaBridge:
                     del self.accum_out[:SAMPLES_PER_PKT]
 
             if payload is None:
-                payload = SILENCE_ULAW  # Enviar silencio si el buffer está vacío
+                payload = SILENCE_ULAW 
 
             try:
                 async with self._tx_lock:
@@ -399,7 +401,7 @@ class ExtermalMediaBridge:
             self.suppress_keepalive_until = 0.0
             log_info("[RTP] Reset aprendizaje destino para nueva llamada")
             log_info("Inicializando sesión SDK…")
-            self.session = await self.voice.start()  # Crear nueva sesión
+            self.session = await self.voice.start()  
 
             if hasattr(self.session, "set_on_audio_interrupted"):
                 try:
@@ -419,6 +421,8 @@ class ExtermalMediaBridge:
             try:
                 async with self.session:
                     await asyncio.gather(*tasks)
+            except asyncio.CancelledError:
+                log_info("[Bridge] Tareas canceladas correctamente")
             except Exception as e:
                 log_err(f"Error en el ciclo principal: {e}")
             finally:
