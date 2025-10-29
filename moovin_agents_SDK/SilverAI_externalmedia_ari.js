@@ -201,7 +201,23 @@ async function onStasisEnd(event, channel) {
     return;
   }
 
+
   await cleanupCall(chId);
+  notifyBridgeCallEnded(); 
+}
+
+function notifyBridgeCallEnded() {
+  const dgram = require("dgram");
+  const sock = dgram.createSocket("udp4");
+  const [bridgeHost, bridgePortStr] = String(EXTERNAL_HOST).split(":");
+  const bridgePort = parseInt(bridgePortStr, 10);
+  const ctrlMsg = Buffer.from("CALL_ENDED");
+  sock.send(ctrlMsg, bridgePort, bridgeHost, (err) => {
+    if (err) log.warn(`No pude enviar CALL_ENDED al bridge: ${err.message}`);
+    try {
+      sock.close();
+    } catch {}
+  });
 }
 
 async function cleanupCall(sipId) {
