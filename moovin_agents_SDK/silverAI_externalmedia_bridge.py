@@ -122,6 +122,9 @@ class RtpIO:
         loop = asyncio.get_running_loop()
         data, addr = await loop.sock_recvfrom(self.sock, 2048)
         self.last_rx_addr = addr
+        if data.startswith(b"CALL_ENDED"):
+            log_info(f"[RTP] CALL_ENDED recibido desde {addr}")
+            return {"payload": b"CALL_ENDED"}
         if data.startswith(b"CTRL "):
             try:
                 txt = data.decode("utf-8").strip()[5:]

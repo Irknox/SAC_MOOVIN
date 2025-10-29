@@ -214,6 +214,7 @@ function notifyBridgeCallEnded() {
   const ctrlMsg = Buffer.from("CALL_ENDED");
   sock.send(ctrlMsg, bridgePort, bridgeHost, (err) => {
     if (err) log.warn(`No pude enviar CALL_ENDED al bridge: ${err.message}`);
+    else log.info(`CALL_ENDED enviado al bridge ${bridgeHost}:${bridgePort}`);
     try {
       sock.close();
     } catch {}
