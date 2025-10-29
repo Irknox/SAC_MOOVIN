@@ -263,14 +263,14 @@ class ExtermalMediaBridge:
         """Cierra la sesión del agente y limpia el estado del bridge."""
         try:
             if self.session:
-                await self.session.__aexit__(None, None, None)  
+                await self.session.__aexit__(None, None, None) 
                 log_info("[Bridge] Sesión del agente cerrada correctamente")
         except Exception as e:
             log_warn(f"Error cerrando la sesión del agente: {e}")
         finally:
             self.session = None
             async with self._buffer_lock:
-                self.accum_out.clear()  
+                self.accum_out.clear() 
             self.bytes_in = 0
             self.bytes_out = 0
             self.suppress_keepalive_until = 0.0
@@ -280,8 +280,10 @@ class ExtermalMediaBridge:
             for task in self.session_tasks:
                 if not task.done():
                     task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
+                    try:
                         await task
+                    except asyncio.CancelledError:
+                        log_info(f"[Bridge] Tarea {task.get_name()} cancelada correctamente")
             self.session_tasks.clear()  
                     
     # ---- Outbound: SDK TTS 24k -> RTP PCMU (agente habla) ----
@@ -290,67 +292,71 @@ class ExtermalMediaBridge:
         buf_24k = bytearray()
         pcm8k_buf = bytearray()
         ratecv_state = None
+        try:
+            async for pcm24 in self.session.stream_agent_tts():
+                if self._stop.is_set():
+                    break
+                if pcm24:
+                    buf_24k.extend(pcm24)
 
-        async for pcm24 in self.session.stream_agent_tts():
-            if self._stop.is_set():
-                break
-            if pcm24:
-                buf_24k.extend(pcm24)
+                # Convertir audio de 24k a 8k y μ-law
+                while len(buf_24k) >= BYTES_24K_PER_FRAME:
+                    slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
+                    del buf_24k[:BYTES_24K_PER_FRAME]
 
-            # Convertir audio de 24k a 8k y μ-law
-            while len(buf_24k) >= BYTES_24K_PER_FRAME:
-                slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
-                del buf_24k[:BYTES_24K_PER_FRAME]
+                    pcm8k, ratecv_state = audioop.ratecv(slice24, 2, 1, 24000, 8000, ratecv_state)
+                    pcm8k_buf.extend(pcm8k)
 
-                pcm8k, ratecv_state = audioop.ratecv(slice24, 2, 1, 24000, 8000, ratecv_state)
-                pcm8k_buf.extend(pcm8k)
+                    while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
+                        frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
+                        del pcm8k_buf[:BYTES_8K_PER_FRAME]
 
-                while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
-                    frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
-                    del pcm8k_buf[:BYTES_8K_PER_FRAME]
-
-                    ulaw_frame = audioop.lin2ulaw(frame16, 2)
-                    async with self._buffer_lock:
-                        self.accum_out.extend(ulaw_frame)
-                        
+                        ulaw_frame = audioop.lin2ulaw(frame16, 2)
+                        async with self._buffer_lock:
+                            self.accum_out.extend(ulaw_frame)
+        except asyncio.CancelledError:
+            log_info("[RTP] Tarea rtp_inbound_task cancelada")          
+                  
     async def rtp_pacer_loop(self):
         """Consume el buffer dinámico y envía los datos a intervalos regulares."""
         target_s = FRAME_MS / 1000.0
         SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT
         next_deadline = time.monotonic() + target_s
+        try:
+            while not self._stop.is_set():
+                now = time.monotonic()
+                if now >= next_deadline:
+                    next_deadline += target_s
+                else:
+                    await asyncio.sleep(next_deadline - now)
+                    next_deadline += target_s
 
-        while not self._stop.is_set():
-            now = time.monotonic()
-            if now >= next_deadline:
-                next_deadline += target_s
-            else:
-                await asyncio.sleep(next_deadline - now)
-                next_deadline += target_s
-
-            if getattr(self.session, "_flush_tts_event", None) and self.session._flush_tts_event.is_set():
+                if getattr(self.session, "_flush_tts_event", None) and self.session._flush_tts_event.is_set():
+                    async with self._buffer_lock:
+                        self.accum_out.clear() 
+                    self.session._flush_tts_event.clear()
+                    log_info("[Bridge] FLUSH TTS detectado en rtp_pacer_loop")
+                    
+                payload = None
                 async with self._buffer_lock:
-                    self.accum_out.clear() 
-                self.session._flush_tts_event.clear()
-                log_info("[Bridge] FLUSH TTS detectado en rtp_pacer_loop")
-                
-            payload = None
-            async with self._buffer_lock:
-                if len(self.accum_out) >= SAMPLES_PER_PKT:
-                    payload = bytes(self.accum_out[:SAMPLES_PER_PKT])
-                    del self.accum_out[:SAMPLES_PER_PKT]
+                    if len(self.accum_out) >= SAMPLES_PER_PKT:
+                        payload = bytes(self.accum_out[:SAMPLES_PER_PKT])
+                        del self.accum_out[:SAMPLES_PER_PKT]
 
-            if payload is None:
-                payload = SILENCE_ULAW 
+                if payload is None:
+                    payload = SILENCE_ULAW 
 
-            try:
-                async with self._tx_lock:
-                    await self.rtp.send_payload(payload)
-                self.bytes_out += len(payload) + 12
-                self.out_probe.note(len(payload) + 12)
-                self.evlog.tick("out:rtp" if payload is not SILENCE_ULAW else "out:sil")
-            except Exception as e:
-                log_warn(f"Error enviando RTP: {e}")
-                
+                try:
+                    async with self._tx_lock:
+                        await self.rtp.send_payload(payload)
+                    self.bytes_out += len(payload) + 12
+                    self.out_probe.note(len(payload) + 12)
+                    self.evlog.tick("out:rtp" if payload is not SILENCE_ULAW else "out:sil")
+                except Exception as e:
+                    log_warn(f"Error enviando RTP: {e}")
+        except asyncio.CancelledError:
+            log_info("[RTP] Tarea rtp_inbound_task cancelada")         
+                    
     # ---- Keep-alive de silencio cuando el agente habla ----
     async def keepalive_while_speaking(self):
         if ECHO_BACK:
@@ -408,7 +414,7 @@ class ExtermalMediaBridge:
             self.suppress_keepalive_until = 0.0
             log_info("[RTP] Reset aprendizaje destino para nueva llamada")
             log_info("Inicializando sesión SDK…")
-            self.session = await self.voice.start()  # Crear nueva sesión
+            self.session = await self.voice.start() 
 
             if hasattr(self.session, "set_on_audio_interrupted"):
                 try:
@@ -420,11 +426,11 @@ class ExtermalMediaBridge:
             log_info(f"RTP PCMU en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
 
             tasks = [
-                asyncio.create_task(self.rtp_inbound_task()),
-                asyncio.create_task(self.sdk_tts_producer()),
-                asyncio.create_task(self.rtp_pacer_loop()),
+                asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
+                asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"),
+                asyncio.create_task(self.rtp_pacer_loop(), name="rtp_pacer_loop"),
             ]
-            self.session_tasks.extend(tasks)  # Rastrear tareas relacionadas con la sesión
+            self.session_tasks.extend(tasks) 
 
             try:
                 async with self.session:
