@@ -261,10 +261,15 @@ class ExtermalMediaBridge:
             log_warn(f"Error cerrando la sesión del agente: {e}")
         finally:
             self.session = None
-            self.accum_out.clear()  # Limpiar el buffer dinámico
+            async with self._buffer_lock:
+                self.accum_out.clear() 
+            self.accum_out.clear() 
             self.bytes_in = 0
             self.bytes_out = 0
             log_info("[Bridge] Estado limpiado tras desconexión")
+            for task in asyncio.all_tasks():
+                if task is not asyncio.current_task():
+                    task.cancel()
             
     # ---- Outbound: SDK TTS 24k -> RTP PCMU (agente habla) ----
     async def sdk_tts_producer(self):
@@ -417,13 +422,7 @@ class ExtermalMediaBridge:
             log_err(f"Error en el ciclo principal: {e}")
         finally:
             self._stop.set()
-            if self.session:
-                try:
-                    await self.session.__aexit__(None, None, None) 
-                    log_info("[Bridge] Sesión del agente cerrada correctamente")
-                except Exception as e:
-                    log_warn(f"Error cerrando la sesión del agente: {e}")
-            await self.cleanup_session() 
+            await self.cleanup_session()
             log_info("Bridge detenido")
 
 # ========= MAIN =========
