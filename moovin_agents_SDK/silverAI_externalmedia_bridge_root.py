@@ -304,7 +304,7 @@ class ExtermalMediaBridge:
                     slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
                     del buf_24k[:BYTES_24K_PER_FRAME]
 
-                    pcm8k, ratecv_state = audioop.ratecv(slice24, 2, 1, 24000, 8000, ratecv_state)
+                    pcm8k = self.session.resample_24k_to_8k(slice24)
                     pcm8k_buf.extend(pcm8k)
 
                     while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:

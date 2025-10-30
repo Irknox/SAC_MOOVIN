@@ -237,7 +237,7 @@ class ExtermalMediaBridge:
                 if ECHO_BACK:
                     try:
                         async with self._tx_lock:
-                            await self.rtp.send_payload(pkt["payload"])  # <<-- antes usabas send_payload_with_headers(...)
+                            await self.rtp.send_payload(pkt["payload"])  
                         plen = len(pkt["payload"])
                         self.bytes_out += plen + 12
                         self.out_probe.note(plen + 12)
