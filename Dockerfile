@@ -5,8 +5,15 @@ WORKDIR /app
 COPY requirements.txt .
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libopus0 libopus-dev git \
+ && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    libsamplerate0 \
+    libsamplerate0-dev \
+    git \
  && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir samplerate
 
 RUN pip install --no-cache-dir -r requirements.txt
 

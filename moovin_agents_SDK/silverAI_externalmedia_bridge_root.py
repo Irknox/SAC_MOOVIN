@@ -10,6 +10,9 @@ from collections import defaultdict
 from SilverAI_Voice import SilverAIVoice
 import audioop
 from audioop import ulaw2lin, lin2ulaw
+
+import numpy as np
+import samplerate
 # ========= ENV =========
 BIND_IP            = os.getenv("BIND_IP")
 BIND_PORT          = int(os.getenv("BIND_PORT"))
@@ -304,7 +307,11 @@ class ExtermalMediaBridge:
                     slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
                     del buf_24k[:BYTES_24K_PER_FRAME]
 
-                    pcm8k, ratecv_state = audioop.ratecv(slice24, 2, 1, 24000, 8000, ratecv_state)
+                    pcm24_int16 = np.frombuffer(slice24, dtype="<i2")
+                    pcm24_f32 = pcm24_int16.astype(np.float32) / 32768.0
+                    pcm8_f32 = samplerate.resample(pcm24_f32, 8000 / 24000, "sinc_best")
+                    pcm8_int16 = (pcm8_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
+                    pcm8k = pcm8_int16.tobytes()
                     pcm8k_buf.extend(pcm8k)
 
                     while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
