@@ -25,8 +25,11 @@ DE_ESSER        = os.getenv("DE_ESSER", "0") == "1"
 DE_ESSER_AMOUNT = float(os.getenv("DE_ESSER_AMOUNT", "0.20"))
 SAMPLE_RATE = 8000
 SAMPLES_PER_PKT = int(SAMPLE_RATE * (FRAME_MS/1000.0))   # 20 ms -> 160 a 8 kHz
-BYTES_24K_PER_FRAME = int(24000 * (FRAME_MS/1000.0)) * 2   # p.ej. 20 ms -> 960 B a 24k PCM16
+BYTES_24K_PER_FRAME = int(24000 * (FRAME_MS/1000.0)) * 2   # 20 ms -> 960 B a 24k PCM16
 BYTES_8K_PER_FRAME  = SAMPLES_PER_PKT * 2  
+PRE_ROLL            = os.getenv("PRE_ROLL", "1") == "1"
+PRE_ROLL_FRAMES     = int(os.getenv("PRE_ROLL_FRAMES", "1"))
+FADE_IN_FRAMES      = int(os.getenv("FADE_IN_FRAMES", "2"))
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
 _CUR_LVL = max(0, _LEVELS.index(LOG_LEVEL) if LOG_LEVEL in _LEVELS else 2)
@@ -75,6 +78,24 @@ def _soft_de_esser_pcm16(pcm: bytes, amount: float = 0.68) -> bytes:
         y_prev = y
     return bytes(out)
 
+def _fade_in_pcm16(frame: bytes, step: int, total: int) -> bytes:
+    if total <= 1:
+        return frame
+    import struct
+    fac_start = 0.15 
+    fac_end = 1.0
+    t = step / (total - 1)
+    fac = fac_start + (fac_end - fac_start) * t
+    out = bytearray(len(frame))
+    mv = memoryview(out)
+    idx = 0
+    for (sample,) in struct.iter_unpack("<h", frame):
+        v = int(sample * fac)
+        if v > 32767: v = 32767
+        if v < -32768: v = -32768
+        struct.pack_into("<h", mv, idx, v)
+        idx += 2
+    return bytes(out)
 
 class CoalescedLogger:
     def __init__(self, tag="[EM Events]", window_ms=600):
@@ -342,6 +363,8 @@ class ExtermalMediaBridge:
         buf_24k = bytearray()
         pcm8k_buf = bytearray()
         ratecv_state = None
+        first_frames_to_fade = 0
+        is_new_phrase = False
         try:
             async for pcm24 in self.session.stream_agent_tts():
                 if self._stop.is_set():
@@ -358,9 +381,12 @@ class ExtermalMediaBridge:
                     pcm24_f32 = pcm24_int16.astype(np.float32) / 32768.0
                     pcm8_f32 = samplerate.resample(pcm24_f32, 8000 / 24000, "sinc_best")
                     pcm8_int16 = (pcm8_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
+                    was_empty_8k = (len(pcm8k_buf) == 0)
                     pcm8k = pcm8_int16.tobytes()
                     pcm8k_buf.extend(pcm8k)
-
+                    if was_empty_8k:
+                        is_new_phrase = True
+                        first_frames_to_fade = FADE_IN_FRAMES
                     while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
                         frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
                         del pcm8k_buf[:BYTES_8K_PER_FRAME]
@@ -369,6 +395,22 @@ class ExtermalMediaBridge:
                             frame16 = _lpf_8k_simple(frame16)
                         if DE_ESSER:
                             frame16 = _soft_de_esser_pcm16(frame16, DE_ESSER_AMOUNT)
+                        
+                        if is_new_phrase:
+                            if PRE_ROLL and PRE_ROLL_FRAMES > 0:
+                                pre = b"\x7F" * (SAMPLES_PER_PKT) 
+                                async with self._buffer_lock:
+                                    for _ in range(PRE_ROLL_FRAMES):
+                                        self.accum_out.extend(pre)
+                            is_new_phrase = False  
+                        if first_frames_to_fade > 0:
+                            frame16 = _fade_in_pcm16(
+                                frame16,
+                                FADE_IN_FRAMES - first_frames_to_fade,
+                                FADE_IN_FRAMES
+                            )
+                            first_frames_to_fade -= 1
+                        # ------------------------------------------------
                         
                         ulaw_frame = audioop.lin2ulaw(frame16, 2)
                         async with self._buffer_lock:
