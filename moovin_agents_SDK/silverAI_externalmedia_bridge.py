@@ -397,11 +397,6 @@ class ExtermalMediaBridge:
                             frame16 = _soft_de_esser_pcm16(frame16, DE_ESSER_AMOUNT)
                         
                         if is_new_phrase:
-                            if PRE_ROLL and PRE_ROLL_FRAMES > 0:
-                                pre = b"\x7F" * (SAMPLES_PER_PKT) 
-                                async with self._buffer_lock:
-                                    for _ in range(PRE_ROLL_FRAMES):
-                                        self.accum_out.extend(pre)
                             is_new_phrase = False  
                         if first_frames_to_fade > 0:
                             frame16 = _fade_in_pcm16(
