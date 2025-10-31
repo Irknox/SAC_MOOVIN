@@ -20,6 +20,9 @@ RTP_PT             = int(os.getenv("RTP_PT"))
 LOG_LEVEL          = os.getenv("LOG_LEVEL", "INFO").upper()
 ECHO_BACK          = os.getenv("ECHO_BACK", "0") == "1"
 FRAME_MS           = int(os.getenv("FRAME_MS", "20"))   
+LPF_8K          = os.getenv("LPF_8K", "0") == "1"
+DE_ESSER        = os.getenv("DE_ESSER", "0") == "1"
+DE_ESSER_AMOUNT = float(os.getenv("DE_ESSER_AMOUNT", "0.20"))
 SAMPLE_RATE = 8000
 SAMPLES_PER_PKT = int(SAMPLE_RATE * (FRAME_MS/1000.0))   # 20 ms -> 160 a 8 kHz
 BYTES_24K_PER_FRAME = int(24000 * (FRAME_MS/1000.0)) * 2   # p.ej. 20 ms -> 960 B a 24k PCM16
@@ -33,6 +36,44 @@ def log_err(*a): _CUR_LVL >= 0 and print(_ts(), "| ERROR |", *a, flush=True)
 def log_warn(*a): _CUR_LVL >= 1 and print(_ts(), "| WARN  |", *a, flush=True)
 def log_info(*a): _CUR_LVL >= 2 and print(_ts(), "| INFO  |", *a, flush=True)
 def log_dbg(*a): _CUR_LVL >= 3 and print(_ts(), "| DEBUG |", *a, flush=True)
+
+def _lpf_8k_simple(pcm: bytes, alpha: float = 0.715) -> bytes:
+    if not pcm:
+        return pcm
+    import array
+    arr = array.array("h")
+    arr.frombytes(pcm)
+    y = 0
+    for i, x in enumerate(arr):
+        y = int(y + alpha * (x - y))
+        if y > 32767: y = 32767
+        if y < -32768: y = -32768
+        arr[i] = y
+    return arr.tobytes()
+
+def _soft_de_esser_pcm16(pcm: bytes, amount: float = 0.68) -> bytes:
+    if not pcm:
+        return pcm
+    import struct
+    nsamp = len(pcm) // 2
+    if nsamp == 0:
+        return pcm
+    it = struct.iter_unpack("<h", pcm)
+    out = bytearray(len(pcm))
+    w = memoryview(out)
+    y_prev = 0.0
+    a = max(0.0, min(0.45, amount))
+    one_minus = 1.0 - a
+    idx = 0
+    for (x,) in it:
+        y = one_minus * x + a * y_prev
+        mixed = 0.22 * y + 0.78 * x
+        if mixed > 32767: mixed = 32767
+        if mixed < -32768: mixed = -32768
+        struct.pack_into("<h", w, idx, int(mixed))
+        idx += 2
+        y_prev = y
+    return bytes(out)
 
 
 class CoalescedLogger:
@@ -323,7 +364,12 @@ class ExtermalMediaBridge:
                     while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
                         frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
                         del pcm8k_buf[:BYTES_8K_PER_FRAME]
-
+                        
+                        if LPF_8K:
+                            frame16 = _lpf_8k_simple(frame16)
+                        if DE_ESSER:
+                            frame16 = _soft_de_esser_pcm16(frame16, DE_ESSER_AMOUNT)
+                        
                         ulaw_frame = audioop.lin2ulaw(frame16, 2)
                         async with self._buffer_lock:
                             self.accum_out.extend(ulaw_frame)
