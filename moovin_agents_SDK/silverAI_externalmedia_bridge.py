@@ -10,6 +10,9 @@ from collections import defaultdict
 from SilverAI_Voice import SilverAIVoice
 import audioop
 from audioop import ulaw2lin, lin2ulaw
+
+import numpy as np
+import samplerate
 # ========= ENV =========
 BIND_IP            = os.getenv("BIND_IP")
 BIND_PORT          = int(os.getenv("BIND_PORT"))
@@ -17,10 +20,10 @@ RTP_PT             = int(os.getenv("RTP_PT"))
 LOG_LEVEL          = os.getenv("LOG_LEVEL", "INFO").upper()
 ECHO_BACK          = os.getenv("ECHO_BACK", "0") == "1"
 FRAME_MS           = int(os.getenv("FRAME_MS", "20"))   
-SAMPLE_RATE = 24000
-SAMPLES_PER_PKT = int(SAMPLE_RATE * (FRAME_MS/1000.0))   # ej. 30 ms -> 720
-BYTES_24K_PER_FRAME = SAMPLES_PER_PKT * 2               # bytes por frame del productor
-BYTES_PER_PKT = SAMPLES_PER_PKT * 2 
+SAMPLE_RATE = 8000
+SAMPLES_PER_PKT = int(SAMPLE_RATE * (FRAME_MS/1000.0))   # 20 ms -> 160 a 8 kHz
+BYTES_24K_PER_FRAME = int(24000 * (FRAME_MS/1000.0)) * 2   # p.ej. 20 ms -> 960 B a 24k PCM16
+BYTES_8K_PER_FRAME  = SAMPLES_PER_PKT * 2  
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
 _CUR_LVL = max(0, _LEVELS.index(LOG_LEVEL) if LOG_LEVEL in _LEVELS else 2)
@@ -184,6 +187,7 @@ class ExtermalMediaBridge:
         self.accum_out = bytearray()  
         self._buffer_lock = asyncio.Lock() 
         self.session_tasks = []
+        self.call_started_at = None      
         
     # ---- Inbound: RTP PCMU -> SDK (usuario habla) ----
     async def rtp_inbound_task(self):
@@ -201,11 +205,12 @@ class ExtermalMediaBridge:
                     await self.cleanup_session() 
                     self._stop.set()
                     break
-                
-                if not self.rtp.remote_learned:
-                    log_warn("[RTP] No se ha aprendido un destino válido para RTP")
-                    continue
-                
+                if self.call_started_at and (time.monotonic() - self.call_started_at) > (55 * 60):
+                    log_warn("[Bridge] Llamada superó 55 minutos. Cerrando sesión y deteniendo bridge.")
+                    await self.cleanup_session()
+                    self._stop.set()
+                    break
+
                 last, addr_last, dropped = self.rtp.drain_nonblocking(max_bytes=1024*1024)
                 if last is not None:
                     pkt_bytes = last
@@ -237,7 +242,9 @@ class ExtermalMediaBridge:
                 if ECHO_BACK:
                     try:
                         async with self._tx_lock:
-                            await self.rtp.send_payload(pkt["payload"])  
+                            await self.rtp.send_payload_with_headers(
+                                pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
+                            )
                         plen = len(pkt["payload"])
                         self.bytes_out += plen + 12
                         self.out_probe.note(plen + 12)
@@ -248,11 +255,14 @@ class ExtermalMediaBridge:
                     continue
                 else:
                     try:
-                        pcm24 = pkt["payload"] 
-                        await self.session.append_input_audio_24k(pcm24)
-                        self.evlog.tick("to:sdk")
+                        pcm8k = audioop.ulaw2lin(pkt["payload"], 2)
+                        try:
+                            self.session.feed_pcm16(pcm8k)
+                            self.evlog.tick("to:sdk")
+                        except Exception as e:
+                            log_warn(f"feed_pcm16 error: {e}")
                     except Exception as e:
-                        log_warn(f"Error procesando audio entrante: {e}")
+                        log_warn(f"append_input_audio_24k error: {e}")
 
                     self._periodic_log()
         except asyncio.CancelledError:
@@ -274,8 +284,6 @@ class ExtermalMediaBridge:
             self.bytes_out = 0
             self.suppress_keepalive_until = 0.0
             self._sdk_playing = False
-            self.rtp.remote = None
-            self.rtp.remote_learned = False
             log_info("[Bridge] Estado limpiado tras desconexión")
 
             for task in self.session_tasks:
@@ -300,24 +308,33 @@ class ExtermalMediaBridge:
                 if pcm24:
                     buf_24k.extend(pcm24)
 
-                 # Colocar audio en formato slin24 en el buffer dinámico
+                # Convertir audio de 24k a 8k y μ-law
                 while len(buf_24k) >= BYTES_24K_PER_FRAME:
                     slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
                     del buf_24k[:BYTES_24K_PER_FRAME]
-                    async with self._buffer_lock:
-                        self.accum_out.extend(slice24)
+
+                    pcm24_int16 = np.frombuffer(slice24, dtype="<i2")
+                    pcm24_f32 = pcm24_int16.astype(np.float32) / 32768.0
+                    pcm8_f32 = samplerate.resample(pcm24_f32, 8000 / 24000, "sinc_best")
+                    pcm8_int16 = (pcm8_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
+                    pcm8k = pcm8_int16.tobytes()
+                    pcm8k_buf.extend(pcm8k)
+
+                    while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
+                        frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
+                        del pcm8k_buf[:BYTES_8K_PER_FRAME]
+
+                        ulaw_frame = audioop.lin2ulaw(frame16, 2)
+                        async with self._buffer_lock:
+                            self.accum_out.extend(ulaw_frame)
         except asyncio.CancelledError:
             log_info("[RTP] Tarea rtp_inbound_task cancelada")          
                   
     async def rtp_pacer_loop(self):
         """Consume el buffer dinámico y envía los datos a intervalos regulares."""
         target_s = FRAME_MS / 1000.0
-        SILENCE_PCM24 = b"\x00\x00" * SAMPLES_PER_PKT
+        SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT
         next_deadline = time.monotonic() + target_s
-        if ECHO_BACK:
-            while not self._stop.is_set():
-                await asyncio.sleep(FRAME_MS / 1000.0)
-            return
         try:
             while not self._stop.is_set():
                 now = time.monotonic()
@@ -329,35 +346,36 @@ class ExtermalMediaBridge:
 
                 if getattr(self.session, "_flush_tts_event", None) and self.session._flush_tts_event.is_set():
                     async with self._buffer_lock:
-                        self.accum_out.clear()
+                        self.accum_out.clear() 
                     self.session._flush_tts_event.clear()
                     log_info("[Bridge] FLUSH TTS detectado en rtp_pacer_loop")
-
+                    
                 payload = None
                 async with self._buffer_lock:
-                    if len(self.accum_out) >= BYTES_PER_PKT:
-                        payload = bytes(self.accum_out[:BYTES_PER_PKT])
-                        del self.accum_out[:BYTES_PER_PKT]
-                    else:
-                        payload = SILENCE_PCM24
+                    if len(self.accum_out) >= SAMPLES_PER_PKT:
+                        payload = bytes(self.accum_out[:SAMPLES_PER_PKT])
+                        del self.accum_out[:SAMPLES_PER_PKT]
+
+                if payload is None:
+                    payload = SILENCE_ULAW 
 
                 try:
                     async with self._tx_lock:
                         await self.rtp.send_payload(payload)
                     self.bytes_out += len(payload) + 12
                     self.out_probe.note(len(payload) + 12)
-                    self.evlog.tick("out:rtp" if payload is not SILENCE_PCM24 else "out:sil")
+                    self.evlog.tick("out:rtp" if payload is not SILENCE_ULAW else "out:sil")
                 except Exception as e:
                     log_warn(f"Error enviando RTP: {e}")
         except asyncio.CancelledError:
-            log_info("[RTP] Tarea rtp_pacer_loop cancelada")        
+            log_info("[RTP] Tarea rtp_inbound_task cancelada")         
                     
     # ---- Keep-alive de silencio cuando el agente habla ----
     async def keepalive_while_speaking(self):
         if ECHO_BACK:
             return
         target_s = FRAME_MS / 1000.0
-        SILENCE_PCM16 = b"\x00\x00" * SAMPLES_PER_PKT
+        silence = b"\x7F" * SAMPLES_PER_PKT
 
         while not self._stop.is_set():
             await asyncio.sleep(target_s)
@@ -368,9 +386,9 @@ class ExtermalMediaBridge:
                         continue
                     try:
                         async with self._tx_lock:
-                            await self.rtp.send_payload(SILENCE_PCM16)
-                        self.bytes_out += len(SILENCE_PCM16) + 12
-                        self.out_probe.note(len(SILENCE_PCM16) + 12)
+                            await self.rtp.send_payload(silence)
+                        self.bytes_out += len(silence) + 12
+                        self.out_probe.note(len(silence) + 12)
                         self.evlog.tick("out:sil")
                     except Exception as e:
                         log_warn(f"keepalive send error: {e}")
@@ -401,6 +419,9 @@ class ExtermalMediaBridge:
     # ---- Ciclo principal ----
     async def run(self):
         while True: 
+            self._stop.clear()           
+            self.session_tasks = []        
+            self.call_started_at = time.monotonic()  
             self.rtp.remote = None
             self.rtp.remote_learned = False
             self.rtp.seq = int.from_bytes(os.urandom(2), "big")
@@ -408,9 +429,9 @@ class ExtermalMediaBridge:
             self.rtp.ssrc = struct.unpack("!I", os.urandom(4))[0]
             self.suppress_keepalive_until = 0.0
             log_info("[RTP] Reset aprendizaje destino para nueva llamada")
-            log_info("Inicializando sesión SDK…")
-            self.session = await self.voice.start()  # Crear nueva sesión
 
+            self.session = await self.voice.start() 
+            log_info("Sesión SilverAI Iniciada…")
             if hasattr(self.session, "set_on_audio_interrupted"):
                 try:
                     self.session.set_on_audio_interrupted(self.on_audio_interrupted)
@@ -418,17 +439,14 @@ class ExtermalMediaBridge:
                 except Exception as e:
                     log_warn(f"Error configurando callback on_audio_interrupted: {e}")
 
-            log_info(f"RTP PCM16 en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
+            log_info(f"RTP PCMU en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
 
-            await asyncio.sleep(0.5)
-
-            tasks = [asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task")]
-
-            if not ECHO_BACK:
-                tasks.append(asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"))
-                tasks.append(asyncio.create_task(self.rtp_pacer_loop(), name="rtp_pacer_loop"))
-
-            self.session_tasks.extend(tasks)
+            tasks = [
+                asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
+                asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"),
+                asyncio.create_task(self.rtp_pacer_loop(), name="rtp_pacer_loop"),
+            ]
+            self.session_tasks.extend(tasks) 
 
             try:
                 async with self.session:
