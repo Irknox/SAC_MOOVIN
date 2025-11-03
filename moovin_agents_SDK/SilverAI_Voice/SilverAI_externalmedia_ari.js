@@ -4,7 +4,7 @@
 // - Añade SIP y External al bridge
 // - Límite de duración opcional
 // - Limpieza simétrica y manejo de StasisStart/End para EM
-
+const dgram = require("dgram");
 require("dotenv").config();
 const ari = require("ari-client");
 
@@ -21,6 +21,9 @@ const {
   EXTERNAL_DIRECTION = "both",
   MAX_CALL_MS = "0",
   LOG_LEVEL = "INFO",
+  CONTROL_TOKEN,
+  CONTROL_PORT,
+  CONTROL_BIND,
 } = process.env;
 
 const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"];
@@ -48,6 +51,19 @@ class CallState {
   }
 }
 const CALLS = new Map();
+
+function pickActiveSipId() {
+  let bestId = null,
+    bestTs = -1;
+  for (const [sipId, st] of CALLS.entries()) {
+    if (st && typeof st.startedAtMs === "number" && st.startedAtMs > bestTs) {
+      bestId = sipId;
+      bestTs = st.startedAtMs;
+    }
+  }
+  return bestId;
+}
+
 const EXT_TO_SIP = new Map();
 let client;
 
@@ -72,7 +88,12 @@ function isExternalMediaName(name) {
 }
 
 // --- Handlers ---
-async function addExtToBridgeWithRetry(bridgeId, extId, retries = 5, delayMs = 300) {
+async function addExtToBridgeWithRetry(
+  bridgeId,
+  extId,
+  retries = 5,
+  delayMs = 300
+) {
   for (let i = 0; i < retries; i++) {
     try {
       const br = await client.bridges.get({ bridgeId });
@@ -153,7 +174,7 @@ async function onStasisStart(event, channel) {
     }
     const em = await client.channels.externalMedia({
       app: ARI_APP,
-      external_host: EXTERNAL_HOST, 
+      external_host: EXTERNAL_HOST,
       format: EXTERNAL_FORMAT,
       transport: EXTERNAL_TRANSPORT,
       encapsulation: EXTERNAL_ENCAPSULATION,
@@ -161,22 +182,25 @@ async function onStasisStart(event, channel) {
       originator: sipId,
     });
     const addrVar = await client.channels.getChannelVar({
-      channelId: em.id, variable: "UNICASTRTP_LOCAL_ADDRESS"
+      channelId: em.id,
+      variable: "UNICASTRTP_LOCAL_ADDRESS",
     });
     const portVar = await client.channels.getChannelVar({
-      channelId: em.id, variable: "UNICASTRTP_LOCAL_PORT"
+      channelId: em.id,
+      variable: "UNICASTRTP_LOCAL_PORT",
     });
-    const astIp   = String(addrVar?.value || "127.0.0.1");
+    const astIp = String(addrVar?.value || "127.0.0.1");
     const astPort = parseInt(String(portVar?.value || "0"), 10);
     log.info(`Asterisk RTP dst aprendido por ARI: ${astIp}:${astPort}`);
-    const dgram = require("dgram");
-    const sock  = dgram.createSocket("udp4");
+    const sock = dgram.createSocket("udp4");
     const [bridgeHost, bridgePortStr] = String(EXTERNAL_HOST).split(":");
     const bridgePort = parseInt(bridgePortStr, 10);
     const ctrlMsg = Buffer.from(`CTRL ${astIp}:${astPort}`);
     sock.send(ctrlMsg, bridgePort, bridgeHost, (err) => {
       if (err) log.warn(`No pude enviar CTRL al bridge: ${err.message}`);
-      try { sock.close(); } catch {}
+      try {
+        sock.close();
+      } catch {}
     });
     CALLS.get(sipId).extChannelId = em.id;
     EXT_TO_SIP.set(em.id, sipId);
@@ -201,9 +225,8 @@ async function onStasisEnd(event, channel) {
     return;
   }
 
-
   await cleanupCall(chId);
-  notifyBridgeCallEnded(); 
+  notifyBridgeCallEnded();
 }
 
 function notifyBridgeCallEnded() {
@@ -252,6 +275,55 @@ async function cleanupCall(sipId) {
   CALLS.delete(sipId);
 }
 
+async function transferToExtension(
+  sipId,
+  targetExt,
+  context = "from-internal"
+) {
+  const state = CALLS.get(sipId);
+  if (!state) {
+    log.warn(`transferToExtension: no state para SIP ${sipId}`);
+    return false;
+  }
+  if (state.extChannelId) {
+    try {
+      await client.channels.hangup({ channelId: state.extChannelId });
+      log.info(`External ${state.extChannelId} colgado antes de transfer`);
+    } catch (e) {
+      log.warn(`No pude colgar external ${state.extChannelId}: ${e.message}`);
+    }
+    EXT_TO_SIP.delete(state.extChannelId);
+    state.extChannelId = null;
+  }
+  if (state.bridgeId) {
+    try {
+      const br = await client.bridges.get({ bridgeId: state.bridgeId });
+      await br.destroy();
+      log.info(`Bridge ${state.bridgeId} destruido antes de transfer`);
+    } catch (e) {
+      log.warn(`No pude destruir bridge ${state.bridgeId}: ${e.message}`);
+    }
+    state.bridgeId = null;
+  }
+  if (state.limitTimer) {
+    clearInterval(state.limitTimer);
+    state.limitTimer = null;
+  }
+
+  try {
+    await client.channels.continueInDialplan({
+      channelId: sipId,
+      context,
+      extension: String(targetExt),
+      priority: 1,
+    });
+    log.info(`Transfer OK: SIP ${sipId} -> ${context},${targetExt},1`);
+    return true;
+  } catch (e) {
+    log.error(`continueInDialplan fallo para ${sipId}: ${e.message}`);
+    return false;
+  }
+}
 async function shutdown(sig) {
   log.info(`Señal ${sig} recibida. Cerrando…`);
   try {
@@ -283,6 +355,46 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
     client.on("close", () => log.info("Conexión ARI cerrada"));
 
     await client.start(ARI_APP);
+    const ctrlSock = dgram.createSocket("udp4");
+    ctrlSock.on("error", (err) => log.warn(`CTRL UDP error: ${err.message}`));
+    ctrlSock.on("message", async (msg, rinfo) => {
+      try {
+        const txt = String(msg || "").trim();
+        if (!txt.startsWith("XFER")) return;
+
+        const parts = txt.split(/\s+/);
+        let token = null,
+          ext = null,
+          ctx = "from-internal";
+
+        if (CONTROL_TOKEN) {
+          // esperar: XFER <token> <ext> [context]
+          if (parts.length < 3)
+            return log.warn("CTRL XFER: formato inválido con token");
+          token = parts[1];
+          if (token !== CONTROL_TOKEN)
+            return log.warn("CTRL XFER: token inválido");
+          ext = parts[2];
+          if (parts[3]) ctx = parts[3];
+        } else {
+          // esperar: XFER <ext> [context]
+          if (parts.length < 2) return log.warn("CTRL XFER: formato inválido");
+          ext = parts[1];
+          if (parts[2]) ctx = parts[2];
+        }
+
+        const sipId = pickActiveSipId();
+        if (!sipId) return log.warn("CTRL XFER: no hay llamada activa");
+
+        const ok = await transferToExtension(sipId, ext, ctx);
+        if (!ok) log.warn(`CTRL XFER falló para ext=${ext}`);
+      } catch (e) {
+        log.warn(`CTRL XFER error: ${e.message}`);
+      }
+    });
+    ctrlSock.bind(CONTROL_PORT, CONTROL_BIND, () =>
+      log.info(`CTRL UDP escuchando en ${CONTROL_BIND}:${CONTROL_PORT}`)
+    );
     log.info(
       `Escuchando eventos… ExternalMedia -> ${EXTERNAL_HOST} format=${EXTERNAL_FORMAT} encap=${EXTERNAL_ENCAPSULATION} transport=${EXTERNAL_TRANSPORT} dir=${EXTERNAL_DIRECTION}`
     );

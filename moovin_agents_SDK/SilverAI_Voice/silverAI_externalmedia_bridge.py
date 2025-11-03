@@ -1,18 +1,11 @@
-# - Logs coalescidos + FlowProbe
-# - Pacing fijo a 20 ms
-# - Modo ECO opcional (rebota audio sin pasar al agente)
-# - Keep-alive de silencio mientras el agente "is_speaking()"
-# - Flush inmediato al evento audio_interrupted
-# - Contadores IN/OUT con snapshot periódico
-
 import os, asyncio, socket, struct, time, contextlib
 from collections import defaultdict
 from SilverAI_Voice import SilverAIVoice
 import audioop
 from audioop import ulaw2lin, lin2ulaw
-
+from config import create_mysql_pool, create_tools_pool
 import numpy as np
-import samplerate
+import samplerate # pyright: ignore[reportMissingImports]
 # ========= ENV =========
 BIND_IP            = os.getenv("BIND_IP")
 BIND_PORT          = int(os.getenv("BIND_PORT"))
@@ -30,6 +23,11 @@ BYTES_8K_PER_FRAME  = SAMPLES_PER_PKT * 2
 PRE_ROLL            = os.getenv("PRE_ROLL", "1") == "1"
 PRE_ROLL_FRAMES     = int(os.getenv("PRE_ROLL_FRAMES", "1"))
 FADE_IN_FRAMES      = int(os.getenv("FADE_IN_FRAMES", "2"))
+AGC_ENABLE        = os.getenv("AGC_ENABLE", "1") == "1"
+AGC_TARGET_RMS    = int(os.getenv("AGC_TARGET_RMS", "4000"))
+COMPRESS_ENABLE   = os.getenv("COMPRESS_ENABLE", "1") == "1"
+COMPRESS_RATIO    = float(os.getenv("COMPRESS_RATIO", "1.6"))   # 1.5–2.0
+LIMIT_MAX         = int(os.getenv("LIMIT_MAX", "30000")) 
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
 _CUR_LVL = max(0, _LEVELS.index(LOG_LEVEL) if LOG_LEVEL in _LEVELS else 2)
@@ -39,6 +37,50 @@ def log_err(*a): _CUR_LVL >= 0 and print(_ts(), "| ERROR |", *a, flush=True)
 def log_warn(*a): _CUR_LVL >= 1 and print(_ts(), "| WARN  |", *a, flush=True)
 def log_info(*a): _CUR_LVL >= 2 and print(_ts(), "| INFO  |", *a, flush=True)
 def log_dbg(*a): _CUR_LVL >= 3 and print(_ts(), "| DEBUG |", *a, flush=True)
+
+
+async def init_resources():
+    preloaded_resources={
+    "tools": create_tools_pool,
+    "mysql": create_mysql_pool,   
+    }
+        
+    resources = {}
+    for name, resource in preloaded_resources.items():
+        response = await resource()
+        if response:
+            resources[name] = response
+    return resources
+
+def _agc_rms(frame: bytes, target_rms: int) -> bytes:
+    import audioop
+    rms = audioop.rms(frame, 2)
+    if rms == 0:
+        return frame
+    gain = target_rms / rms
+    if gain > 3.0:
+        gain = 3.0
+    return audioop.mul(frame, 2, gain)
+
+def _soft_compress_and_limit(frame: bytes, ratio: float, limit_max: int) -> bytes:
+    import struct
+    out = bytearray(len(frame))
+    mv = memoryview(out)
+    idx = 0
+    thr = 18000
+    for (s,) in struct.iter_unpack("<h", frame):
+        x = s
+        if x > thr:
+            over = x - thr
+            x = int(thr + over / ratio)
+        elif x < -thr:
+            over = x + thr
+            x = int(-thr + over / ratio)
+        if x > limit_max: x = limit_max
+        if x < -limit_max: x = -limit_max
+        struct.pack_into("<h", mv, idx, x)
+        idx += 2
+    return bytes(out)
 
 def _lpf_8k_simple(pcm: bytes, alpha: float = 0.715) -> bytes:
     if not pcm:
@@ -233,7 +275,7 @@ class RtpIO:
 class ExtermalMediaBridge:
     def __init__(self):
         self.rtp = RtpIO(BIND_IP, BIND_PORT, RTP_PT)
-        self.voice = SilverAIVoice()
+        self.voice = None
         self.session = None
         self._stop = asyncio.Event()
         self._sdk_playing = False
@@ -391,8 +433,15 @@ class ExtermalMediaBridge:
                         frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
                         del pcm8k_buf[:BYTES_8K_PER_FRAME]
                         
+                        if AGC_ENABLE:
+                            frame16 = _agc_rms(frame16, AGC_TARGET_RMS)
+                            
+                        if COMPRESS_ENABLE:
+                            frame16 = _soft_compress_and_limit(frame16, COMPRESS_RATIO, LIMIT_MAX)
+                            
                         if LPF_8K:
                             frame16 = _lpf_8k_simple(frame16)
+                            
                         if DE_ESSER:
                             frame16 = _soft_de_esser_pcm16(frame16, DE_ESSER_AMOUNT)
                         
@@ -496,7 +545,8 @@ class ExtermalMediaBridge:
             print(f"[Bridge] IN={self.bytes_in}  OUT={self.bytes_out}  (último ~1s)", flush=True)
             self.bytes_in = 0; self.bytes_out = 0
             self.last_log = now
-
+            
+        
     # ---- Ciclo principal ----
     async def run(self):
         while True: 
@@ -511,7 +561,9 @@ class ExtermalMediaBridge:
             self.suppress_keepalive_until = 0.0
             log_info("[RTP] Reset aprendizaje destino para nueva llamada")
 
-            self.session = await self.voice.start() 
+            resources = await init_resources()
+            self.voice = SilverAIVoice(resources) 
+            self.session = await self.voice.start()  
             log_info("Sesión SilverAI Iniciada…")
             if hasattr(self.session, "set_on_audio_interrupted"):
                 try:
