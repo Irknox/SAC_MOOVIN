@@ -3,7 +3,7 @@ from collections import defaultdict
 from SilverAI_Voice import SilverAIVoice
 import audioop
 from audioop import ulaw2lin, lin2ulaw
-from ..config import create_mysql_pool, create_tools_pool
+from config import create_mysql_pool, create_tools_pool
 import numpy as np
 import samplerate # pyright: ignore[reportMissingImports]
 # ========= ENV =========
