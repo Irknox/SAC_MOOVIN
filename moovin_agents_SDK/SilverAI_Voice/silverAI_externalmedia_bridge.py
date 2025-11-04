@@ -29,6 +29,8 @@ COMPRESS_ENABLE   = os.getenv("COMPRESS_ENABLE", "1") == "1"
 COMPRESS_RATIO    = float(os.getenv("COMPRESS_RATIO", "1.6"))   # 1.5–2.0
 LIMIT_MAX         = int(os.getenv("LIMIT_MAX", "30000")) 
 
+RESAMPLE_FRAMES = int(os.getenv("RESAMPLE_FRAMES", "3"))  
+
 GAIN_ENABLE       = os.getenv("GAIN_ENABLE", "1") == "1"
 GAIN_DB           = float(os.getenv("GAIN_DB", "4.0"))    
 GAIN_MAX_DB       = float(os.getenv("GAIN_MAX_DB", "6.0")) 
@@ -68,6 +70,19 @@ def _agc_rms(frame: bytes, target_rms: int) -> bytes:
     if gain > 3.0:
         gain = 3.0
     return audioop.mul(frame, 2, gain)
+
+def _hard_limit_int16(frame: bytes, limit_max: int = 30000) -> bytes:
+    import struct
+    out = bytearray(len(frame))
+    mv  = memoryview(out)
+    idx = 0
+    for (s,) in struct.iter_unpack("<h", frame):
+        x = s
+        if x >  limit_max: x =  limit_max
+        if x < -limit_max: x = -limit_max
+        struct.pack_into("<h", mv, idx, x)
+        idx += 2
+    return bytes(out)
 
 def _soft_compress_and_limit(frame: bytes, ratio: float, limit_max: int) -> bytes:
     import struct
@@ -453,36 +468,32 @@ class ExtermalMediaBridge:
                     buf_24k.extend(pcm24)
 
                 # Convertir audio de 24k a 8k y μ-law
-                while len(buf_24k) >= BYTES_24K_PER_FRAME:
-                    slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
-                    del buf_24k[:BYTES_24K_PER_FRAME]
+                min_block = RESAMPLE_FRAMES * BYTES_24K_PER_FRAME
+                while len(buf_24k) >= min_block:
+                    slice24 = bytes(buf_24k[:min_block])
+                    del buf_24k[:min_block]
 
                     pcm24_int16 = np.frombuffer(slice24, dtype="<i2")
-                    pcm24_f32 = pcm24_int16.astype(np.float32) / 32768.0
-                    pcm8_f32 = samplerate.resample(pcm24_f32, 8000 / 24000, "sinc_best")
-                    pcm8_int16 = (pcm8_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
+                    pcm24_f32   = pcm24_int16.astype(np.float32) / 32768.0
+                    pcm8_f32    = samplerate.resample(pcm24_f32, 8000/24000, "sinc_best")
+                    pcm8_int16  = (pcm8_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
+
                     was_empty_8k = (len(pcm8k_buf) == 0)
                     pcm8k = pcm8_int16.tobytes()
                     pcm8k_buf.extend(pcm8k)
                     if was_empty_8k:
                         is_new_phrase = True
                         first_frames_to_fade = FADE_IN_FRAMES
+                        
                     while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
                         frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
                         del pcm8k_buf[:BYTES_8K_PER_FRAME]
-                        
-                        if AGC_ENABLE:
-                            frame16 = _agc_rms(frame16, AGC_TARGET_RMS)
-                            
-                        if COMPRESS_ENABLE:
-                            frame16 = _soft_compress_and_limit(frame16, COMPRESS_RATIO, LIMIT_MAX)
-                            
+
                         if LPF_8K:
                             frame16 = _lpf_8k_simple(frame16)
-                            
                         if DE_ESSER:
                             frame16 = _soft_de_esser_pcm16(frame16, DE_ESSER_AMOUNT)
-                        
+
                         if first_frames_to_fade > 0:
                             frame16 = _fade_in_pcm16(
                                 frame16,
@@ -490,13 +501,14 @@ class ExtermalMediaBridge:
                                 FADE_IN_FRAMES
                             )
                             first_frames_to_fade -= 1
-                            
+
                         if GAIN_ENABLE and GAIN_DB != 0.0:
                             frame16 = _apply_gain_db(frame16, GAIN_DB, GAIN_MAX_DB)
-                            
+
+                        frame16 = _hard_limit_int16(frame16, LIMIT_MAX)
+
                         if DITHER_ENABLE and DITHER_LEVEL_LSB > 0:
                             frame16 = _dither_tpdf_int16(frame16, DITHER_LEVEL_LSB)
-                            
                         ulaw_frame = audioop.lin2ulaw(frame16, 2)
                         async with self._buffer_lock:
                             self.accum_out.extend(ulaw_frame)
