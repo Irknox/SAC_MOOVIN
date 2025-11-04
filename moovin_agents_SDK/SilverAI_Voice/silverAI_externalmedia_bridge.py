@@ -37,6 +37,8 @@ GAIN_MAX_DB       = float(os.getenv("GAIN_MAX_DB", "6.0"))
 
 DITHER_ENABLE     = os.getenv("DITHER_ENABLE", "1") == "1"
 DITHER_LEVEL_LSB  = int(os.getenv("DITHER_LEVEL_LSB", "1")) 
+
+SPEAKING_GRACE_MS = int(os.getenv("SPEAKING_GRACE_MS", "6"))
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
 _CUR_LVL = max(0, _LEVELS.index(LOG_LEVEL) if LOG_LEVEL in _LEVELS else 2)
@@ -540,7 +542,15 @@ class ExtermalMediaBridge:
                     if len(self.accum_out) >= SAMPLES_PER_PKT:
                         payload = bytes(self.accum_out[:SAMPLES_PER_PKT])
                         del self.accum_out[:SAMPLES_PER_PKT]
-
+                        
+                if payload is None and getattr(self.session, "is_speaking", None) and self.session.is_speaking():
+                    grace = SPEAKING_GRACE_MS / 1000.0
+                    await asyncio.sleep(min(grace, self.rtp.frame_s / 3))
+                    async with self._buffer_lock:
+                        if len(self.accum_out) >= SAMPLES_PER_PKT:
+                            payload = bytes(self.accum_out[:SAMPLES_PER_PKT])
+                            del self.accum_out[:SAMPLES_PER_PKT]
+                            
                 if payload is None:
                     payload = SILENCE_ULAW 
 
