@@ -508,8 +508,8 @@ class ExtermalMediaBridge:
 
                         frame16 = _hard_limit_int16(frame16, LIMIT_MAX)
 
-                        # if DITHER_ENABLE and DITHER_LEVEL_LSB > 0:
-                        #     frame16 = _dither_tpdf_int16(frame16, DITHER_LEVEL_LSB)
+                        if DITHER_ENABLE and DITHER_LEVEL_LSB > 0:
+                             frame16 = _dither_tpdf_int16(frame16, DITHER_LEVEL_LSB)
 
                         ulaw_frame = audioop.lin2ulaw(frame16, 2)
                         async with self._buffer_lock:
