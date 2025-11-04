@@ -28,9 +28,13 @@ AGC_TARGET_RMS    = int(os.getenv("AGC_TARGET_RMS", "4000"))
 COMPRESS_ENABLE   = os.getenv("COMPRESS_ENABLE", "1") == "1"
 COMPRESS_RATIO    = float(os.getenv("COMPRESS_RATIO", "1.6"))   # 1.5–2.0
 LIMIT_MAX         = int(os.getenv("LIMIT_MAX", "30000")) 
-AGC_MAX_GAIN       = float(os.getenv("AGC_MAX_GAIN", "4.0"))
-COMPRESS_THRESHOLD = int(os.getenv("COMPRESS_THRESHOLD", "20000"))  # antes 18000
-COMPRESS_KNEE      = int(os.getenv("COMPRESS_KNEE", "1500"))  
+
+GAIN_ENABLE       = os.getenv("GAIN_ENABLE", "1") == "1"
+GAIN_DB           = float(os.getenv("GAIN_DB", "4.0"))    
+GAIN_MAX_DB       = float(os.getenv("GAIN_MAX_DB", "6.0")) 
+
+DITHER_ENABLE     = os.getenv("DITHER_ENABLE", "1") == "1"
+DITHER_LEVEL_LSB  = int(os.getenv("DITHER_LEVEL_LSB", "1")) 
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
 _CUR_LVL = max(0, _LEVELS.index(LOG_LEVEL) if LOG_LEVEL in _LEVELS else 2)
@@ -61,44 +65,29 @@ def _agc_rms(frame: bytes, target_rms: int) -> bytes:
     if rms == 0:
         return frame
     gain = target_rms / rms
-    if gain > AGC_MAX_GAIN:
-        gain = AGC_MAX_GAIN  
+    if gain > 3.0:
+        gain = 3.0
     return audioop.mul(frame, 2, gain)
 
 def _soft_compress_and_limit(frame: bytes, ratio: float, limit_max: int) -> bytes:
     import struct
-    thr  = COMPRESS_THRESHOLD       
-    knee = max(0, COMPRESS_KNEE)    
-    low  = thr - knee              
-
     out = bytearray(len(frame))
     mv = memoryview(out)
     idx = 0
-
+    thr = 18000
     for (s,) in struct.iter_unpack("<h", frame):
         x = s
-        ax = abs(x)
-        if ax > low:
-            if ax <= thr:
-                t = (ax - low) / (thr - low + 1e-9)
-                over = ax - thr
-                comp = thr + (over / ratio) if over > 0 else ax
-                y = int((1.0 - t) * x + t * (comp if x >= 0 else -comp))
-            else:
-                over = ax - thr
-                comp = thr + over / ratio
-                y = int(comp if x >= 0 else -comp)
-        else:
-            y = x
-
-        if y > limit_max: y = limit_max
-        if y < -limit_max: y = -limit_max
-
-        struct.pack_into("<h", mv, idx, y)
+        if x > thr:
+            over = x - thr
+            x = int(thr + over / ratio)
+        elif x < -thr:
+            over = x + thr
+            x = int(-thr + over / ratio)
+        if x > limit_max: x = limit_max
+        if x < -limit_max: x = -limit_max
+        struct.pack_into("<h", mv, idx, x)
         idx += 2
-
-    return bytes(out) 
-
+    return bytes(out)
 
 def _lpf_8k_simple(pcm: bytes, alpha: float = 0.715) -> bytes:
     if not pcm:
@@ -136,6 +125,37 @@ def _soft_de_esser_pcm16(pcm: bytes, amount: float = 0.68) -> bytes:
         struct.pack_into("<h", w, idx, int(mixed))
         idx += 2
         y_prev = y
+    return bytes(out)
+
+def _apply_gain_db(frame: bytes, db: float, max_db: float) -> bytes:
+    """Ganancia fija en dB con tope. Evita AGC/compresores; solo sube nivel."""
+    import audioop, math
+    if not frame or db == 0.0:
+        return frame
+    db = max(-max_db, min(max_db, db))
+    gain = math.pow(10.0, db/20.0)
+    return audioop.mul(frame, 2, gain)
+
+def _dither_tpdf_int16(frame: bytes, level_lsb: int = 1) -> bytes:
+    """
+    Dither TPDF muy pequeño antes de μ-law para suavizar la cuantización.
+    level_lsb = 1 añade ruido triangular ~±1 LSB (int16).
+    """
+    if not frame or level_lsb <= 0:
+        return frame
+    import struct, random
+    out = bytearray(len(frame))
+    mv = memoryview(out)
+    scale = level_lsb  # en LSBs de int16
+    idx = 0
+    for (s,) in struct.iter_unpack("<h", frame):
+        # TPDF: (U1 + U2 - 1) * escala ; U ~ Uniforme[0,1)
+        n = (random.random() + random.random() - 1.0) * scale
+        x = int(s + n)
+        if x > 32767: x = 32767
+        if x < -32768: x = -32768
+        struct.pack_into("<h", mv, idx, x)
+        idx += 2
     return bytes(out)
 
 def _fade_in_pcm16(frame: bytes, step: int, total: int) -> bytes:
@@ -470,8 +490,13 @@ class ExtermalMediaBridge:
                                 FADE_IN_FRAMES
                             )
                             first_frames_to_fade -= 1
-                        # ------------------------------------------------
-                        
+                            
+                        if GAIN_ENABLE and GAIN_DB != 0.0:
+                            frame16 = _apply_gain_db(frame16, GAIN_DB, GAIN_MAX_DB)
+                            
+                        if DITHER_ENABLE and DITHER_LEVEL_LSB > 0:
+                            frame16 = _dither_tpdf_int16(frame16, DITHER_LEVEL_LSB)
+                            
                         ulaw_frame = audioop.lin2ulaw(frame16, 2)
                         async with self._buffer_lock:
                             self.accum_out.extend(ulaw_frame)
