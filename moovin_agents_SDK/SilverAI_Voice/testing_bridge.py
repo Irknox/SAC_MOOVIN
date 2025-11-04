@@ -25,17 +25,20 @@ PRE_ROLL_FRAMES     = int(os.getenv("PRE_ROLL_FRAMES", "1"))
 FADE_IN_FRAMES      = int(os.getenv("FADE_IN_FRAMES", "2"))
 AGC_ENABLE        = os.getenv("AGC_ENABLE", "1") == "1"
 AGC_TARGET_RMS    = int(os.getenv("AGC_TARGET_RMS", "4000"))
-
+COMPRESS_ENABLE   = os.getenv("COMPRESS_ENABLE", "1") == "1"
 COMPRESS_RATIO    = float(os.getenv("COMPRESS_RATIO", "1.6"))   # 1.5–2.0
 LIMIT_MAX         = int(os.getenv("LIMIT_MAX", "30000")) 
+
+RESAMPLE_FRAMES = int(os.getenv("RESAMPLE_FRAMES", "3"))  
 
 GAIN_ENABLE       = os.getenv("GAIN_ENABLE", "1") == "1"
 GAIN_DB           = float(os.getenv("GAIN_DB", "4.0"))    
 GAIN_MAX_DB       = float(os.getenv("GAIN_MAX_DB", "6.0")) 
+
+DITHER_ENABLE     = os.getenv("DITHER_ENABLE", "1") == "1"
 DITHER_LEVEL_LSB  = int(os.getenv("DITHER_LEVEL_LSB", "1")) 
 
-COMPRESS_ENABLE   = os.getenv("COMPRESS_ENABLE", "0") == "1"  
-DITHER_ENABLE     = os.getenv("DITHER_ENABLE", "0") == "1"    
+SPEAKING_GRACE_MS = int(os.getenv("SPEAKING_GRACE_MS", "6"))
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
 _CUR_LVL = max(0, _LEVELS.index(LOG_LEVEL) if LOG_LEVEL in _LEVELS else 2)
@@ -70,6 +73,19 @@ def _agc_rms(frame: bytes, target_rms: int) -> bytes:
         gain = 3.0
     return audioop.mul(frame, 2, gain)
 
+def _hard_limit_int16(frame: bytes, limit_max: int = 30000) -> bytes:
+    import struct
+    out = bytearray(len(frame))
+    mv  = memoryview(out)
+    idx = 0
+    for (s,) in struct.iter_unpack("<h", frame):
+        x = s
+        if x >  limit_max: x =  limit_max
+        if x < -limit_max: x = -limit_max
+        struct.pack_into("<h", mv, idx, x)
+        idx += 2
+    return bytes(out)
+
 def _soft_compress_and_limit(frame: bytes, ratio: float, limit_max: int) -> bytes:
     import struct
     out = bytearray(len(frame))
@@ -103,19 +119,6 @@ def _lpf_8k_simple(pcm: bytes, alpha: float = 0.715) -> bytes:
         if y < -32768: y = -32768
         arr[i] = y
     return arr.tobytes()
-
-def _hard_limit_int16(frame: bytes, limit_max: int = 30000) -> bytes:
-    import struct
-    out = bytearray(len(frame))
-    mv = memoryview(out)
-    idx = 0
-    for (s,) in struct.iter_unpack("<h", frame):
-        x = s
-        if x >  limit_max: x =  limit_max
-        if x < -limit_max: x = -limit_max
-        struct.pack_into("<h", mv, idx, x)
-        idx += 2
-    return bytes(out)
 
 def _soft_de_esser_pcm16(pcm: bytes, amount: float = 0.68) -> bytes:
     if not pcm:
@@ -467,39 +470,50 @@ class ExtermalMediaBridge:
                     buf_24k.extend(pcm24)
 
                 # Convertir audio de 24k a 8k y μ-law
-                while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
-                    frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
-                    del pcm8k_buf[:BYTES_8K_PER_FRAME]
+                min_block = RESAMPLE_FRAMES * BYTES_24K_PER_FRAME
+                while len(buf_24k) >= min_block:
+                    slice24 = bytes(buf_24k[:min_block])
+                    del buf_24k[:min_block]
 
-                    if AGC_ENABLE:
-                        frame16 = _agc_rms(frame16, AGC_TARGET_RMS)
+                    pcm24_int16 = np.frombuffer(slice24, dtype="<i2")
+                    pcm24_f32   = pcm24_int16.astype(np.float32) / 32768.0
+                    pcm8_f32    = samplerate.resample(pcm24_f32, 8000/24000, "sinc_best")
+                    pcm8_int16  = (pcm8_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
 
-                    if COMPRESS_ENABLE:
-                        frame16 = _soft_compress_and_limit(frame16, COMPRESS_RATIO, LIMIT_MAX)
+                    was_empty_8k = (len(pcm8k_buf) == 0)
+                    pcm8k = pcm8_int16.tobytes()
+                    pcm8k_buf.extend(pcm8k)
+                    if was_empty_8k:
+                        is_new_phrase = True
+                        first_frames_to_fade = FADE_IN_FRAMES
+                        
+                    while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
+                        frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
+                        del pcm8k_buf[:BYTES_8K_PER_FRAME]
 
-                    if LPF_8K:
-                        frame16 = _lpf_8k_simple(frame16)
+                        if LPF_8K:
+                            frame16 = _lpf_8k_simple(frame16)
+                        if DE_ESSER:
+                            frame16 = _soft_de_esser_pcm16(frame16, DE_ESSER_AMOUNT)
 
-                    if DE_ESSER:
-                        frame16 = _soft_de_esser_pcm16(frame16, DE_ESSER_AMOUNT)
+                        if first_frames_to_fade > 0:
+                            frame16 = _fade_in_pcm16(
+                                frame16,
+                                FADE_IN_FRAMES - first_frames_to_fade,
+                                FADE_IN_FRAMES
+                            )
+                            first_frames_to_fade -= 1
 
-                    if first_frames_to_fade > 0:
-                        frame16 = _fade_in_pcm16(
-                            frame16, FADE_IN_FRAMES - first_frames_to_fade, FADE_IN_FRAMES
-                        )
-                        first_frames_to_fade -= 1
+                        if GAIN_ENABLE and GAIN_DB != 0.0:
+                            frame16 = _apply_gain_db(frame16, GAIN_DB, GAIN_MAX_DB)
 
-                    if GAIN_ENABLE and GAIN_DB != 0.0:
-                        frame16 = _apply_gain_db(frame16, GAIN_DB, GAIN_MAX_DB)
+                        frame16 = _hard_limit_int16(frame16, LIMIT_MAX)
 
-                    frame16 = _hard_limit_int16(frame16, LIMIT_MAX)
-
-                    if DITHER_ENABLE and DITHER_LEVEL_LSB > 0:
-                         frame16 = _dither_tpdf_int16(frame16, DITHER_LEVEL_LSB)
-
-                    ulaw_frame = audioop.lin2ulaw(frame16, 2)
-                    async with self._buffer_lock:
-                        self.accum_out.extend(ulaw_frame)
+                        if DITHER_ENABLE and DITHER_LEVEL_LSB > 0:
+                            frame16 = _dither_tpdf_int16(frame16, DITHER_LEVEL_LSB)
+                        ulaw_frame = audioop.lin2ulaw(frame16, 2)
+                        async with self._buffer_lock:
+                            self.accum_out.extend(ulaw_frame)
         except asyncio.CancelledError:
             log_info("[RTP] Tarea rtp_inbound_task cancelada")          
                   
@@ -528,7 +542,15 @@ class ExtermalMediaBridge:
                     if len(self.accum_out) >= SAMPLES_PER_PKT:
                         payload = bytes(self.accum_out[:SAMPLES_PER_PKT])
                         del self.accum_out[:SAMPLES_PER_PKT]
-
+                        
+                if payload is None and getattr(self.session, "is_speaking", None) and self.session.is_speaking():
+                    grace = SPEAKING_GRACE_MS / 1000.0
+                    await asyncio.sleep(min(grace, self.rtp.frame_s / 3))
+                    async with self._buffer_lock:
+                        if len(self.accum_out) >= SAMPLES_PER_PKT:
+                            payload = bytes(self.accum_out[:SAMPLES_PER_PKT])
+                            del self.accum_out[:SAMPLES_PER_PKT]
+                            
                 if payload is None:
                     payload = SILENCE_ULAW 
 
