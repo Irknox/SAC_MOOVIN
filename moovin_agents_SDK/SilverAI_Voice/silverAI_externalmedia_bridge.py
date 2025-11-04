@@ -28,6 +28,9 @@ AGC_TARGET_RMS    = int(os.getenv("AGC_TARGET_RMS", "4000"))
 COMPRESS_ENABLE   = os.getenv("COMPRESS_ENABLE", "1") == "1"
 COMPRESS_RATIO    = float(os.getenv("COMPRESS_RATIO", "1.6"))   # 1.5–2.0
 LIMIT_MAX         = int(os.getenv("LIMIT_MAX", "30000")) 
+AGC_MAX_GAIN       = float(os.getenv("AGC_MAX_GAIN", "4.0"))
+COMPRESS_THRESHOLD = int(os.getenv("COMPRESS_THRESHOLD", "20000"))  # antes 18000
+COMPRESS_KNEE      = int(os.getenv("COMPRESS_KNEE", "1500"))  
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
 _CUR_LVL = max(0, _LEVELS.index(LOG_LEVEL) if LOG_LEVEL in _LEVELS else 2)
@@ -58,29 +61,44 @@ def _agc_rms(frame: bytes, target_rms: int) -> bytes:
     if rms == 0:
         return frame
     gain = target_rms / rms
-    if gain > 3.0:
-        gain = 3.0
+    if gain > AGC_MAX_GAIN:
+        gain = AGC_MAX_GAIN  
     return audioop.mul(frame, 2, gain)
 
 def _soft_compress_and_limit(frame: bytes, ratio: float, limit_max: int) -> bytes:
     import struct
+    thr  = COMPRESS_THRESHOLD       
+    knee = max(0, COMPRESS_KNEE)    
+    low  = thr - knee              
+
     out = bytearray(len(frame))
     mv = memoryview(out)
     idx = 0
-    thr = 18000
+
     for (s,) in struct.iter_unpack("<h", frame):
         x = s
-        if x > thr:
-            over = x - thr
-            x = int(thr + over / ratio)
-        elif x < -thr:
-            over = x + thr
-            x = int(-thr + over / ratio)
-        if x > limit_max: x = limit_max
-        if x < -limit_max: x = -limit_max
-        struct.pack_into("<h", mv, idx, x)
+        ax = abs(x)
+        if ax > low:
+            if ax <= thr:
+                t = (ax - low) / (thr - low + 1e-9)
+                over = ax - thr
+                comp = thr + (over / ratio) if over > 0 else ax
+                y = int((1.0 - t) * x + t * (comp if x >= 0 else -comp))
+            else:
+                over = ax - thr
+                comp = thr + over / ratio
+                y = int(comp if x >= 0 else -comp)
+        else:
+            y = x
+
+        if y > limit_max: y = limit_max
+        if y < -limit_max: y = -limit_max
+
+        struct.pack_into("<h", mv, idx, y)
         idx += 2
-    return bytes(out)
+
+    return bytes(out) 
+
 
 def _lpf_8k_simple(pcm: bytes, alpha: float = 0.715) -> bytes:
     if not pcm:
