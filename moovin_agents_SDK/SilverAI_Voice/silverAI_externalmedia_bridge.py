@@ -6,7 +6,6 @@ from audioop import ulaw2lin, lin2ulaw
 from config import create_mysql_pool, create_tools_pool
 import numpy as np
 import samplerate # pyright: ignore[reportMissingImports]
-import struct
 # ========= ENV =========
 BIND_IP            = os.getenv("BIND_IP")
 BIND_PORT          = int(os.getenv("BIND_PORT"))
@@ -39,10 +38,6 @@ COMPRESS_ENABLE   = os.getenv("COMPRESS_ENABLE", "0") == "1"
 DITHER_ENABLE     = os.getenv("DITHER_ENABLE", "0") == "1"    
 
 SOFTCLIP_ENABLE   = os.getenv("SOFTCLIP_ENABLE", "1") == "1"
-
-LPF_ALPHA        = float(os.getenv("LPF_ALPHA", "0.68"))  
-BLEND_ENABLE     = os.getenv("BLEND_ENABLE", "1") == "1"
-BLEND_SAMPLES    = int(os.getenv("BLEND_SAMPLES", "8")) 
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
 _CUR_LVL = max(0, _LEVELS.index(LOG_LEVEL) if LOG_LEVEL in _LEVELS else 2)
@@ -84,29 +79,6 @@ def _lpf_8k_simple_state(pcm: bytes, alpha: float = 0.715, y0: int = 0):
         if y < -32768: y = -32768
         arr[i] = y
     return arr.tobytes(), y
-
-def _blend_frame_start(frame: bytes, prev_sample: int, nsamp: int = 8) -> bytes:
-    """Suaviza el arranque del frame mezclando sus primeras nsamp muestras con la muestra final del frame anterior."""
-    if not frame or nsamp <= 0:
-        return frame
-    import struct
-    n = len(frame) // 2
-    if n == 0:
-        return frame
-    ns = min(nsamp, n)
-    out = bytearray(frame)
-    mv = memoryview(out)
-
-    first = struct.unpack_from("<h", frame, 0)[0]
-
-    for i in range(ns):
-        t = (i + 1) / ns 
-        v = int(prev_sample * (1.0 - t) + first * t)
-        if v > 32767: v = 32767
-        if v < -32768: v = -32768
-        struct.pack_into("<h", mv, i * 2, v)
-
-    return bytes(out)
 
 def _soft_de_esser_pcm16_state(pcm: bytes, amount: float = 0.68, y_prev: float = 0.0):
     """
@@ -166,7 +138,7 @@ def _soft_compress_and_limit(frame: bytes, ratio: float, limit_max: int) -> byte
         idx += 2
     return bytes(out)
 
-def _soft_clip_tanh_int16(frame: bytes, out_limit: int = 32100, drive: float = 1.6) -> bytes:
+def _soft_clip_tanh_int16(frame: bytes, out_limit: int = 32100, drive: float = 1.2) -> bytes:
     """Soft-clip suave tipo tanh para picos transitorios, evita raspado al pasar a μ-law."""
     if not frame:
         return frame
@@ -547,8 +519,7 @@ class ExtermalMediaBridge:
         first_frames_to_fade = 0
         is_new_phrase = False
         lpf_y_last = 0         
-        deess_y_last = 0.0
-        prev_out_sample = 0  
+        deess_y_last = 0.0  
         try:
             async for pcm24 in self.session.stream_agent_tts():
                 if self._stop.is_set():
@@ -577,8 +548,7 @@ class ExtermalMediaBridge:
                         del pcm8k_buf[:BYTES_8K_PER_FRAME]
 
                         if LPF_8K:
-                            frame16, lpf_y_last = _lpf_8k_simple_state(frame16, LPF_ALPHA, lpf_y_last)
-                            
+                            frame16, lpf_y_last = _lpf_8k_simple_state(frame16, 0.715, lpf_y_last)
                         if DE_ESSER:
                             frame16, deess_y_last = _soft_de_esser_pcm16_state(frame16, DE_ESSER_AMOUNT, deess_y_last)
 
@@ -596,12 +566,9 @@ class ExtermalMediaBridge:
                         else:
                             frame16 = _hard_limit_int16(frame16, LIMIT_MAX)
                             
-                        if BLEND_ENABLE and BLEND_SAMPLES > 0:
-                            frame16 = _blend_frame_start(frame16, prev_out_sample, BLEND_SAMPLES)
                         ulaw_frame = audioop.lin2ulaw(frame16, 2)
                         async with self._buffer_lock:
                             self.accum_out.extend(ulaw_frame)
-                        prev_out_sample = struct.unpack_from("<h", frame16, len(frame16) - 2)[0]
         except asyncio.CancelledError:
             log_info("[RTP] Tarea rtp_inbound_task cancelada")          
                   
