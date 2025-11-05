@@ -92,7 +92,7 @@ def _soft_compress_and_limit(frame: bytes, ratio: float, limit_max: int) -> byte
         idx += 2
     return bytes(out)
 
-def _soft_clip_tanh_int16(frame: bytes, out_limit: int = 32100, drive: float = 1.0) -> bytes:
+def _soft_clip_tanh_int16(frame: bytes, out_limit: int = 32100, drive: float = 1.2) -> bytes:
     """Soft-clip suave tipo tanh para picos transitorios, evita raspado al pasar a μ-law."""
     if not frame:
         return frame
