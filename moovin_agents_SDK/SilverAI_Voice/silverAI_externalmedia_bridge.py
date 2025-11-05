@@ -62,6 +62,52 @@ async def init_resources():
             resources[name] = response
     return resources
 
+def _lpf_8k_simple_state(pcm: bytes, alpha: float = 0.715, y0: int = 0):
+    """
+    LPF unipolo con estado entre frames.
+    Recibe y_prev (y0) y devuelve (pcm_filtrado, y_last).
+    """
+    if not pcm:
+        return pcm, y0
+    import array
+    arr = array.array("h")
+    arr.frombytes(pcm)
+    y = int(y0)
+    for i, x in enumerate(arr):
+        y = int(y + alpha * (x - y))
+        if y > 32767: y = 32767
+        if y < -32768: y = -32768
+        arr[i] = y
+    return arr.tobytes(), y
+
+def _soft_de_esser_pcm16_state(pcm: bytes, amount: float = 0.68, y_prev: float = 0.0):
+    """
+    De-esser suave con estado entre frames.
+    Recibe y_prev y devuelve (pcm_filtrado, y_last).
+    """
+    if not pcm:
+        return pcm, y_prev
+    import struct
+    nsamp = len(pcm) // 2
+    if nsamp == 0:
+        return pcm, y_prev
+    it = struct.iter_unpack("<h", pcm)
+    out = bytearray(len(pcm))
+    w = memoryview(out)
+    a = max(0.0, min(0.45, amount))
+    one_minus = 1.0 - a
+    y = float(y_prev)
+    idx = 0
+    for (x,) in it:
+        y = one_minus * x + a * y
+        mixed = 0.22 * y + 0.78 * x
+        if mixed > 32767: mixed = 32767
+        if mixed < -32768: mixed = -32768
+        struct.pack_into("<h", w, idx, int(mixed))
+        idx += 2
+    return bytes(out), y
+
+
 def _agc_rms(frame: bytes, target_rms: int) -> bytes:
     import audioop
     rms = audioop.rms(frame, 2)
@@ -472,6 +518,8 @@ class ExtermalMediaBridge:
         ratecv_state = None
         first_frames_to_fade = 0
         is_new_phrase = False
+        lpf_y_last = 0         
+        deess_y_last = 0.0  
         try:
             async for pcm24 in self.session.stream_agent_tts():
                 if self._stop.is_set():
@@ -500,9 +548,9 @@ class ExtermalMediaBridge:
                         del pcm8k_buf[:BYTES_8K_PER_FRAME]
 
                         if LPF_8K:
-                            frame16 = _lpf_8k_simple(frame16)
+                            frame16, lpf_y_last = _lpf_8k_simple_state(frame16, 0.715, lpf_y_last)
                         if DE_ESSER:
-                            frame16 = _soft_de_esser_pcm16(frame16, DE_ESSER_AMOUNT)
+                            frame16, deess_y_last = _soft_de_esser_pcm16_state(frame16, DE_ESSER_AMOUNT, deess_y_last)
 
                         if first_frames_to_fade > 0:
                             frame16 = _fade_in_pcm16(
