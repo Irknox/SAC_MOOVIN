@@ -471,7 +471,7 @@ class SilverAIVoice:
                     #Opciones son alloy(Y), ash(M), ballad(N), coral(N), echo, sage(N), shimmer(N), and verse(N)#
                     "voice": "alloy",
                     "modalities": ["audio"],
-                    "speed": 1.2,
+                    "speed": 1.3,
                     "input_audio_format": AudioPCM(type="audio/pcm", rate=24000),
                     "output_audio_format": AudioPCM(type="audio/pcm", rate=24000),
                     "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
@@ -479,7 +479,7 @@ class SilverAIVoice:
                     "turn_detection": {
                         "type": "server_vad",
                         "interrupt_response": True,
-                        "threshold": 0.5,
+                        "threshold": 0.6,
                     },
                 }
             },
@@ -505,6 +505,5 @@ class SilverAIVoice:
         except Exception as e:
             print(f"[RT] logger simple no activo: {e}")
         sess = SilverAIVoiceSession(inner_session)
-        # haz accesibles los recursos desde la sesión si los necesitas allí
         setattr(sess, "resources", self.resources)
         return sess
