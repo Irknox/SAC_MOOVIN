@@ -30,12 +30,14 @@ COMPRESS_RATIO    = float(os.getenv("COMPRESS_RATIO", "1.6"))   # 1.5–2.0
 LIMIT_MAX         = int(os.getenv("LIMIT_MAX", "30000")) 
 
 GAIN_ENABLE       = os.getenv("GAIN_ENABLE", "1") == "1"
-GAIN_DB           = float(os.getenv("GAIN_DB", "4.0"))    
-GAIN_MAX_DB       = float(os.getenv("GAIN_MAX_DB", "6.0")) 
-DITHER_LEVEL_LSB  = int(os.getenv("DITHER_LEVEL_LSB", "1")) 
+GAIN_DB           = float(os.getenv("GAIN_DB"))    
+GAIN_MAX_DB       = float(os.getenv("GAIN_MAX_DB")) 
+DITHER_LEVEL_LSB  = int(os.getenv("DITHER_LEVEL_LSB")) 
 
 COMPRESS_ENABLE   = os.getenv("COMPRESS_ENABLE", "0") == "1"  
 DITHER_ENABLE     = os.getenv("DITHER_ENABLE", "0") == "1"    
+
+SOFTCLIP_ENABLE   = os.getenv("SOFTCLIP_ENABLE", "1") == "1"
 # ========= LOGS =========
 _LEVELS = ["ERROR", "WARN", "INFO", "DEBUG"]
 _CUR_LVL = max(0, _LEVELS.index(LOG_LEVEL) if LOG_LEVEL in _LEVELS else 2)
@@ -89,6 +91,17 @@ def _soft_compress_and_limit(frame: bytes, ratio: float, limit_max: int) -> byte
         struct.pack_into("<h", mv, idx, x)
         idx += 2
     return bytes(out)
+
+def _soft_clip_tanh_int16(frame: bytes, out_limit: int = 32100, drive: float = 1.0) -> bytes:
+    """Soft-clip suave tipo tanh para picos transitorios, evita raspado al pasar a μ-law."""
+    if not frame:
+        return frame
+    import numpy as np
+    x = np.frombuffer(frame, dtype="<i2").astype(np.float32)
+    xf = x / 32768.0
+    y = np.tanh(drive * xf)
+    y_int = (y * out_limit).astype("<i2")
+    return y_int.tobytes()
 
 def _lpf_8k_simple(pcm: bytes, alpha: float = 0.715) -> bytes:
     if not pcm:
@@ -481,19 +494,13 @@ class ExtermalMediaBridge:
                     if was_empty_8k:
                         is_new_phrase = True
                         first_frames_to_fade = FADE_IN_FRAMES
+                        
                     while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
                         frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
                         del pcm8k_buf[:BYTES_8K_PER_FRAME]
 
-                        if AGC_ENABLE:
-                            frame16 = _agc_rms(frame16, AGC_TARGET_RMS)
-
-                        if COMPRESS_ENABLE:
-                            frame16 = _soft_compress_and_limit(frame16, COMPRESS_RATIO, LIMIT_MAX)
-
                         if LPF_8K:
                             frame16 = _lpf_8k_simple(frame16)
-
                         if DE_ESSER:
                             frame16 = _soft_de_esser_pcm16(frame16, DE_ESSER_AMOUNT)
 
@@ -502,15 +509,15 @@ class ExtermalMediaBridge:
                                 frame16, FADE_IN_FRAMES - first_frames_to_fade, FADE_IN_FRAMES
                             )
                             first_frames_to_fade -= 1
-
+                            
                         if GAIN_ENABLE and GAIN_DB != 0.0:
                             frame16 = _apply_gain_db(frame16, GAIN_DB, GAIN_MAX_DB)
-
-                        frame16 = _hard_limit_int16(frame16, LIMIT_MAX)
-
-                        if DITHER_ENABLE and DITHER_LEVEL_LSB > 0:
-                             frame16 = _dither_tpdf_int16(frame16, DITHER_LEVEL_LSB)
-
+                            
+                        if SOFTCLIP_ENABLE:
+                            frame16 = _soft_clip_tanh_int16(frame16, out_limit=LIMIT_MAX, drive=1.0)
+                        else:
+                            frame16 = _hard_limit_int16(frame16, LIMIT_MAX)
+                            
                         ulaw_frame = audioop.lin2ulaw(frame16, 2)
                         async with self._buffer_lock:
                             self.accum_out.extend(ulaw_frame)
