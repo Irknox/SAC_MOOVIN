@@ -48,7 +48,7 @@ class CallState {
     this.extChannelId = null;
     this.startedAtMs = Date.now();
     this.limitTimer = null;
-    this.transferInProgress= false,
+    this.transferInProgress = false;
   }
 }
 const CALLS = new Map();
@@ -201,7 +201,7 @@ async function onStasisStart(event, channel) {
       if (err) log.warn(`No pude enviar CTRL al bridge: ${err.message}`);
       try {
         sock.close();
-      } catch {}
+      } catch { }
     });
     CALLS.get(sipId).extChannelId = em.id;
     EXT_TO_SIP.set(em.id, sipId);
@@ -209,7 +209,7 @@ async function onStasisStart(event, channel) {
     log.error(`Error preparando llamada para SIP ${sipId}: ${e.message}`);
     try {
       await ch.hangup();
-    } catch {}
+    } catch { }
     await cleanupCall(sipId);
   }
 }
@@ -248,7 +248,7 @@ function notifyBridgeCallEnded() {
     else log.info(`CALL_ENDED enviado al bridge ${bridgeHost}:${bridgePort}`);
     try {
       sock.close();
-    } catch {}
+    } catch { }
   });
 }
 
@@ -265,7 +265,7 @@ async function cleanupCall(sipId) {
     try {
       await client.channels.hangup({ channelId: state.extChannelId });
       log.info(`External ${state.extChannelId} colgado`);
-    } catch {}
+    } catch { }
     EXT_TO_SIP.delete(state.extChannelId);
   }
 
@@ -274,12 +274,12 @@ async function cleanupCall(sipId) {
       const br = await client.bridges.get({ bridgeId: state.bridgeId });
       await br.destroy();
       log.info(`Bridge ${state.bridgeId} destruido`);
-    } catch {}
+    } catch { }
   }
 
   try {
     await client.channels.hangup({ channelId: sipId });
-  } catch {}
+  } catch { }
   CALLS.delete(sipId);
 }
 
@@ -334,7 +334,7 @@ async function transferToExtension(sipId, targetExt, context = "ari-transfer") {
     } catch (e) {
       log.warn(`Post-transfer cleanup error: ${e.message}`);
     }
-  }, 300); 
+  }, 300);
   return true;
 }
 
@@ -347,7 +347,7 @@ async function shutdown(sig) {
   } finally {
     try {
       client && client.close && client.close();
-    } catch {}
+    } catch { }
     process.exit(0);
   }
 }
