@@ -473,6 +473,8 @@ class ExtermalMediaBridge:
                     try:
                         pcm8k = audioop.ulaw2lin(pkt["payload"], 2)
                         try:
+                            if not (self.session and not getattr(self.session, "_closed", False)):
+                                continue
                             self.session.feed_pcm16(pcm8k)
                             self.evlog.tick("to:sdk")
                         except Exception as e:
