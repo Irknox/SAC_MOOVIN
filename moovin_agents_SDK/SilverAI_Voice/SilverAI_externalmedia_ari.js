@@ -48,6 +48,7 @@ class CallState {
     this.extChannelId = null;
     this.startedAtMs = Date.now();
     this.limitTimer = null;
+    this.transferInProgress= false,
   }
 }
 const CALLS = new Map();
@@ -224,6 +225,13 @@ async function onStasisEnd(event, channel) {
     log.info(`External ${chId} terminó (SIP asociado: ${sipId})`);
     return;
   }
+  const st = CALLS.get(chId);
+  if (st && st.transferInProgress) {
+    log.info(`StasisEnd SIP durante transferencia: preservo ${chId} (no hangup)`);
+    CALLS.delete(chId);
+    notifyBridgeCallEnded();
+    return;
+  }
 
   await cleanupCall(chId);
   notifyBridgeCallEnded();
@@ -275,41 +283,13 @@ async function cleanupCall(sipId) {
   CALLS.delete(sipId);
 }
 
-async function transferToExtension(
-  sipId,
-  targetExt,
-  context = "ari-transfer"
-) {
+async function transferToExtension(sipId, targetExt, context = "ari-transfer") {
   const state = CALLS.get(sipId);
-  if (!state) {
-    log.warn(`transferToExtension: no state para SIP ${sipId}`);
-    return false;
-  }
-  if (state.extChannelId) {
-    try {
-      await client.channels.hangup({ channelId: state.extChannelId });
-      log.info(`External ${state.extChannelId} colgado antes de transfer`);
-    } catch (e) {
-      log.warn(`No pude colgar external ${state.extChannelId}: ${e.message}`);
-    }
-    EXT_TO_SIP.delete(state.extChannelId);
-    state.extChannelId = null;
-  }
-  if (state.bridgeId) {
-    try {
-      const br = await client.bridges.get({ bridgeId: state.bridgeId });
-      await br.destroy();
-      log.info(`Bridge ${state.bridgeId} destruido antes de transfer`);
-    } catch (e) {
-      log.warn(`No pude destruir bridge ${state.bridgeId}: ${e.message}`);
-    }
-    state.bridgeId = null;
-  }
-  if (state.limitTimer) {
-    clearInterval(state.limitTimer);
-    state.limitTimer = null;
-  }
+  if (!state) { log.warn(`transferToExtension: no state para SIP ${sipId}`); return false; }
 
+  state.transferInProgress = true;  // ← marca
+
+  // 1) Saca el SIP al dialplan destino primero
   try {
     await client.channels.continueInDialplan({
       channelId: sipId,
@@ -318,12 +298,47 @@ async function transferToExtension(
       priority: 1,
     });
     log.info(`Transfer OK: SIP ${sipId} -> ${context},${targetExt},1`);
-    return true;
   } catch (e) {
+    state.transferInProgress = false;
     log.error(`continueInDialplan fallo para ${sipId}: ${e.message}`);
     return false;
   }
+
+  // 2) Luego, con un pequeño desfase, limpia EM y bridge
+  setTimeout(async () => {
+    try {
+      if (state.extChannelId) {
+        try {
+          await client.channels.hangup({ channelId: state.extChannelId });
+          log.info(`External ${state.extChannelId} colgado post-transfer`);
+        } catch (e) {
+          log.warn(`No pude colgar external ${state.extChannelId}: ${e.message}`);
+        }
+        EXT_TO_SIP.delete(state.extChannelId);
+        state.extChannelId = null;
+      }
+      if (state.bridgeId) {
+        try {
+          const br = await client.bridges.get({ bridgeId: state.bridgeId });
+          await br.destroy();
+          log.info(`Bridge ${state.bridgeId} destruido post-transfer`);
+        } catch (e) {
+          log.warn(`No pude destruir bridge ${state.bridgeId}: ${e.message}`);
+        }
+        state.bridgeId = null;
+      }
+      if (state.limitTimer) {
+        clearInterval(state.limitTimer);
+        state.limitTimer = null;
+      }
+    } catch (e) {
+      log.warn(`Post-transfer cleanup error: ${e.message}`);
+    }
+  }, 300); 
+  return true;
 }
+
+
 async function shutdown(sig) {
   log.info(`Señal ${sig} recibida. Cerrando…`);
   try {
