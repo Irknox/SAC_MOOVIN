@@ -12,7 +12,7 @@ CONTROL_TOKEN    = os.getenv("CONTROL_TOKEN")
         name_override="escalate_call",
         description_override="Escala inmediatamente a un asistente Humano, usala esta herramienta UNICAMENTE cuando un usuario solicite hablar con un Humano"
 )
-async def escalate_call(target_ext: int = 9999, context: str = "from-internal"):
+async def escalate_call(target_ext: int = 9999, context: str = "ari-transfer"):
     """
     Solicita al ARI transferir la llamada actual a otra extensión del mismo PBX.
     Retorna dict con 'ok' booleano.

@@ -278,7 +278,7 @@ async function cleanupCall(sipId) {
 async function transferToExtension(
   sipId,
   targetExt,
-  context = "from-internal"
+  context = "ari-transfer"
 ) {
   const state = CALLS.get(sipId);
   if (!state) {
@@ -365,7 +365,7 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
         const parts = txt.split(/\s+/);
         let token = null,
           ext = null,
-          ctx = "from-internal";
+          ctx = "ari-transfer";
 
         if (CONTROL_TOKEN) {
           // esperar: XFER <token> <ext> [context]
