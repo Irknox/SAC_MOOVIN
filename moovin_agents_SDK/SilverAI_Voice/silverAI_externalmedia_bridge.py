@@ -413,12 +413,7 @@ class ExtermalMediaBridge:
         self.resampler_24k_to_8k = None   
         
         if _HAS_SOXR:
-            self.resampler_24k_to_8k = soxr.ResampleStream(
-                24000, 8000, channels=1, dtype="int16",
-                quality="VHQ",
-                phase_response=50,
-                rolloff="low"  
-            )
+            self.resampler_24k_to_8k = soxr.ResampleStream(24000, 8000, 1, dtype="int16", quality="VHQ")
         else:
             self.resampler_24k_to_8k = samplerate.Resampler("sinc_best")
     # ---- Inbound: RTP PCMU -> SDK (usuario habla) ----
@@ -550,19 +545,17 @@ class ExtermalMediaBridge:
                     del buf_24k[:BYTES_24K_PER_FRAME]
 
                     pcm24_i16 = np.frombuffer(slice24, dtype="<i2")
-
                     if _HAS_SOXR:
+                        pcm24_i16 = np.ascontiguousarray(pcm24_i16, dtype=np.int16)
                         pcm8_i16 = self.resampler_24k_to_8k.process(pcm24_i16)
                     else:
                         pcm24_f32 = pcm24_i16.astype(np.float32) / 32768.0
                         pcm8_f32  = self.resampler_24k_to_8k.process(pcm24_f32)
                         pcm8_i16  = (pcm8_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
-
                     pcm8k = pcm8_i16.tobytes()
-                    pcm8k_buf.extend(pcm8k)
                     was_empty_8k = (len(pcm8k_buf) == 0)
-                    pcm8k = pcm8_int16.tobytes()
                     pcm8k_buf.extend(pcm8k)
+
                     if was_empty_8k:
                         is_new_phrase = True
                         first_frames_to_fade = FADE_IN_FRAMES
