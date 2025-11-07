@@ -5,7 +5,14 @@ import audioop
 from audioop import ulaw2lin, lin2ulaw
 from config import create_mysql_pool, create_tools_pool
 import numpy as np
-import samplerate # pyright: ignore[reportMissingImports]
+
+try:
+    import soxr  
+    _HAS_SOXR = True
+except Exception:
+    _HAS_SOXR = False   
+    import samplerate # pyright: ignore[reportMissingImports]
+
 # ========= ENV =========
 BIND_IP            = os.getenv("BIND_IP")
 BIND_PORT          = int(os.getenv("BIND_PORT"))
@@ -402,8 +409,18 @@ class ExtermalMediaBridge:
         self.accum_out = bytearray()  
         self._buffer_lock = asyncio.Lock() 
         self.session_tasks = []
-        self.call_started_at = None      
+        self.call_started_at = None   
+        self.resampler_24k_to_8k = None   
         
+        if _HAS_SOXR:
+            self.resampler_24k_to_8k = soxr.ResampleStream(
+                24000, 8000, channels=1, dtype="int16",
+                quality="VHQ",
+                phase_response=50,
+                rolloff="low"  
+            )
+        else:
+            self.resampler_24k_to_8k = samplerate.Resampler("sinc_best")
     # ---- Inbound: RTP PCMU -> SDK (usuario habla) ----
     async def rtp_inbound_task(self):
         log_info(f"RTP PCMU IN escuchando en {BIND_IP}:{BIND_PORT} PT={RTP_PT}")
@@ -532,10 +549,17 @@ class ExtermalMediaBridge:
                     slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
                     del buf_24k[:BYTES_24K_PER_FRAME]
 
-                    pcm24_int16 = np.frombuffer(slice24, dtype="<i2")
-                    pcm24_f32 = pcm24_int16.astype(np.float32) / 32768.0
-                    pcm8_f32 = samplerate.resample(pcm24_f32, 8000 / 24000, "sinc_best")
-                    pcm8_int16 = (pcm8_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
+                    pcm24_i16 = np.frombuffer(slice24, dtype="<i2")
+
+                    if _HAS_SOXR:
+                        pcm8_i16 = self.resampler_24k_to_8k.process(pcm24_i16)
+                    else:
+                        pcm24_f32 = pcm24_i16.astype(np.float32) / 32768.0
+                        pcm8_f32  = self.resampler_24k_to_8k.process(pcm24_f32)
+                        pcm8_i16  = (pcm8_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
+
+                    pcm8k = pcm8_i16.tobytes()
+                    pcm8k_buf.extend(pcm8k)
                     was_empty_8k = (len(pcm8k_buf) == 0)
                     pcm8k = pcm8_int16.tobytes()
                     pcm8k_buf.extend(pcm8k)
@@ -548,7 +572,7 @@ class ExtermalMediaBridge:
                         del pcm8k_buf[:BYTES_8K_PER_FRAME]
 
                         if LPF_8K:
-                            frame16, lpf_y_last = _lpf_8k_simple_state(frame16, 0.715, lpf_y_last)
+                            frame16, lpf_y_last = _lpf_8k_simple_state(frame16, 0.69, lpf_y_last)
                         if DE_ESSER:
                             frame16, deess_y_last = _soft_de_esser_pcm16_state(frame16, DE_ESSER_AMOUNT, deess_y_last)
 
@@ -565,7 +589,10 @@ class ExtermalMediaBridge:
                             frame16 = _soft_clip_tanh_int16(frame16, out_limit=LIMIT_MAX, drive=1.0)
                         else:
                             frame16 = _hard_limit_int16(frame16, LIMIT_MAX)
-                            
+                        
+                        if DITHER_ENABLE and DITHER_LEVEL_LSB > 0:
+                            frame16 = _dither_tpdf_int16(frame16, level_lsb=DITHER_LEVEL_LSB)
+
                         ulaw_frame = audioop.lin2ulaw(frame16, 2)
                         async with self._buffer_lock:
                             self.accum_out.extend(ulaw_frame)
