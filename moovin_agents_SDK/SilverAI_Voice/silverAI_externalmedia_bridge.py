@@ -6,6 +6,7 @@ from audioop import ulaw2lin, lin2ulaw
 from config import create_mysql_pool, create_tools_pool
 import numpy as np
 import samplerate # pyright: ignore[reportMissingImports]
+import soxr
 # ========= ENV =========
 BIND_IP            = os.getenv("BIND_IP")
 BIND_PORT          = int(os.getenv("BIND_PORT"))
@@ -533,12 +534,13 @@ class ExtermalMediaBridge:
                     del buf_24k[:BYTES_24K_PER_FRAME]
 
                     pcm24_int16 = np.frombuffer(slice24, dtype="<i2")
-                    pcm24_f32 = pcm24_int16.astype(np.float32) / 32768.0
-                    pcm8_f32 = samplerate.resample(pcm24_f32, 8000 / 24000, "sinc_best")
-                    pcm8_int16 = (pcm8_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
+                    # SOXR: 24 kHz -> 8 kHz, 1 canal, calidad muy alta, salida int16
+                    pcm8_int16 = soxr.resample(pcm24_int16, 24000, 8000, channels=1, quality="VHQ", dtype="int16")
                     was_empty_8k = (len(pcm8k_buf) == 0)
-                    pcm8k = pcm8_int16.tobytes()
+                    pcm8k = np.ascontiguousarray(pcm8_int16, dtype=np.int16).tobytes()
                     pcm8k_buf.extend(pcm8k)
+
+
                     if was_empty_8k:
                         is_new_phrase = True
                         first_frames_to_fade = FADE_IN_FRAMES
