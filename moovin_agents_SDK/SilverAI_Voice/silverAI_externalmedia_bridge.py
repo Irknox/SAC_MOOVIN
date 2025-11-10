@@ -307,6 +307,7 @@ class RtpIO:
         self.sock.setblocking(False)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
         self.remote = None
+        self.marker_next = False
         self.remote_learned = False 
         self.pt = pt & 0x7F
         self.ssrc = struct.unpack("!I", os.urandom(4))[0]
@@ -379,7 +380,9 @@ class RtpIO:
     async def send_payload(self, payload: bytes):
         if not self.remote_learned or not self.remote:
             return 
-        hdr = struct.pack("!BBHII", 0x80, self.pt, self.seq & 0xFFFF,
+        pt_byte = (0x80 if getattr(self, "marker_next", False) else 0x00) | (self.pt & 0x7F)
+        self.marker_next = False
+        hdr = struct.pack("!BBHII", 0x80, pt_byte, self.seq & 0xFFFF,
                         self.ts & 0xFFFFFFFF, self.ssrc)
         pkt = hdr + payload
         await asyncio.get_running_loop().sock_sendto(self.sock, pkt, self.remote)
@@ -463,22 +466,27 @@ class ExtermalMediaBridge:
                     print("[Bridge Debug] Echo activado, rebotando audio de entrada")
                     try:
                         async with self._tx_lock:
-                            # PT aprendido una vez
+                            # PT: aprender una vez
                             if not getattr(self.rtp, "_pt_locked", False):
                                 self.rtp.pt = pkt["pt"]
                                 self.rtp._pt_locked = True
                                 log_info(f"[RTP] PT de salida fijado a {self.rtp.pt} por aprendizaje")
 
-                            # Destino aprendido
+                            # Destino: aprender si falta
                             if not self.rtp.remote_learned or not self.rtp.remote:
                                 self.rtp.remote = pkt["addr"]
                                 self.rtp.remote_learned = True
                                 log_info(f"[RTP] Destino aprendido (eco): {pkt['addr'][0]}:{pkt['addr'][1]}")
 
-                            # CLAVE: alinear TS de salida al TS del paquete entrante
-                            self.rtp.ts = pkt["ts"]
+                            # TS base: fijar una sola vez con pequeño offset para romper igualdad
+                            if not getattr(self.rtp, "_ts_base_set", False):
+                                self.rtp.ts = (pkt["ts"] + SAMPLES_PER_PKT) & 0xFFFFFFFF
+                                self.rtp._ts_base_set = True
+                                # Marca el primer paquete de nuestro talkspurt
+                                setattr(self.rtp, "marker_next", True)
+                                log_info(f"[RTP] TS base eco fijado a {self.rtp.ts}")
 
-                            # Enviar payload tal cual, con nuestro propio seq/ssrc/PT estables
+                            # Enviamos el payload tal cual con nuestro seq/ssrc/PT propios
                             await self.rtp.send_payload(pkt["payload"])
 
                         plen = len(pkt["payload"])
@@ -489,6 +497,7 @@ class ExtermalMediaBridge:
                         log_warn(f"ECO send error: {e}")
                     self._periodic_log()
                     continue
+
                 else:
                     try:
                         pcm8k = audioop.ulaw2lin(pkt["payload"], 2)
