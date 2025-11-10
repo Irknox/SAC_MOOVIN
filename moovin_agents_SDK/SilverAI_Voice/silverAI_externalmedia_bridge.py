@@ -16,10 +16,15 @@ FRAME_MS           = int(os.getenv("FRAME_MS", "20"))
 LPF_8K          = os.getenv("LPF_8K", "0") == "1"
 DE_ESSER        = os.getenv("DE_ESSER", "0") == "1"
 DE_ESSER_AMOUNT = float(os.getenv("DE_ESSER_AMOUNT", "0.20"))
-SAMPLE_RATE = 8000
-SAMPLES_PER_PKT = int(SAMPLE_RATE * (FRAME_MS/1000.0))   # 20 ms -> 160 a 8 kHz
-BYTES_24K_PER_FRAME = int(24000 * (FRAME_MS/1000.0)) * 2   # 20 ms -> 960 B a 24k PCM16
-BYTES_8K_PER_FRAME  = SAMPLES_PER_PKT * 2  
+
+RTP_CODEC        = os.getenv("EXTERNAL_FORMAT", "opus").lower()
+SAMPLE_RATE      = 48000 if RTP_CODEC == "opus" else 8000
+SAMPLES_PER_PKT  = int(SAMPLE_RATE * (FRAME_MS / 1000.0))  # 20 ms -> 960 a 48 kHz, 160 a 8 kHz
+
+# Usados solo por la ruta SDK (no eco). No los tocamos más.
+BYTES_24K_PER_FRAME = int(24000 * (FRAME_MS/1000.0)) * 2
+BYTES_8K_PER_FRAME  = SAMPLES_PER_PKT * 2
+
 PRE_ROLL            = os.getenv("PRE_ROLL", "1") == "1"
 PRE_ROLL_FRAMES     = int(os.getenv("PRE_ROLL_FRAMES", "1"))
 FADE_IN_FRAMES      = int(os.getenv("FADE_IN_FRAMES", "2"))
@@ -684,13 +689,19 @@ class ExtermalMediaBridge:
                 except Exception as e:
                     log_warn(f"Error configurando callback on_audio_interrupted: {e}")
 
-            log_info(f"RTP PCMU en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
+            log_info(f"RTP IN {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms codec={RTP_CODEC}")
 
-            tasks = [
-                asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
-                asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"),
-                asyncio.create_task(self.rtp_pacer_loop(), name="rtp_pacer_loop"),
-            ]
+
+            if ECHO_BACK:
+                tasks = [
+                    asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
+                ]
+            else:
+                tasks = [
+                    asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
+                    asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"),
+                    asyncio.create_task(self.rtp_pacer_loop(), name="rtp_pacer_loop"),
+                ]
             self.session_tasks.extend(tasks) 
 
             try:
