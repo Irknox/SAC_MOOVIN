@@ -460,6 +460,7 @@ class ExtermalMediaBridge:
                     log_info(f"[RTP] TS de salida alineado a {self.rtp.ts}")
 
                 if ECHO_BACK:
+                    print("Echo activado, rebotando audio de entrada")
                     try:
                         async with self._tx_lock:
                             await self.rtp.send_payload_with_headers(
@@ -693,6 +694,7 @@ class ExtermalMediaBridge:
 
 
             if ECHO_BACK:
+                print("Echo activado, no se levantara sesion del agente")
                 tasks = [
                     asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
                 ]
