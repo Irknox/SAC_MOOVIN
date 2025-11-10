@@ -460,18 +460,27 @@ class ExtermalMediaBridge:
                     log_info(f"[RTP] TS de salida alineado a {self.rtp.ts}")
 
                 if ECHO_BACK:
-                    print("Echo activado, rebotando audio de entrada")
+                    print("[Bridge Debug] Echo activado, rebotando audio de entrada")
                     try:
                         async with self._tx_lock:
+                            # PT aprendido una vez
                             if not getattr(self.rtp, "_pt_locked", False):
                                 self.rtp.pt = pkt["pt"]
                                 self.rtp._pt_locked = True
                                 log_info(f"[RTP] PT de salida fijado a {self.rtp.pt} por aprendizaje")
+
+                            # Destino aprendido
                             if not self.rtp.remote_learned or not self.rtp.remote:
                                 self.rtp.remote = pkt["addr"]
                                 self.rtp.remote_learned = True
                                 log_info(f"[RTP] Destino aprendido (eco): {pkt['addr'][0]}:{pkt['addr'][1]}")
+
+                            # CLAVE: alinear TS de salida al TS del paquete entrante
+                            self.rtp.ts = pkt["ts"]
+
+                            # Enviar payload tal cual, con nuestro propio seq/ssrc/PT estables
                             await self.rtp.send_payload(pkt["payload"])
+
                         plen = len(pkt["payload"])
                         self.bytes_out += plen + 12
                         self.out_probe.note(plen + 12)
