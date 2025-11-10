@@ -411,7 +411,7 @@ class ExtermalMediaBridge:
         
     # ---- Inbound: RTP PCMU -> SDK (usuario habla) ----
     async def rtp_inbound_task(self):
-        log_info(f"RTP PCMU IN escuchando en {BIND_IP}:{BIND_PORT} PT={RTP_PT}")
+        log_info(f"RTP IN escuchando en {BIND_IP}:{BIND_PORT} PT={RTP_PT} codec={RTP_CODEC} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
         try:
             while not self._stop.is_set():
                 pkt = await self.rtp.recv()
@@ -463,9 +463,15 @@ class ExtermalMediaBridge:
                     print("Echo activado, rebotando audio de entrada")
                     try:
                         async with self._tx_lock:
-                            await self.rtp.send_payload_with_headers(
-                                pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
-                            )
+                            if not getattr(self.rtp, "_pt_locked", False):
+                                self.rtp.pt = pkt["pt"]
+                                self.rtp._pt_locked = True
+                                log_info(f"[RTP] PT de salida fijado a {self.rtp.pt} por aprendizaje")
+                            if not self.rtp.remote_learned or not self.rtp.remote:
+                                self.rtp.remote = pkt["addr"]
+                                self.rtp.remote_learned = True
+                                log_info(f"[RTP] Destino aprendido (eco): {pkt['addr'][0]}:{pkt['addr'][1]}")
+                            await self.rtp.send_payload(pkt["payload"])
                         plen = len(pkt["payload"])
                         self.bytes_out += plen + 12
                         self.out_probe.note(plen + 12)
