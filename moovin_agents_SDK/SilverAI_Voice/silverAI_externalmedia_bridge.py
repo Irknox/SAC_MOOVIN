@@ -453,14 +453,10 @@ class ExtermalMediaBridge:
                     self.rtp.pt = pkt["pt"]
                     self.rtp._pt_locked = True
                     log_info(f"[RTP] PT de salida fijado a {self.rtp.pt} por aprendizaje")
+                    
                 elif pkt["pt"] != self.rtp.pt:
                     self.evlog.tick(f"pt_mismatch:{pkt['pt']}")
                     continue
-
-                if not getattr(self.rtp, "_ts_locked", False):
-                    self.rtp.ts = pkt["ts"]
-                    self.rtp._ts_locked = True
-                    log_info(f"[RTP] TS de salida alineado a {self.rtp.ts}")
 
                 if ECHO_BACK:
                     print("[Bridge Debug] Echo activado, rebotando audio de entrada")
@@ -479,12 +475,10 @@ class ExtermalMediaBridge:
                                 log_info(f"[RTP] Destino aprendido (eco): {pkt['addr'][0]}:{pkt['addr'][1]}")
 
                             # TS base: fijar una sola vez con pequeño offset para romper igualdad
-                            if not getattr(self.rtp, "_ts_base_set", False):
-                                self.rtp.ts = (pkt["ts"] + SAMPLES_PER_PKT) & 0xFFFFFFFF
-                                self.rtp._ts_base_set = True
-                                # Marca el primer paquete de nuestro talkspurt
-                                setattr(self.rtp, "marker_next", True)
-                                log_info(f"[RTP] TS base eco fijado a {self.rtp.ts}")
+                            if not getattr(self.rtp, "_echo_started", False):
+                                setattr(self.rtp, "marker_next", True)   
+                                self.rtp._echo_started = True
+                                log_info(f"[RTP] Eco iniciado con TS propio={self.rtp.ts} SSRC={self.rtp.ssrc}")
 
                             # Enviamos el payload tal cual con nuestro seq/ssrc/PT propios
                             await self.rtp.send_payload(pkt["payload"])
