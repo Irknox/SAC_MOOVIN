@@ -462,31 +462,23 @@ class ExtermalMediaBridge:
                     print("[Bridge Debug] Echo activado, rebotando audio de entrada")
                     try:
                         async with self._tx_lock:
-                            # PT: aprender una vez
                             if not getattr(self.rtp, "_pt_locked", False):
-                                self.rtp.pt = pkt["pt"]
+                                self.rtp.pt = pkt["pt"] & 0x7F
                                 self.rtp._pt_locked = True
-                                log_info(f"[RTP] PT de salida fijado a {self.rtp.pt} por aprendizaje")
-
-                            # Destino: aprender si falta
+                                log_info(f"[RTP] PT eco fijado={self.rtp.pt}")
                             if not self.rtp.remote_learned or not self.rtp.remote:
                                 self.rtp.remote = pkt["addr"]
                                 self.rtp.remote_learned = True
-                                log_info(f"[RTP] Destino aprendido (eco): {pkt['addr'][0]}:{pkt['addr'][1]}")
+                                log_info(f"[RTP] Destino eco aprendido: {pkt['addr'][0]}:{pkt['addr'][1]}")
 
-                            # TS base: fijar una sola vez con pequeño offset para romper igualdad
                             if not getattr(self.rtp, "_echo_started", False):
-                                setattr(self.rtp, "marker_next", True)   
+                                self.rtp.ts = (pkt["ts"] + SAMPLES_PER_PKT) & 0xFFFFFFFF
+                                self.rtp.ssrc = pkt["ssrc"]  
+                                setattr(self.rtp, "marker_next", True)        
                                 self.rtp._echo_started = True
-                                log_info(f"[RTP] Eco iniciado con TS propio={self.rtp.ts} SSRC={self.rtp.ssrc}")
+                                log_info(f"[RTP] Eco iniciado TS={self.rtp.ts} SSRC={self.rtp.ssrc} PT={self.rtp.pt}")
 
-                            # Enviamos el payload tal cual con nuestro seq/ssrc/PT propios
                             await self.rtp.send_payload(pkt["payload"])
-
-                        plen = len(pkt["payload"])
-                        self.bytes_out += plen + 12
-                        self.out_probe.note(plen + 12)
-                        self.evlog.tick("out:rtp")
                     except Exception as e:
                         log_warn(f"ECO send error: {e}")
                     self._periodic_log()
