@@ -464,7 +464,9 @@ class ExtermalMediaBridge:
                 if ECHO_BACK:
                     try:
                         async with self._tx_lock:
-                            await self.rtp.send_payload(pkt["payload"])
+                            await self.rtp.send_payload_with_headers(
+                                pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
+                            )
                         plen = len(pkt["payload"])
                         self.bytes_out += plen + 12
                         self.out_probe.note(plen + 12)
@@ -483,7 +485,6 @@ class ExtermalMediaBridge:
                             log_warn(f"feed_pcm16 error: {e}")
                     except Exception as e:
                         log_warn(f"append_input_audio_24k error: {e}")
-
                     self._periodic_log()
         except asyncio.CancelledError:
             log_info("[RTP] Tarea rtp_inbound_task cancelada")      
@@ -577,6 +578,9 @@ class ExtermalMediaBridge:
         next_deadline = time.monotonic() + target_s
         try:
             while not self._stop.is_set():
+                if ECHO_BACK:
+                    await asyncio.sleep(FRAME_MS/1000.0)
+                    continue
                 now = time.monotonic()
                 if now >= next_deadline:
                     next_deadline += target_s
