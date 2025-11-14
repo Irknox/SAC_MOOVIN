@@ -688,11 +688,15 @@ class ExtermalMediaBridge:
 
             if ECHO_BACK:
                 print(f"[DEBUG] Echo Activado, se devolvera audio de vuelta a asterisk")
-            tasks = [
+                tasks = [
                 asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
-                asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"),
-                asyncio.create_task(self.rtp_pacer_loop(), name="rtp_pacer_loop"),
-            ]
+                ]
+            else:
+                tasks = [
+                    asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
+                    asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"),
+                    asyncio.create_task(self.rtp_pacer_loop(), name="rtp_pacer_loop"),
+                ]
             self.session_tasks.extend(tasks) 
 
             try:
