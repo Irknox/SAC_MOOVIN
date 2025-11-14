@@ -464,9 +464,7 @@ class ExtermalMediaBridge:
                 if ECHO_BACK:
                     try:
                         async with self._tx_lock:
-                            await self.rtp.send_payload_with_headers(
-                                pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
-                            )
+                            await self.rtp.send_payload(pkt["payload"])
                         plen = len(pkt["payload"])
                         self.bytes_out += plen + 12
                         self.out_probe.note(plen + 12)
@@ -684,6 +682,8 @@ class ExtermalMediaBridge:
 
             log_info(f"RTP PCMU en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
 
+            if ECHO_BACK:
+                print(f"[DEBUG] Echo Activado, se devolvera audio de vuelta a asterisk")
             tasks = [
                 asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
                 asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"),

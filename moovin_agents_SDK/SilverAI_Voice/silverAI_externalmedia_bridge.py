@@ -16,15 +16,10 @@ FRAME_MS           = int(os.getenv("FRAME_MS", "20"))
 LPF_8K          = os.getenv("LPF_8K", "0") == "1"
 DE_ESSER        = os.getenv("DE_ESSER", "0") == "1"
 DE_ESSER_AMOUNT = float(os.getenv("DE_ESSER_AMOUNT", "0.20"))
-
-RTP_CODEC        = os.getenv("EXTERNAL_FORMAT", "opus").lower()
-SAMPLE_RATE      = 48000 if RTP_CODEC == "opus" else 8000
-SAMPLES_PER_PKT  = int(SAMPLE_RATE * (FRAME_MS / 1000.0))  # 20 ms -> 960 a 48 kHz, 160 a 8 kHz
-
-# Usados solo por la ruta SDK (no eco). No los tocamos más.
-BYTES_24K_PER_FRAME = int(24000 * (FRAME_MS/1000.0)) * 2
-BYTES_8K_PER_FRAME  = SAMPLES_PER_PKT * 2
-
+SAMPLE_RATE = 8000
+SAMPLES_PER_PKT = int(SAMPLE_RATE * (FRAME_MS/1000.0))   # 20 ms -> 160 a 8 kHz
+BYTES_24K_PER_FRAME = int(24000 * (FRAME_MS/1000.0)) * 2   # 20 ms -> 960 B a 24k PCM16
+BYTES_8K_PER_FRAME  = SAMPLES_PER_PKT * 2  
 PRE_ROLL            = os.getenv("PRE_ROLL", "1") == "1"
 PRE_ROLL_FRAMES     = int(os.getenv("PRE_ROLL_FRAMES", "1"))
 FADE_IN_FRAMES      = int(os.getenv("FADE_IN_FRAMES", "2"))
@@ -307,7 +302,6 @@ class RtpIO:
         self.sock.setblocking(False)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
         self.remote = None
-        self.marker_next = False
         self.remote_learned = False 
         self.pt = pt & 0x7F
         self.ssrc = struct.unpack("!I", os.urandom(4))[0]
@@ -380,9 +374,7 @@ class RtpIO:
     async def send_payload(self, payload: bytes):
         if not self.remote_learned or not self.remote:
             return 
-        pt_byte = (0x80 if getattr(self, "marker_next", False) else 0x00) | (self.pt & 0x7F)
-        self.marker_next = False
-        hdr = struct.pack("!BBHII", 0x80, pt_byte, self.seq & 0xFFFF,
+        hdr = struct.pack("!BBHII", 0x80, self.pt, self.seq & 0xFFFF,
                         self.ts & 0xFFFFFFFF, self.ssrc)
         pkt = hdr + payload
         await asyncio.get_running_loop().sock_sendto(self.sock, pkt, self.remote)
@@ -414,7 +406,7 @@ class ExtermalMediaBridge:
         
     # ---- Inbound: RTP PCMU -> SDK (usuario habla) ----
     async def rtp_inbound_task(self):
-        log_info(f"RTP IN escuchando en {BIND_IP}:{BIND_PORT} PT={RTP_PT} codec={RTP_CODEC} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
+        log_info(f"RTP PCMU IN escuchando en {BIND_IP}:{BIND_PORT} PT={RTP_PT}")
         try:
             while not self._stop.is_set():
                 pkt = await self.rtp.recv()
@@ -453,36 +445,29 @@ class ExtermalMediaBridge:
                     self.rtp.pt = pkt["pt"]
                     self.rtp._pt_locked = True
                     log_info(f"[RTP] PT de salida fijado a {self.rtp.pt} por aprendizaje")
-                    
                 elif pkt["pt"] != self.rtp.pt:
                     self.evlog.tick(f"pt_mismatch:{pkt['pt']}")
                     continue
 
+                if not getattr(self.rtp, "_ts_locked", False):
+                    self.rtp.ts = pkt["ts"]
+                    self.rtp._ts_locked = True
+                    log_info(f"[RTP] TS de salida alineado a {self.rtp.ts}")
+
                 if ECHO_BACK:
                     try:
                         async with self._tx_lock:
-                            if not getattr(self.rtp, "_pt_locked", False):
-                                self.rtp.pt = pkt["pt"] & 0x7F
-                                self.rtp._pt_locked = True
-                                log_info(f"[RTP] PT eco fijado={self.rtp.pt}")
-                            if not self.rtp.remote_learned or not self.rtp.remote:
-                                self.rtp.remote = pkt["addr"]
-                                self.rtp.remote_learned = True
-                                log_info(f"[RTP] Destino eco aprendido: {pkt['addr'][0]}:{pkt['addr'][1]}")
-
-                            if not getattr(self.rtp, "_echo_started", False):
-                                self.rtp.ts = (pkt["ts"] + SAMPLES_PER_PKT) & 0xFFFFFFFF
-                                self.rtp.ssrc = pkt["ssrc"]  
-                                setattr(self.rtp, "marker_next", True)        
-                                self.rtp._echo_started = True
-                                log_info(f"[RTP] Eco iniciado TS={self.rtp.ts} SSRC={self.rtp.ssrc} PT={self.rtp.pt}")
-
-                            await self.rtp.send_payload(pkt["payload"])
+                            await self.rtp.send_payload_with_headers(
+                                pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
+                            )
+                        plen = len(pkt["payload"])
+                        self.bytes_out += plen + 12
+                        self.out_probe.note(plen + 12)
+                        self.evlog.tick("out:rtp")
                     except Exception as e:
                         log_warn(f"ECO send error: {e}")
                     self._periodic_log()
                     continue
-
                 else:
                     try:
                         pcm8k = audioop.ulaw2lin(pkt["payload"], 2)
@@ -699,20 +684,13 @@ class ExtermalMediaBridge:
                 except Exception as e:
                     log_warn(f"Error configurando callback on_audio_interrupted: {e}")
 
-            log_info(f"RTP IN {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms codec={RTP_CODEC}")
+            log_info(f"RTP PCMU en {BIND_IP}:{BIND_PORT} PT={RTP_PT} SR={SAMPLE_RATE}Hz FRAME={FRAME_MS}ms")
 
-
-            if ECHO_BACK:
-                print("Echo activado, no se levantara sesion del agente")
-                tasks = [
-                    asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
-                ]
-            else:
-                tasks = [
-                    asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
-                    asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"),
-                    asyncio.create_task(self.rtp_pacer_loop(), name="rtp_pacer_loop"),
-                ]
+            tasks = [
+                asyncio.create_task(self.rtp_inbound_task(), name="rtp_inbound_task"),
+                asyncio.create_task(self.sdk_tts_producer(), name="sdk_tts_producer"),
+                asyncio.create_task(self.rtp_pacer_loop(), name="rtp_pacer_loop"),
+            ]
             self.session_tasks.extend(tasks) 
 
             try:
