@@ -464,9 +464,15 @@ class ExtermalMediaBridge:
                 if ECHO_BACK:
                     try:
                         async with self._tx_lock:
-                            await self.rtp.send_payload_with_headers(
-                                pkt["payload"], pkt["pt"], pkt["seq"], pkt["ts"], pkt["ssrc"]
-                            )
+                                await self.rtp.send_payload_with_headers(
+                                    pkt["payload"],           
+                                    self.rtp.pt,            
+                                    self.rtp.seq,             
+                                    self.rtp.ts,              
+                                    self.rtp.ssrc            
+                                )
+                                self.rtp.seq = (self.rtp.seq + 1) & 0xFFFF
+                                self.rtp.ts  = (self.rtp.ts  + SAMPLES_PER_PKT) & 0xFFFFFFFF
                         plen = len(pkt["payload"])
                         self.bytes_out += plen + 12
                         self.out_probe.note(plen + 12)
