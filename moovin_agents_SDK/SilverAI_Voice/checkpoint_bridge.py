@@ -16,10 +16,14 @@ FRAME_MS           = int(os.getenv("FRAME_MS", "20"))
 LPF_8K          = os.getenv("LPF_8K", "0") == "1"
 DE_ESSER        = os.getenv("DE_ESSER", "0") == "1"
 DE_ESSER_AMOUNT = float(os.getenv("DE_ESSER_AMOUNT", "0.20"))
-SAMPLE_RATE = 8000
-SAMPLES_PER_PKT = int(SAMPLE_RATE * (FRAME_MS/1000.0))   # 20 ms -> 160 a 8 kHz
-BYTES_24K_PER_FRAME = int(24000 * (FRAME_MS/1000.0)) * 2   # 20 ms -> 960 B a 24k PCM16
-BYTES_8K_PER_FRAME  = SAMPLES_PER_PKT * 2  
+
+SAMPLE_RATE = 16000
+SAMPLES_PER_PKT = int(SAMPLE_RATE * (FRAME_MS/1000.0))   # p.ej. 40ms -> 640 a 16k
+BYTES_16K_PER_FRAME = SAMPLES_PER_PKT * 2
+
+SAMPLES_24K_PER_FRAME = int(24000 * (FRAME_MS / 1000.0))
+BYTES_24K_PER_FRAME   = SAMPLES_24K_PER_FRAME * 2    
+
 PRE_ROLL            = os.getenv("PRE_ROLL", "1") == "1"
 PRE_ROLL_FRAMES     = int(os.getenv("PRE_ROLL_FRAMES", "1"))
 FADE_IN_FRAMES      = int(os.getenv("FADE_IN_FRAMES", "2"))
@@ -33,6 +37,9 @@ GAIN_ENABLE       = os.getenv("GAIN_ENABLE", "1") == "1"
 GAIN_DB           = float(os.getenv("GAIN_DB"))    
 GAIN_MAX_DB       = float(os.getenv("GAIN_MAX_DB")) 
 DITHER_LEVEL_LSB  = int(os.getenv("DITHER_LEVEL_LSB")) 
+
+
+FILTERS = os.getenv("FILTERS", "1") == "1"   
 
 COMPRESS_ENABLE   = os.getenv("COMPRESS_ENABLE", "0") == "1"  
 DITHER_ENABLE     = os.getenv("DITHER_ENABLE", "0") == "1"    
@@ -470,9 +477,9 @@ class ExtermalMediaBridge:
                     continue
                 else:
                     try:
-                        pcm8k = audioop.ulaw2lin(pkt["payload"], 2)
+                        pcm16 = pkt["payload"]
                         try:
-                            self.session.feed_pcm16(pcm8k)
+                            self.session.feed_pcm16(pcm16)
                             self.evlog.tick("to:sdk")
                         except Exception as e:
                             log_warn(f"feed_pcm16 error: {e}")
@@ -520,62 +527,55 @@ class ExtermalMediaBridge:
         is_new_phrase = False
         lpf_y_last = 0         
         deess_y_last = 0.0  
+        pcm16k_buf = bytearray()  
+
         try:
             async for pcm24 in self.session.stream_agent_tts():
                 if self._stop.is_set():
                     break
                 if pcm24:
                     buf_24k.extend(pcm24)
-
-                # Convertir audio de 24k a 8k y μ-law
+                    
                 while len(buf_24k) >= BYTES_24K_PER_FRAME:
                     slice24 = bytes(buf_24k[:BYTES_24K_PER_FRAME])
                     del buf_24k[:BYTES_24K_PER_FRAME]
-
                     pcm24_int16 = np.frombuffer(slice24, dtype="<i2")
-                    pcm24_f32 = pcm24_int16.astype(np.float32) / 32768.0
-                    pcm8_f32 = samplerate.resample(pcm24_f32, 8000 / 24000, "sinc_best")
-                    pcm8_int16 = (pcm8_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
-                    was_empty_8k = (len(pcm8k_buf) == 0)
-                    pcm8k = pcm8_int16.tobytes()
-                    pcm8k_buf.extend(pcm8k)
-                    if was_empty_8k:
+                    pcm24_f32   = pcm24_int16.astype(np.float32) / 32768.0
+                    pcm16_f32   = samplerate.resample(pcm24_f32, 16000 / 24000, "sinc_best")
+                    pcm16_int16 = (pcm16_f32 * 32768.0).clip(-32768, 32767).astype("<i2")
+                    was_empty_16k = (len(pcm16k_buf) == 0)
+                    pcm16 = pcm16_int16.tobytes()
+                    pcm16k_buf.extend(pcm16)
+                    if was_empty_16k:
                         is_new_phrase = True
                         first_frames_to_fade = FADE_IN_FRAMES
                         
-                    while len(pcm8k_buf) >= BYTES_8K_PER_FRAME:
-                        frame16 = bytes(pcm8k_buf[:BYTES_8K_PER_FRAME])
-                        del pcm8k_buf[:BYTES_8K_PER_FRAME]
-
-                        if LPF_8K:
-                            frame16, lpf_y_last = _lpf_8k_simple_state(frame16, 0.715, lpf_y_last)
-                        if DE_ESSER:
-                            frame16, deess_y_last = _soft_de_esser_pcm16_state(frame16, DE_ESSER_AMOUNT, deess_y_last)
-
-                        if first_frames_to_fade > 0:
-                            frame16 = _fade_in_pcm16(
-                                frame16, FADE_IN_FRAMES - first_frames_to_fade, FADE_IN_FRAMES
-                            )
-                            first_frames_to_fade -= 1
-                            
-                        if GAIN_ENABLE and GAIN_DB != 0.0:
-                            frame16 = _apply_gain_db(frame16, GAIN_DB, GAIN_MAX_DB)
-                            
-                        if SOFTCLIP_ENABLE:
-                            frame16 = _soft_clip_tanh_int16(frame16, out_limit=LIMIT_MAX, drive=1.0)
-                        else:
-                            frame16 = _hard_limit_int16(frame16, LIMIT_MAX)
-                            
-                        ulaw_frame = audioop.lin2ulaw(frame16, 2)
+                    while len(pcm16k_buf) >= BYTES_16K_PER_FRAME:
+                        frame16 = bytes(pcm16k_buf[:BYTES_16K_PER_FRAME])
+                        del pcm16k_buf[:BYTES_16K_PER_FRAME]
+                        if FILTERS:
+                            if LPF_8K:
+                                frame16, lpf_y_last = _lpf_8k_simple_state(frame16, 0.715, lpf_y_last)
+                            if DE_ESSER:
+                                frame16, deess_y_last = _soft_de_esser_pcm16_state(frame16, DE_ESSER_AMOUNT, deess_y_last)
+                            if first_frames_to_fade > 0:
+                                frame16 = _fade_in_pcm16(frame16, FADE_IN_FRAMES - first_frames_to_fade, FADE_IN_FRAMES)
+                                first_frames_to_fade -= 1
+                            if GAIN_ENABLE and GAIN_DB != 0.0:
+                                frame16 = _apply_gain_db(frame16, GAIN_DB, GAIN_MAX_DB)
+                            if SOFTCLIP_ENABLE:
+                                frame16 = _soft_clip_tanh_int16(frame16, out_limit=LIMIT_MAX, drive=1.0)
+                            else:
+                                frame16 = _hard_limit_int16(frame16, LIMIT_MAX)
                         async with self._buffer_lock:
-                            self.accum_out.extend(ulaw_frame)
+                            self.accum_out.extend(frame16)
         except asyncio.CancelledError:
             log_info("[RTP] Tarea rtp_inbound_task cancelada")          
-                  
+    
     async def rtp_pacer_loop(self):
         """Consume el buffer dinámico y envía los datos a intervalos regulares."""
         target_s = FRAME_MS / 1000.0
-        SILENCE_ULAW = b"\x7F" * SAMPLES_PER_PKT
+        SILENCE_PCM16 = b"\x00\x00" * SAMPLES_PER_PKT
         next_deadline = time.monotonic() + target_s
         try:
             while not self._stop.is_set():
@@ -594,19 +594,17 @@ class ExtermalMediaBridge:
                     
                 payload = None
                 async with self._buffer_lock:
-                    if len(self.accum_out) >= SAMPLES_PER_PKT:
-                        payload = bytes(self.accum_out[:SAMPLES_PER_PKT])
-                        del self.accum_out[:SAMPLES_PER_PKT]
-
+                    if len(self.accum_out) >= BYTES_16K_PER_FRAME:
+                        payload = bytes(self.accum_out[:BYTES_16K_PER_FRAME])
+                        del self.accum_out[:BYTES_16K_PER_FRAME]
                 if payload is None:
-                    payload = SILENCE_ULAW 
-
+                    payload = SILENCE_PCM16 
                 try:
                     async with self._tx_lock:
                         await self.rtp.send_payload(payload)
                     self.bytes_out += len(payload) + 12
                     self.out_probe.note(len(payload) + 12)
-                    self.evlog.tick("out:rtp" if payload is not SILENCE_ULAW else "out:sil")
+                    self.evlog.tick("out:rtp" if payload is not SILENCE_PCM16 else "out:sil")
                 except Exception as e:
                     log_warn(f"Error enviando RTP: {e}")
         except asyncio.CancelledError:
@@ -617,7 +615,7 @@ class ExtermalMediaBridge:
         if ECHO_BACK:
             return
         target_s = FRAME_MS / 1000.0
-        silence = b"\x7F" * SAMPLES_PER_PKT
+        silence = b"\x00\x00" * SAMPLES_PER_PKT
 
         while not self._stop.is_set():
             await asyncio.sleep(target_s)

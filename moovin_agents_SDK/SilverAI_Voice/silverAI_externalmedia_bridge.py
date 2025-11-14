@@ -459,7 +459,6 @@ class ExtermalMediaBridge:
                     continue
 
                 if ECHO_BACK:
-                    print("[Bridge Debug] Echo activado, rebotando audio de entrada")
                     try:
                         async with self._tx_lock:
                             if not getattr(self.rtp, "_pt_locked", False):
