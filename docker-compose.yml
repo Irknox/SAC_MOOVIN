@@ -10,6 +10,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+
   redis:
     image: redis:7-alpine
     command: ["redis-server","--appendonly","yes","--save","60","1","--requirepass","${REDIS_PASSWORD}"]
@@ -37,7 +38,36 @@ services:
       volumes:
         - ./moovin_agents_SDK/prompts:/app/prompts:rw
       restart: unless-stopped
-
+  silverai:
+    build: .
+    container_name: silverai
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    volumes:
+      - ./moovin_agents_SDK:/app
+    command: ["python", "SilverAI_Voice/SilverAI.py"]
+    expose:
+      - "8585"
+    network_mode: "host"
+  silverai_voice:
+    build: .
+    container_name: silverai_voice
+    working_dir: /app
+    volumes:
+      - ./moovin_agents_SDK:/app
+    command: ["python", "SilverAI_voice/SilverAI.py"]
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_WEBHOOK_SECRET=${OPENAI_WEBHOOK_SECRET}
+    expose:
+      - "8585"          
+    networks:
+      - telephony
+    restart: unless-stopped
   voicesvc:
     build: .
     container_name: voicesvc
