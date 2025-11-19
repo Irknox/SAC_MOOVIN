@@ -10,7 +10,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-
   redis:
     image: redis:7-alpine
     command: ["redis-server","--appendonly","yes","--save","60","1","--requirepass","${REDIS_PASSWORD}"]
@@ -38,21 +37,7 @@ services:
       volumes:
         - ./moovin_agents_SDK/prompts:/app/prompts:rw
       restart: unless-stopped
-  silverai:
-    build: .
-    container_name: silverai
-    working_dir: /app
-    env_file:
-      - .env
-    environment:
-      - PYTHONUNBUFFERED=1
-      - PYTHONPATH=/app
-    volumes:
-      - ./moovin_agents_SDK:/app
-    command: ["python", "SilverAI_Voice/SilverAI.py"]
-    expose:
-      - "8585"
-    network_mode: "host"
+
   silverai_voice:
     build: .
     container_name: silverai_voice
@@ -60,6 +45,8 @@ services:
     volumes:
       - ./moovin_agents_SDK:/app
     command: ["python", "SilverAI_voice/SilverAI.py"]
+    env_file:
+      - .env
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_WEBHOOK_SECRET=${OPENAI_WEBHOOK_KEY}
@@ -68,6 +55,7 @@ services:
     networks:
       - telephony
     restart: unless-stopped
+
   voicesvc:
     build: .
     container_name: voicesvc
@@ -83,6 +71,7 @@ services:
     expose:
       - "40000"
     network_mode: "host"
+
   silverai-ari:
     image: node:20
     container_name: silverai-ari
@@ -108,6 +97,7 @@ services:
         node SilverAI_Voice/SilverAI_externalmedia_ari.js
       "
     network_mode: "host"
+
   web:
     build:
       context: ./sac_manager_ui
@@ -119,6 +109,7 @@ services:
     environment:
       - COOKIE_SECURE=false   # en local HTTP
      # - COOKIE_SECURE=true  # en prod con HTTPS en el gateway
+     
   gateway:
     image: nginx:alpine
     depends_on:
