@@ -15,7 +15,10 @@ RUN apt-get update \
 
 RUN pip install --no-cache-dir samplerate
 
-RUN pip install --no-cache-dir -r requirements.txt
+ARG REQS_FILE=requirements.txt
+
+COPY ${REQS_FILE} /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY .env .env
 COPY moovin_agents_SDK/ /app/

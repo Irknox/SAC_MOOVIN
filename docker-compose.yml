@@ -39,19 +39,22 @@ services:
       restart: unless-stopped
 
   silverai_voice:
-    build: .
+    build:
+      context: .
+      args:
+        REQS_FILE: requirements_voice.txt
     container_name: silverai_voice
     working_dir: /app
     volumes:
       - ./moovin_agents_SDK:/app
-    command: ["python", "SilverAI_Voice/SilverAI.py"]
+    command: ["python", "SilverAI_voice/SilverAI.py"]
     env_file:
       - .env
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_WEBHOOK_SECRET=${OPENAI_WEBHOOK_KEY}
     expose:
-      - "8585"          
+      - "8585"
     networks:
       - telephony
     restart: unless-stopped

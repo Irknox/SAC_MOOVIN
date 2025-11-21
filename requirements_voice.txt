@@ -1,0 +1,8 @@
+# Webhook y HTTP
+flask>=3.0.0,<4
+requests>=2.31.0,<3
+
+# OpenAI 
+openai>=2.8.0,<3
+openai-agents>=0.6.1,<1
+
