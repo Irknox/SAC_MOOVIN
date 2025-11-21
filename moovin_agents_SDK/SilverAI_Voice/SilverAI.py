@@ -95,14 +95,12 @@ def webhook():
 
             import requests
 
-            # Aceptamos la llamada realtime (modelo se define aquí)
             requests.post(
                 f"https://api.openai.com/v1/realtime/calls/{call_id}/accept",
                 headers={**AUTH_HEADER, "Content-Type": "application/json"},
                 json=call_accept,
             )
 
-            # Arrancamos la sesión del SDK enganchada a ese call_id
             threading.Thread(
                 target=start_session_in_thread,
                 args=(call_id,),
