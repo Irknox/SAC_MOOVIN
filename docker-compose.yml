@@ -47,7 +47,7 @@ services:
     working_dir: /app
     volumes:
       - ./moovin_agents_SDK:/app
-    command: ["python", "SilverAI_voice/SilverAI.py"]
+    command: ["python", "SilverAI_Voice/SilverAI.py"]
     env_file:
       - .env
     environment:

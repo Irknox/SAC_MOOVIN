@@ -27,11 +27,11 @@ voice_agent = RealtimeAgent(
 
 runner = RealtimeRunner(
     starting_agent=voice_agent,
-    model=OpenAIRealtimeSIPModel(),  
+    model=OpenAIRealtimeSIPModel(),
 )
 
 AUTH_HEADER = {
-    "Authorization": "Bearer " + os.getenv("OPENAI_API_KEY")
+    "Authorization": "Bearer " + os.getenv("OPENAI_API_KEY"),
 }
 
 call_accept = {
@@ -45,14 +45,12 @@ call_accept = {
 
 
 async def run_realtime_session(call_id: str):
-    """
-    Engancha un RealtimeAgent (SDK) a la llamada SIP usando el call_id
+    """Engancha un RealtimeAgent (SDK) a la llamada SIP usando el call_id
     que llega por el webhook realtime.call.incoming.
     """
     model_config = {
         "call_id": call_id,
         "initial_model_settings": {
-            "model_name": "gpt-4o-realtime-preview", 
             "modalities": ["audio"],
             "voice": "alloy",
             "speed": 1.3,
@@ -83,10 +81,7 @@ async def run_realtime_session(call_id: str):
 
 
 def start_session_in_thread(call_id: str):
-    """
-    Wrapper para lanzar la sesión async del SDK en un thread,
-    igual que hacías con websocket_task.
-    """
+    """Wrapper para lanzar la sesión async del SDK en un thread."""
     asyncio.run(run_realtime_session(call_id))
 
 
@@ -100,12 +95,14 @@ def webhook():
 
             import requests
 
+            # Aceptamos la llamada realtime (modelo se define aquí)
             requests.post(
                 f"https://api.openai.com/v1/realtime/calls/{call_id}/accept",
                 headers={**AUTH_HEADER, "Content-Type": "application/json"},
                 json=call_accept,
             )
 
+            # Arrancamos la sesión del SDK enganchada a ese call_id
             threading.Thread(
                 target=start_session_in_thread,
                 args=(call_id,),
