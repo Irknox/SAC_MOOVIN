@@ -110,7 +110,7 @@ services:
       - COOKIE_SECURE=false   # en local HTTP
      # - COOKIE_SECURE=true  # en prod con HTTPS en el gateway
 
-    gateway:
+  gateway:
     image: nginx:alpine
     depends_on:
       - app
