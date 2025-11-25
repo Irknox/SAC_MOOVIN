@@ -99,7 +99,7 @@ def webhook():
         if event.type == "realtime.call.incoming":
             print (f"[DEBUG] Este es el valor del evento: {event}")
             call_id = event.data.call_id
-            print(f"[DEBUG] Este es el call ID"{call_id})
+            print(f"[DEBUG] Este es el call ID {call_id}")
             import requests
 
             requests.post(
