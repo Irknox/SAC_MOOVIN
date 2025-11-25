@@ -98,7 +98,7 @@ def webhook():
 
         if event.type == "realtime.call.incoming":
             call_id = event.data.call_id
-
+            print("Este es el call ID", call_id)
             import requests
 
             requests.post(
