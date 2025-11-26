@@ -8,3 +8,6 @@ openai-agents>=0.6.1,<1
 
 websocket-client==1.8.0
 websockets==15.0.1
+
+# Extras
+redis==6.4.0

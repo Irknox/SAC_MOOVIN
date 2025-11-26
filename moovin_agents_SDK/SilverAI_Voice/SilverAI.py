@@ -7,13 +7,31 @@ import threading
 from agents.realtime import RealtimeAgent, RealtimeRunner
 from agents.realtime.openai_realtime import OpenAIRealtimeSIPModel
 from websockets.exceptions import ConnectionClosedError
+import requests
+import redis
+
+REDIS_URL = os.environ["REDIS_URL"]
+
+rdb = redis.Redis.from_url(
+    REDIS_URL,
+    decode_responses=True,
+)
+
+def redis_key(call_id: str) -> str:
+    return f"calls:{call_id}"
+
+def save_call_meta(call_id: str, meta: dict, ttl_seconds: int = 3600) -> None:
+    rdb.set(redis_key(call_id), json.dumps(meta), ex=ttl_seconds)
+
+def delete_call_meta(call_id: str) -> None:
+    rdb.delete(redis_key(call_id))
 
 app = Flask(__name__)
 
 client = OpenAI(
     api_key=os.environ["OPENAI_API_KEY"],
     webhook_secret=os.environ["OPENAI_WEBHOOK_KEY"],
-)
+)  
 
 
 voice_agent = RealtimeAgent(
@@ -85,7 +103,10 @@ async def run_realtime_session(call_id: str):
 
     except Exception as e:
         print("Error en sesión Realtime:", repr(e))
-
+    finally:
+        delete_call_meta(call_id)
+        print(f"[DEBUG] Redis cleanup OK para call_id={call_id}")
+        
 def start_session_in_thread(call_id: str):
     """Wrapper para lanzar la sesión async del SDK en un thread."""
     asyncio.run(run_realtime_session(call_id))
@@ -95,13 +116,24 @@ def start_session_in_thread(call_id: str):
 def webhook():
     try:
         event = client.webhooks.unwrap(request.data, request.headers)
-
         if event.type == "realtime.call.incoming":
-            print (f"[DEBUG] Este es el valor del evento: {event}")
             call_id = event.data.call_id
-            print(f"[DEBUG] Este es el call ID {call_id}")
-            import requests
+            sip_headers = {}
+            for h in (event.data.sip_headers or []):
+                sip_headers[h.name] = h.value
 
+            meta = {
+                "call_id": call_id,
+                "sip_headers": sip_headers,
+                "x_ast_uniqueid": sip_headers.get("X-Ast-UniqueID"),
+                "x_ast_channel": sip_headers.get("X-Ast-Channel"),
+                "sip_call_id": sip_headers.get("Call-ID"),
+                "created_at": event.created_at,
+                "status": "incoming",
+            }
+            save_call_meta(call_id, meta)
+            
+            
             requests.post(
                 f"https://api.openai.com/v1/realtime/calls/{call_id}/accept",
                 headers={**AUTH_HEADER, "Content-Type": "application/json"},
