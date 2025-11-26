@@ -92,15 +92,18 @@ async def run_realtime_session(call_id: str):
         },
     }
     try:
-        
-        async with await runner.run(model_config=model_config) as session:
+        ctx = {
+        "call_id": call_id,
+        }
+
+        async with await runner.run(context=ctx,model_config=model_config) as session:
             await session.send_message(
                 "Dile al usuario: 'Mi nombre es Silver, asistente virtual de Moovin "
                 "(pronunciado Muvin), ¿cómo puedo asistirte hoy?'"
             )
 
             async for event in session:
-                print("Realtime event:", event)
+                print("Realtime event:")
     except ConnectionClosedError:
         print("Sesión Realtime finalizada: cierre de WebSocket (fin de llamada SIP).")
 
