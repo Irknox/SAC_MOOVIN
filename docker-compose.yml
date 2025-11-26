@@ -55,12 +55,13 @@ services:
     working_dir: /app
     volumes:
       - ./moovin_agents_SDK:/app
-    command: ["python", "SilverAI_Voice/SilverAI.py"]
+    command: ["python","-u", "SilverAI_Voice/SilverAI.py"]
     env_file:
       - .env
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_WEBHOOK_SECRET=${OPENAI_WEBHOOK_KEY}
+      - PYTHONUNBUFFERED=1
     expose:
       - "8585"
     networks:
@@ -83,7 +84,6 @@ services:
       ARI_PASS: "${ARI_PASS:-asterisk}"
       ARI_APP:  "${ARI_APP:-SilverAI}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
-
     depends_on:
       redis:
         condition: service_healthy

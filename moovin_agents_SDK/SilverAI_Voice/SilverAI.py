@@ -42,6 +42,8 @@ voice_agent = RealtimeAgent(
         "(pronunciado 'Muvin'). "
         "Respondes con voz natural, en español latino, de forma clara y concisa. "
         "Si el usuario no entiende algo, reformula con otras palabras."
+        
+        "Cuentas con una herramienta llamada escalate_call, con esta herramienta transfieres la llamada a un agente humano."
     ),
     tools=[escalate_call]
 )
