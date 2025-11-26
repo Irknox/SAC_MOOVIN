@@ -12,9 +12,15 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server","--appendonly","yes","--save","60","1","--requirepass","${REDIS_PASSWORD}"]
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command:
+      [
+        "redis-server",
+        "--appendonly","yes",
+        "--save","60","1",
+        "--requirepass","${REDIS_PASSWORD}",
+        "--bind","0.0.0.0",
+        "--protected-mode","no"
+      ]
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
@@ -62,22 +68,6 @@ services:
       - telephony
     restart: unless-stopped
 
-  voicesvc:
-    build: .
-    container_name: voicesvc
-    working_dir: /app
-    env_file:
-      - .env
-    environment:
-      - PYTHONUNBUFFERED=1
-      - PYTHONPATH=/app
-    volumes:
-      - ./moovin_agents_SDK:/app
-    command: ["python", "SilverAI_Voice/silverAI_externalmedia_bridge.py"]
-    expose:
-      - "40000"
-    network_mode: "host"
-
   silverai-ari:
     image: node:20
     container_name: silverai-ari
@@ -93,8 +83,11 @@ services:
       ARI_PASS: "${ARI_PASS:-asterisk}"
       ARI_APP:  "${ARI_APP:-SilverAI}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+
     depends_on:
-      - voicesvc
+      redis:
+        condition: service_healthy
+
     command: >
       bash -lc "
         command -v npm || (apt-get update && apt-get install -y npm) &&
