@@ -98,7 +98,7 @@ services:
         node -v && npm -v &&
         npm init -y >/dev/null 2>&1 || true &&
         npm i ari-client dotenv &&
-        node SilverAI_Voice/SilverAI_externalmedia_ari.js
+        node SilverAI_Voice/SilverAI_ari.js
       "
     network_mode: "host"
 

@@ -9,6 +9,7 @@ from agents.realtime.openai_realtime import OpenAIRealtimeSIPModel
 from websockets.exceptions import ConnectionClosedError
 import requests
 import redis
+from tools import escalate_call
 
 REDIS_URL = os.environ["REDIS_URL"]
 
@@ -42,6 +43,7 @@ voice_agent = RealtimeAgent(
         "Respondes con voz natural, en español latino, de forma clara y concisa. "
         "Si el usuario no entiende algo, reformula con otras palabras."
     ),
+    tools=[escalate_call]
 )
 
 runner = RealtimeRunner(
@@ -58,6 +60,7 @@ call_accept = {
     "instructions": (
         "Eres un Agente de Servicio al Cliente para la compañía de logística y envíos Moovin "
         "(pronunciado 'Muvin')."
+        "Habla en español latino, manten un tono natural, sin acentos."
     ),
     "model": "gpt-4o-realtime-preview",
 }
