@@ -46,7 +46,7 @@ async def escalate_call(ctx: RunContextWrapper, target_ext: int = 9999, mode: st
             data = resp.json()
         except Exception:
             data = {"raw": resp.text}
-
+        print(f"Este es el valor de data: {data}")
         if resp.ok:
             print(f"Solicitud enviada a ari, respuesta: {data}")
             return data
