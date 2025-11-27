@@ -3,7 +3,7 @@ import os, asyncio, json
 import requests
 from agents import function_tool, RunContextWrapper
 
-ARI_CONTROL_URL = os.getenv("ARI_CONTROL_URL", "http://127.0.0.1:8787")
+ARI_CONTROL_URL = os.getenv("ARI_CONTROL_URL")
 ARI_CONTROL_TOKEN = os.getenv("ARI_CONTROL_TOKEN")
 
 @function_tool(

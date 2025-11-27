@@ -78,8 +78,8 @@ services:
     volumes:
       - ./moovin_agents_SDK:/app
     environment:
-      REDIS_URL: "redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
-      ARI_URL: "${ARI_URL}"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      ARI_URL: "${ARI_URL}" 
       ARI_USER: "${ARI_USER:-asterisk}"
       ARI_PASS: "${ARI_PASS:-asterisk}"
       ARI_APP:  "${ARI_APP:-SilverAI}"
@@ -87,7 +87,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-
     command: >
       bash -lc "
         command -v npm || (apt-get update && apt-get install -y npm) &&
@@ -96,7 +95,11 @@ services:
         npm i ari-client dotenv express redis &&
         node SilverAI_Voice/SilverAI_ari.js
       "
-    network_mode: "host"
+    networks:
+      - default
+      - telephony
+    ports:
+      - "8787:8787"
 
   web:
     build:
