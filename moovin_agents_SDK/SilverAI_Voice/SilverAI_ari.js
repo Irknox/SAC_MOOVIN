@@ -108,7 +108,7 @@ async function transferViaRedirect(ari, channelId, targetExt) {
         });
       }
 
-      const chosenMode = (mode || "dialplan").toLowerCase();
+      const chosenMode = (mode || "redirect").toLowerCase();
       if (chosenMode === "redirect") {
         await transferViaRedirect(ari, ch.id, target_ext);
       } else {
