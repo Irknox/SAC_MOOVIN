@@ -4,7 +4,7 @@ import requests
 from agents import function_tool, RunContextWrapper
 
 ARI_CONTROL_URL = os.getenv("ARI_CONTROL_URL")
-ARI_CONTROL_TOKEN = os.getenv("ARI_CONTROL_TOKEN")
+AMI_CONTROL_TOKEN = os.getenv("AMI_CONTROL_TOKEN")
 
 @function_tool(
     name_override="escalate_call",
@@ -24,16 +24,16 @@ async def escalate_call(ctx: RunContextWrapper, target_ext: int = 5050, mode: st
         print("Missin Call ID in context")
         return {"status": "error", "reason": "missing_call_id_in_context"}
     
-    if not ARI_CONTROL_TOKEN:
+    if not AMI_CONTROL_TOKEN:
         print("falta Control ARI en ENV")
-        return {"status": "error", "reason": "missing ARI_CONTROL_TOKEN"}
+        return {"status": "error", "reason": "missing AMI_CONTROL_TOKEN"}
     
     print(f"Usando Escalate Tool 🧗 con call_id {call_id} a la extension {target_ext} con mode {mode}")
 
     url = ARI_CONTROL_URL.rstrip("/") + "/transfer"
     payload = {"call_id": call_id, "target_ext": int(target_ext), "mode": mode}
     headers = {
-        "x-ari-control-token": ARI_CONTROL_TOKEN,
+        "x-ari-control-token": AMI_CONTROL_TOKEN,
         "Content-Type": "application/json",
     }
 

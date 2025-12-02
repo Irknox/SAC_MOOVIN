@@ -89,14 +89,13 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-
     command: >
       bash -lc "
         command -v npm || (apt-get update && apt-get install -y npm) &&
         node -v && npm -v &&
         npm init -y >/dev/null 2>&1 || true &&
-        npm i ari-client dotenv express redis &&
-        node SilverAI_Voice/SilverAI_ari.js
+        npm i asterisk-ami-client dotenv express redis &&
+        node SilverAI_Voice/SilverAI_AMI.js
       "
     network_mode: "host"
 
