@@ -10,7 +10,7 @@ AMI_CONTROL_TOKEN = os.getenv("AMI_CONTROL_TOKEN")
     name_override="escalate_call",
     description_override="Escala inmediatamente a un asistente Humano. Úsala ÚNICAMENTE cuando el usuario solicite hablar con un Humano."
 )
-async def escalate_call(ctx: RunContextWrapper, target_ext: int = 5050, mode: str = "redirect"):
+async def escalate_call(ctx: RunContextWrapper, target_ext: int = 90000, mode: str = "redirect"):
     context_obj = getattr(ctx, "context", None)
     call_id = None
     if isinstance(context_obj, dict):
