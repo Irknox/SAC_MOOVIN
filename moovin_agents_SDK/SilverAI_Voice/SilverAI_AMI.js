@@ -6,12 +6,12 @@ const AmiClient = require("asterisk-ami-client");
 
 const {
   REDIS_URL,
-  AMI_CONTROL_TOKEN,   
+  AMI_CONTROL_TOKEN,
   AMI_HOST = "127.0.0.1",
   AMI_PORT = 5038,
   AMI_USER,
   AMI_PASS,
-  AMI_TRANSFER_CONTEXT = "from-internal", 
+  AMI_TRANSFER_CONTEXT = "from-internal",
 } = process.env;
 
 if (!REDIS_URL) throw new Error("Falta REDIS_URL");
@@ -56,7 +56,9 @@ app.use(express.json({ limit: "256kb" }));
 
       const { call_id, target_ext, mode } = req.body || {};
       if (!call_id || !target_ext) {
-        return res.status(400).json({ error: "call_id y target_ext son requeridos" });
+        return res
+          .status(400)
+          .json({ error: "call_id y target_ext son requeridos" });
       }
 
       const raw = await rdb.get(redisKey(call_id));
@@ -68,20 +70,17 @@ app.use(express.json({ limit: "256kb" }));
       try {
         meta = JSON.parse(raw);
       } catch (e) {
-        return res.status(500).json({ error: "invalid_meta_json", detail: String(e?.message || e) });
+        return res.status(500).json({
+          error: "invalid_meta_json",
+          detail: String(e?.message || e),
+        });
       }
 
       const astChannel =
-        meta.ast_channel ||
-        meta.X_Ast_Channel ||
-        meta.x_ast_channel ||
-        null;
+        meta.ast_channel || meta.X_Ast_Channel || meta.x_ast_channel || null;
 
       const astUniqueId =
-        meta.ast_uniqueid ||
-        meta.X_Ast_UniqueID ||
-        meta.x_ast_uniqueid ||
-        null;
+        meta.ast_uniqueid || meta.X_Ast_UniqueID || meta.x_ast_uniqueid || null;
 
       if (!astChannel) {
         return res.status(400).json({
@@ -95,7 +94,9 @@ app.use(express.json({ limit: "256kb" }));
 
       console.log(
         `[AMI] Redirect request: call_id=${call_id}, channel=${astChannel}, ` +
-          `context=${AMI_TRANSFER_CONTEXT}, exten=${extStr}, mode=${mode || "redirect"}`
+          `context=${AMI_TRANSFER_CONTEXT}, exten=${extStr}, mode=${
+            mode || "redirect"
+          }`
       );
 
       const redirectResult = await ami.action({
@@ -139,3 +140,29 @@ app.use(express.json({ limit: "256kb" }));
   console.error("Fatal:", e);
   process.exit(1);
 });
+
+const call_memory_template = {
+  summary:
+    "Cuando se limpie este memoria de redis y se persista en Mongo haremos un resumen de lo que hablaron el usuario y el agente",
+  init_date: date,
+  finish_date: "al cerrar la sesion tambien",
+  user_info:{explication:"Aqui guardaremos la info del usuario que tengamos al final de la llamada, si no tenemos no la usamos, pero la idea es que si tenemos info del usuario lo guardaremos aca "},
+  interactions: [
+    {
+      user: {
+        text: "lo que dijo el usuario",
+        date: date,
+      },
+      steps_taken: [
+        "Esto seria una seria de obj {} con las acciones en roden que tomo el agente, tipo, uso una herramienta y su resultado, hizo un handoff, basicamente paso a paso lo que hizo en ese turno",
+      ],
+      agent: {
+        text: "lo que respondio el agente",
+        date: date,
+      },
+    },
+    {
+      user: { text: "......" },
+    },
+  ],
+};

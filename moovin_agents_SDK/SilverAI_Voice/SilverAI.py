@@ -10,6 +10,7 @@ from websockets.exceptions import ConnectionClosedError
 import requests
 import redis
 from tools import escalate_call
+from datetime import datetime
 
 REDIS_URL = os.environ["REDIS_URL"]
 
@@ -34,7 +35,16 @@ client = OpenAI(
     webhook_secret=os.environ["OPENAI_WEBHOOK_KEY"],
 )  
 
+def interaction_key(call_id: str) -> str:
+    """Clave para la lista de interacciones."""
+    return f"interactions:{call_id}"
 
+def append_interaction(call_id: str, interaction_obj: dict) -> None:
+    """Agrega una nueva interacción a la lista de Redis de forma atómica."""
+    interaction_json = json.dumps(interaction_obj)
+    rdb.rpush(interaction_key(call_id), interaction_json)
+    
+    
 voice_agent = RealtimeAgent(
     name="Silver",
     instructions=(
@@ -72,6 +82,30 @@ async def run_realtime_session(call_id: str):
     """Engancha un RealtimeAgent (SDK) a la llamada SIP usando el call_id
     que llega por el webhook realtime.call.incoming.
     """
+    current_interaction = {
+        "user": None, 
+        "steps_taken": [], 
+        "agent": None,
+        "date": datetime.now().isoformat(), 
+        }
+    
+    tool_calls_pending = {}
+    
+    def finalize_and_save_interaction():
+        """Consolida el current_interaction y lo añade a la lista de Redis."""
+        nonlocal current_interaction
+        
+        if current_interaction["user"] or current_interaction["agent"] or current_interaction["steps_taken"]:
+            append_interaction(call_id, current_interaction)
+        
+        current_interaction = {
+            "user": None, 
+            "steps_taken": [], 
+            "agent": None,
+            "date": datetime.now().isoformat(),
+        }
+        
+        
     model_config = {
         "call_id": call_id,
         "initial_model_settings": {
@@ -97,22 +131,100 @@ async def run_realtime_session(call_id: str):
         ctx = {
         "call_id": call_id,
         }
-
+        
         async with await runner.run(context=ctx,model_config=model_config) as session:
+            initial_message = "Hola, soy Silver, asistente virtual de Moovin (pronunciado Muvin), ¿cómo puedo asistirte hoy?"
+            
             await session.send_message(
-                "Dile al usuario: 'Mi nombre es Silver, asistente virtual de Moovin "
-                "(pronunciado Muvin), ¿cómo puedo asistirte hoy?'"
+                f"Dile al usuario: '{initial_message}'"
             )
-
+            current_interaction["agent"] = {
+                "text": initial_message,
+                "date": datetime.now().isoformat(),
+            }
+            finalize_and_save_interaction()
+            
             async for event in session:
-                print("Realtime event:")
-    except ConnectionClosedError:
-        print("Sesión Realtime finalizada: cierre de WebSocket (fin de llamada SIP).")
+                print(f"Realtime event: {event.type}")
+                
+                if event.type == "realtime.transcription.completed":
+                    if current_interaction["user"] or current_interaction["agent"]:
+                         finalize_and_save_interaction()
+                    
+                    current_interaction["user"] = {
+                        "text": event.data.text,
+                        "date": datetime.now().isoformat(),
+                    }
+                    
+                elif event.type == "realtime.agent.response.completed":
+                    current_interaction["agent"] = {
+                        "text": event.data.text,
+                        "date": datetime.now().isoformat(),
+                    }
+                    finalize_and_save_interaction()
+                
+                elif event.type == "function.call.created":
+                    tool_call_id = event.data.tool_call_id
+                    
+                    tool_calls_pending[tool_call_id] = {
+                        "type": "tool_call",
+                        "tool_name": event.data.tool_name,
+                        "arguments": event.data.arguments,
+                        "date_started": datetime.now().isoformat(),
+                    }
+                    current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
+
+                elif event.type == "function.call.completed":
+                    tool_call_id = event.data.tool_call_id
+                    
+                    if tool_call_id in tool_calls_pending:
+                        tool_entry = tool_calls_pending[tool_call_id]
+                        tool_entry["date_completed"] = datetime.now().isoformat()
+                        tool_entry["output"] = event.data.output
+                        tool_entry["status"] = "completed"
+                        
+                        del tool_calls_pending[tool_call_id]
+                        
 
     except Exception as e:
-        print("Error en sesión Realtime:", repr(e))
+        print(f"[ERROR] Sesión Realtime fallida para call_id={call_id}: {str(e)}")
+        return f"Error en la sesión Realtime para call_id={call_id}: {str(e)}"
+    
     finally:
+        finalize_and_save_interaction()
+        meta_json = rdb.get(redis_key(call_id))
+        interactions_list_json = rdb.lrange(interaction_key(call_id), 0, -1)
+        interactions_list = [json.loads(i) for i in interactions_list_json]
+        
+        full_session_data = None
+        if meta_json:
+            meta = json.loads(meta_json)
+            meta["finish_date"] = datetime.now().isoformat()
+            
+            session_status = "ended_with_error" if 'e' in locals() else "ended_cleanly"
+            meta["status"] = session_status
+            
+            save_call_meta(call_id, meta) 
+            full_session_data = {**meta, "interactions": interactions_list}
+            
+        
+        if full_session_data:
+            print(f"[DEBUG] Sesión Completa para Persistencia (call_id={call_id}):")
+            print(f"  - Status Final: {full_session_data['status']}")
+            print(f"  - Total Interacciones: {len(full_session_data['interactions'])}")
+            
+            if len(full_session_data['interactions']) > 0:
+                 print(f"  - Primera Interacción: {json.dumps(full_session_data['interactions'][0])}")
+            
+        else:
+            print(f"[DEBUG] No se encontró metadata en Redis para call_id={call_id} antes de limpiar.")
+
+
         delete_call_meta(call_id)
+        rdb.delete(interaction_key(call_id))
+
+        print(f"[DEBUG] Redis cleanup OK para call_id={call_id}")
+
         print(f"[DEBUG] Redis cleanup OK para call_id={call_id}")
         
 def start_session_in_thread(call_id: str):
@@ -129,17 +241,26 @@ def webhook():
             sip_headers = {}
             for h in (event.data.sip_headers or []):
                 sip_headers[h.name] = h.value
-
-            meta = {
-                "call_id": call_id,
-                "sip_headers": sip_headers,
-                "x_ast_uniqueid": sip_headers.get("X-Ast-UniqueID"),
-                "x_ast_channel": sip_headers.get("X-Ast-Channel"),
-                "sip_call_id": sip_headers.get("Call-ID"),
-                "created_at": event.created_at,
-                "status": "incoming",
+            print(f"Incoming call: {call_id}, SIP headers: {sip_headers}")
+            session_meta = {
+                "session_id": call_id,
+                "summary": None,
+                "init_date": event.created_at, 
+                "finish_date": None,
+                "status": "incoming", 
+                "user_info": { 
+                    "phone_number": sip_headers.get("From", "Unknown"), 
+                    "explication": "Se obtuvo el número del SIP header 'From'."
+                },
+                "meta_data": {         
+                    "x_ast_uniqueid": sip_headers.get("X-Ast-UniqueID"),
+                    "x_ast_channel": sip_headers.get("X-Ast-Channel"),
+                    "sip_call_id": sip_headers.get("Call-ID"),
+                    "sip_headers": sip_headers,
+                },
             }
-            save_call_meta(call_id, meta)
+            
+            save_call_meta(call_id, session_meta) 
             
             
             requests.post(
