@@ -44,24 +44,6 @@ client = OpenAI(
     webhook_secret=os.environ["OPENAI_WEBHOOK_KEY"],
 )     
     
-voice_agent = RealtimeAgent(
-    name="Silver",
-    instructions=(
-        "Eres un Agente de Servicio al Cliente para la compañía de logística y envíos Moovin "
-        "(pronunciado 'Muvin'). "
-        "Respondes con voz natural, en español latino, de forma clara y concisa. "
-        "Si el usuario no entiende algo, reformula con otras palabras."
-        
-        "Cuentas con una herramienta llamada escalate_call, con esta herramienta transfieres la llamada a un agente humano."
-    ),
-    tools=[escalate_call]
-)
-
-runner = RealtimeRunner(
-    starting_agent=voice_agent,
-    model=OpenAIRealtimeSIPModel(),
-)
-
 AUTH_HEADER = {
     "Authorization": "Bearer " + os.getenv("OPENAI_API_KEY"),
 }
@@ -81,6 +63,25 @@ async def run_realtime_session(call_id: str):
     """Engancha un RealtimeAgent (SDK) a la llamada SIP usando el call_id
     que llega por el webhook realtime.call.incoming.
     """
+    
+    voice_agent = RealtimeAgent(
+        name="Silver",
+        instructions=(
+            "Eres un Agente de Servicio al Cliente para la compañía de logística y envíos Moovin "
+            "(pronunciado 'Muvin'). "
+            "Respondes con voz natural, en español latino, de forma clara y concisa. "
+            "Si el usuario no entiende algo, reformula con otras palabras."
+            
+            "Cuentas con una herramienta llamada escalate_call, con esta herramienta transfieres la llamada a un agente humano."
+        ),
+        tools=[escalate_call]
+    )
+
+    runner = RealtimeRunner(
+        starting_agent=voice_agent,
+        model=OpenAIRealtimeSIPModel(),
+    )
+    
     current_interaction = {
         "user": None, 
         "steps_taken": [], 
