@@ -127,6 +127,7 @@ async def run_realtime_session(call_id: str):
         ctx = {
         "call_id": call_id,
         }
+    
         async with await runner.run(context=ctx,model_config=model_config) as session:
             initial_message = "Hola, soy Silver, asistente virtual de Moovin (pronunciado Muvin), ¿cómo puedo asistirte hoy?"
             await session.send_message(
@@ -173,10 +174,14 @@ async def run_realtime_session(call_id: str):
                         tool_entry["status"] = "completed"
                         
                         del tool_calls_pending[tool_call_id]
-    except Exception as e:
-        print(f"[ERROR] Sesión Realtime fallida para call_id={call_id}: {str(e)}")
-        return f"Error en la sesión Realtime para call_id={call_id}: {str(e)}"
     
+    except ConnectionClosedError as e:
+        print(f"[ERROR-NETWORK] Sesión Realtime cerrada abruptamente (WebSocket/RTP) para call_id={call_id}: {type(e).__name__}: {str(e)}")
+        
+    except Exception as e:
+        print(f"[ERROR-SESSION] Sesión Realtime fallida para call_id={call_id}: {type(e).__name__}: {str(e)}")
+        raise e 
+
     finally:
         finalize_and_save_interaction()
         meta_json, interactions_list = get_session_data(call_id)
