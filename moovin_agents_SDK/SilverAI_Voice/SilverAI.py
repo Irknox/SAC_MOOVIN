@@ -90,18 +90,22 @@ async def run_realtime_session(call_id: str):
         }
     
     tool_calls_pending = {}
-    def finalize_and_save_interaction():
-        """Consolida el current_interaction y lo añade a la lista de Redis."""
-        nonlocal current_interaction
+    def finalize_and_save_interaction(call_id: str, current_interaction: dict) -> dict:
+        """Consolida el current_interaction y lo añade a la lista de Redis, 
+           luego prepara el nuevo objeto de interacción.
+           Retorna el nuevo objeto de interacción."""
         if current_interaction["user"] or current_interaction["agent"] or current_interaction["steps_taken"]:
-            append_interaction(call_id, current_interaction)
+            interaction_to_save = current_interaction.copy() 
+            append_interaction(call_id, interaction_to_save)
         
-        current_interaction = {
+        new_interaction = {
             "user": None, 
             "steps_taken": [], 
             "agent": None,
             "date": datetime.now().isoformat(),
         }
+        return new_interaction
+    
     model_config = {
         "call_id": call_id,
         "initial_model_settings": {
@@ -137,23 +141,32 @@ async def run_realtime_session(call_id: str):
                 "text": initial_message,
                 "date": datetime.now().isoformat(),
             }
-            finalize_and_save_interaction()
+            current_interaction = finalize_and_save_interaction(call_id, current_interaction)
+            
             async for event in session:
                 print(f"Realtime event: {event.type}")
                 
                 if event.type == "realtime.transcription.completed":
-                    if current_interaction["user"] or current_interaction["agent"]:
-                         finalize_and_save_interaction()
-                    current_interaction["user"] = {
-                        "text": event.data.text,
-                        "date": datetime.now().isoformat(),
-                    }
+                    if current_interaction["agent"]:
+                        current_interaction = finalize_and_save_interaction(call_id, current_interaction)
+                    
+                    new_text = event.data.text
+                    
+                    if current_interaction["user"]:
+                        current_interaction["user"]["text"] += " " + new_text
+                    else:
+                        current_interaction["user"] = {
+                            "text": new_text,
+                            "date": datetime.now().isoformat(),
+                        }
+                        
                 elif event.type == "realtime.agent.response.completed":
                     current_interaction["agent"] = {
                         "text": event.data.text,
                         "date": datetime.now().isoformat(),
                     }
-                    finalize_and_save_interaction()
+                    current_interaction = finalize_and_save_interaction(call_id, current_interaction)
+                    
                 elif event.type == "function.call.created":
                     tool_call_id = event.data.tool_call_id
                     
@@ -164,7 +177,9 @@ async def run_realtime_session(call_id: str):
                         "date_started": datetime.now().isoformat(),
                     }
                     current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
+                    
                 elif event.type == "function.call.completed":
+
                     tool_call_id = event.data.tool_call_id
                     
                     if tool_call_id in tool_calls_pending:
@@ -183,7 +198,7 @@ async def run_realtime_session(call_id: str):
         raise e 
 
     finally:
-        finalize_and_save_interaction()
+        current_interaction = finalize_and_save_interaction(call_id, current_interaction) 
         meta_json, interactions_list = get_session_data(call_id)
         interacion_summary = await resume_interaction(interactions_list)
         full_session_data = None
@@ -233,7 +248,6 @@ def webhook():
                 "status": "incoming", 
                 "user_info": { 
                     "phone_number": sip_headers.get("From", "Unknown"), 
-                    "explication": "Se obtuvo el número del SIP header 'From'."
                 },
                 "meta_data": {         
                     "x_ast_uniqueid": sip_headers.get("X-Ast-UniqueID"),
