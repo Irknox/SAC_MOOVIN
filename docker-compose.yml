@@ -62,8 +62,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_WEBHOOK_SECRET=${OPENAI_WEBHOOK_KEY}
       - PYTHONUNBUFFERED=1
-    ports: 
-    - "8585:8585"
+    expose:
+      - "8585"
     networks:
       - default
       - telephony
