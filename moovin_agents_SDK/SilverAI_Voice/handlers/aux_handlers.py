@@ -50,7 +50,7 @@ async def resume_interaction(interactions: list) -> str:
         )
         
         summary = completion.choices[0].message.content.strip()
-        print(f"[DEBUG] Resumen generado exitosamente: {summary}")
+        print(f"[DEBUG] Resumen generado exitosamente")
         return summary
         
     except Exception as e:

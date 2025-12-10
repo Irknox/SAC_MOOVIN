@@ -177,7 +177,35 @@ async def run_realtime_session(call_id: str):
                         "date_started": datetime.now().isoformat(),
                     }
                     current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
+                elif event.type == "history_added":
+                    print(f"[DEBUG-HISTORY-ITEM] Procesando nuevo item de historial: {event.data.item}") 
                     
+                    try:
+                        item = event.data.item
+                        role = item.role
+                        text = item.text
+                        
+                        if role == "user":
+                            if current_interaction["agent"]:
+                                current_interaction = finalize_and_save_interaction(call_id, current_interaction)
+                            if current_interaction["user"]:
+                                current_interaction["user"]["text"] += " " + text
+                            else:
+                                current_interaction["user"] = {
+                                    "text": text,
+                                    "date": datetime.now().isoformat(),
+                                }
+                                
+                        elif role == "agent":
+                            current_interaction["agent"] = {
+                                "text": text,
+                                "date": datetime.now().isoformat(),
+                            }
+                            current_interaction = finalize_and_save_interaction(call_id, current_interaction)
+                            
+                    except AttributeError as e:
+                        print(f"[ERROR-HISTORY] Fallo al acceder a item.role o item.text. Revisa la estructura: {e}. Item: {event.data.item}")
+                        
                 elif event.type == "function.call.completed":
 
                     tool_call_id = event.data.tool_call_id
@@ -207,7 +235,7 @@ async def run_realtime_session(call_id: str):
             meta["finish_date"] = datetime.now().isoformat()
             session_status = "ended_with_error" if 'e' in locals() else "ended_cleanly"
             meta["status"] = session_status
-            meta["summary"] = interacion_summary
+            meta["summary"] = interacion_summary or "No se pudo generar resumen."
             save_call_meta(call_id, meta) 
             full_session_data = {**meta, "interactions": interactions_list}
             if full_session_data:
