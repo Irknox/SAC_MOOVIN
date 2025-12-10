@@ -8,42 +8,41 @@ from agents.realtime import RealtimeAgent, RealtimeRunner
 from agents.realtime.openai_realtime import OpenAIRealtimeSIPModel
 from websockets.exceptions import ConnectionClosedError
 import requests
-import redis
 from tools import escalate_call
 from datetime import datetime
-
-REDIS_URL = os.environ["REDIS_URL"]
-
-rdb = redis.Redis.from_url(
-    REDIS_URL,
-    decode_responses=True,
+from handlers.aux_handlers import resume_interaction
+from handlers.db_handlers import (
+    save_to_mongodb, 
+    save_call_meta, 
+    interaction_key, 
+    append_interaction, 
+    redis_key, 
+    get_session_data, 
+    delete_session_data
 )
+import pymongo
 
-def redis_key(call_id: str) -> str:
-    return f"calls:{call_id}"
+MONGO_URI = os.environ.get("MONGO_URI") 
+MONGO_DATABASE = os.environ.get("MONGO_DATABASE") 
+MONGO_COLLECTION = os.environ.get("MONGO_COLLECTION")
 
-def save_call_meta(call_id: str, meta: dict, ttl_seconds: int = 3600) -> None:
-    rdb.set(redis_key(call_id), json.dumps(meta), ex=ttl_seconds)
-
-def delete_call_meta(call_id: str) -> None:
-    rdb.delete(redis_key(call_id))
-
+try:
+    mongo_client = pymongo.MongoClient(MONGO_URI)
+    mongo_client.admin.command('ping') 
+    db = mongo_client[MONGO_DATABASE]
+    sessions_collection = db[MONGO_COLLECTION]
+    print(f"[INFO] Conexión a MongoDB exitosa. URI: {MONGO_URI}, Colección: {MONGO_COLLECTION}")
+except Exception as e:
+    print(f"[ERROR] No se pudo conectar a MongoDB. La persistencia fallará: {e}")
+    mongo_client = None
+    sessions_collection = None
+    
 app = Flask(__name__)
 
 client = OpenAI(
     api_key=os.environ["OPENAI_API_KEY"],
     webhook_secret=os.environ["OPENAI_WEBHOOK_KEY"],
-)  
-
-def interaction_key(call_id: str) -> str:
-    """Clave para la lista de interacciones."""
-    return f"interactions:{call_id}"
-
-def append_interaction(call_id: str, interaction_obj: dict) -> None:
-    """Agrega una nueva interacción a la lista de Redis de forma atómica."""
-    interaction_json = json.dumps(interaction_obj)
-    rdb.rpush(interaction_key(call_id), interaction_json)
-    
+)     
     
 voice_agent = RealtimeAgent(
     name="Silver",
@@ -90,11 +89,9 @@ async def run_realtime_session(call_id: str):
         }
     
     tool_calls_pending = {}
-    
     def finalize_and_save_interaction():
         """Consolida el current_interaction y lo añade a la lista de Redis."""
         nonlocal current_interaction
-        
         if current_interaction["user"] or current_interaction["agent"] or current_interaction["steps_taken"]:
             append_interaction(call_id, current_interaction)
         
@@ -104,8 +101,6 @@ async def run_realtime_session(call_id: str):
             "agent": None,
             "date": datetime.now().isoformat(),
         }
-        
-        
     model_config = {
         "call_id": call_id,
         "initial_model_settings": {
@@ -131,10 +126,8 @@ async def run_realtime_session(call_id: str):
         ctx = {
         "call_id": call_id,
         }
-        
         async with await runner.run(context=ctx,model_config=model_config) as session:
             initial_message = "Hola, soy Silver, asistente virtual de Moovin (pronunciado Muvin), ¿cómo puedo asistirte hoy?"
-            
             await session.send_message(
                 f"Dile al usuario: '{initial_message}'"
             )
@@ -143,26 +136,22 @@ async def run_realtime_session(call_id: str):
                 "date": datetime.now().isoformat(),
             }
             finalize_and_save_interaction()
-            
             async for event in session:
                 print(f"Realtime event: {event.type}")
                 
                 if event.type == "realtime.transcription.completed":
                     if current_interaction["user"] or current_interaction["agent"]:
                          finalize_and_save_interaction()
-                    
                     current_interaction["user"] = {
                         "text": event.data.text,
                         "date": datetime.now().isoformat(),
                     }
-                    
                 elif event.type == "realtime.agent.response.completed":
                     current_interaction["agent"] = {
                         "text": event.data.text,
                         "date": datetime.now().isoformat(),
                     }
                     finalize_and_save_interaction()
-                
                 elif event.type == "function.call.created":
                     tool_call_id = event.data.tool_call_id
                     
@@ -173,7 +162,6 @@ async def run_realtime_session(call_id: str):
                         "date_started": datetime.now().isoformat(),
                     }
                     current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
-
                 elif event.type == "function.call.completed":
                     tool_call_id = event.data.tool_call_id
                     
@@ -184,30 +172,25 @@ async def run_realtime_session(call_id: str):
                         tool_entry["status"] = "completed"
                         
                         del tool_calls_pending[tool_call_id]
-                        
-
     except Exception as e:
         print(f"[ERROR] Sesión Realtime fallida para call_id={call_id}: {str(e)}")
         return f"Error en la sesión Realtime para call_id={call_id}: {str(e)}"
     
     finally:
         finalize_and_save_interaction()
-        meta_json = rdb.get(redis_key(call_id))
-        interactions_list_json = rdb.lrange(interaction_key(call_id), 0, -1)
-        interactions_list = [json.loads(i) for i in interactions_list_json]
-        
+        meta_json, interactions_list = get_session_data(call_id)
+        interacion_summary = await resume_interaction(interactions_list)
         full_session_data = None
         if meta_json:
             meta = json.loads(meta_json)
             meta["finish_date"] = datetime.now().isoformat()
-            
             session_status = "ended_with_error" if 'e' in locals() else "ended_cleanly"
             meta["status"] = session_status
-            
+            meta["summary"] = interacion_summary
             save_call_meta(call_id, meta) 
             full_session_data = {**meta, "interactions": interactions_list}
-            
-        
+            if full_session_data:
+                save_to_mongodb(sessions_collection, full_session_data)
         if full_session_data:
             print(f"[DEBUG] Sesión Completa para Persistencia (call_id={call_id}):")
             print(f"  - Status Final: {full_session_data['status']}")
@@ -215,22 +198,16 @@ async def run_realtime_session(call_id: str):
             
             if len(full_session_data['interactions']) > 0:
                  print(f"  - Primera Interacción: {json.dumps(full_session_data['interactions'][0])}")
-            
         else:
             print(f"[DEBUG] No se encontró metadata en Redis para call_id={call_id} antes de limpiar.")
-
-
-        delete_call_meta(call_id)
-        rdb.delete(interaction_key(call_id))
-
+        delete_session_data(call_id)
         print(f"[DEBUG] Redis cleanup OK para call_id={call_id}")
-
-        print(f"[DEBUG] Redis cleanup OK para call_id={call_id}")
+        
+        
         
 def start_session_in_thread(call_id: str):
     """Wrapper para lanzar la sesión async del SDK en un thread."""
     asyncio.run(run_realtime_session(call_id))
-
 
 @app.route("/", methods=["POST"])
 def webhook():

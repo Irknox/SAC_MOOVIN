@@ -140,29 +140,3 @@ app.use(express.json({ limit: "256kb" }));
   console.error("Fatal:", e);
   process.exit(1);
 });
-
-const call_memory_template = {
-  summary:
-    "Cuando se limpie este memoria de redis y se persista en Mongo haremos un resumen de lo que hablaron el usuario y el agente",
-  init_date: date,
-  finish_date: "al cerrar la sesion tambien",
-  user_info:{explication:"Aqui guardaremos la info del usuario que tengamos al final de la llamada, si no tenemos no la usamos, pero la idea es que si tenemos info del usuario lo guardaremos aca "},
-  interactions: [
-    {
-      user: {
-        text: "lo que dijo el usuario",
-        date: date,
-      },
-      steps_taken: [
-        "Esto seria una seria de obj {} con las acciones en roden que tomo el agente, tipo, uso una herramienta y su resultado, hizo un handoff, basicamente paso a paso lo que hizo en ese turno",
-      ],
-      agent: {
-        text: "lo que respondio el agente",
-        date: date,
-      },
-    },
-    {
-      user: { text: "......" },
-    },
-  ],
-};
