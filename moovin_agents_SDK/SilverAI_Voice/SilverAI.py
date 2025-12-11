@@ -108,6 +108,7 @@ async def run_realtime_session(call_id: str):
     
     def extract_text_from_item(item) -> str | None:
         """Extrae el texto relevante (transcript o text) de un RealtimeItem."""
+        print (f"[DEBUG-EXTRACT] Item recibido en Extractor: {item}")
         if getattr(item, 'role', 'system') == "system" or not hasattr(item, 'content') or not item.content:
             return None 
         for content_item in item.content:
@@ -175,10 +176,11 @@ async def run_realtime_session(call_id: str):
                     current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
                     
                 elif event.type == "history_added":  
-                    
+                    print(f"[DEBUG-HISTORY] Evento History Added recibido: {event}")
                     item = event.item
                     role = getattr(item, 'role', 'unknown')
                     text = extract_text_from_item(item)
+                    print(f"[DEBUG-EXTRACT] Texto extraído del item. Rol: {role}, Texto: '{text}'")
                     status = getattr(item, 'status', 'N/A')
                     
                     if text:
