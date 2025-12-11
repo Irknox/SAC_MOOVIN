@@ -26,6 +26,20 @@ MONGO_URI = os.environ.get("MONGO_URI")
 MONGO_DATABASE = os.environ.get("MONGO_DATABASE") 
 MONGO_COLLECTION = os.environ.get("MONGO_COLLECTION")
 
+GENERAL_PROMPT = 'General_prompt.txt'
+base_dir = os.path.dirname(os.path.abspath(__file__))
+PROMPT_FILE_PATH = os.path.join(base_dir, 'prompts', PROMPT_FILE_NAME)
+
+try:
+    with open(PROMPT_FILE_PATH, 'r', encoding='utf-8') as f:
+        prompt_text = f.read()
+        print(f"[INFO] Instrucciones cargadas exitosamente desde: {PROMPT_FILE_PATH}")
+except FileNotFoundError:
+    # Esto usa un prompt por defecto si no se encuentra el archivo
+    prompt_text = "Eres un Agente de Servicio al Cliente para la compañía de logística y envíos Moovin (pronunciado 'Muvin'). Respondes con voz natural, en español latino, de forma clara y concisa." 
+    print(f"[ERROR] No se pudo encontrar el archivo de instrucciones en: {PROMPT_FILE_PATH}. Usando instrucciones por defecto.")
+    
+
 try:
     mongo_client = pymongo.MongoClient(MONGO_URI)
     mongo_client.admin.command('ping') 
@@ -66,9 +80,7 @@ async def run_realtime_session(call_id: str):
     
     voice_agent = RealtimeAgent(
         name="Silver",
-        instructions=(
-            open("/SilverAI_Voice/prompts/General_prompt.txt", "r", encoding="utf-8").read()
-        ),
+        instructions=prompt_text,
         tools=[escalate_call]
     )
     runner = RealtimeRunner(
