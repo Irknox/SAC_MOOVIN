@@ -63,15 +63,11 @@ async def run_realtime_session(call_id: str):
     """Engancha un RealtimeAgent (SDK) a la llamada SIP usando el call_id
     que llega por el webhook realtime.call.incoming.
     """ 
+    
     voice_agent = RealtimeAgent(
         name="Silver",
         instructions=(
-            "Eres un Agente de Servicio al Cliente para la compañía de logística y envíos Moovin "
-            "(pronunciado 'Muvin'). "
-            "Respondes con voz natural, en español latino, de forma clara y concisa. "
-            "Si el usuario no entiende algo, reformula con otras palabras."
-            
-            "Cuentas con una herramienta llamada escalate_call, con esta herramienta transfieres la llamada a un agente humano."
+            open("prompts/General_prompt.txt", "r", encoding="utf-8").read()
         ),
         tools=[escalate_call]
     )
@@ -87,6 +83,8 @@ async def run_realtime_session(call_id: str):
         }
     processed_item_ids = set()
     tool_calls_pending = {}
+    
+    
     def finalize_and_save_interaction(call_id: str, current_interaction: dict) -> dict:
         """Consolida el current_interaction y lo añade a la lista de Redis, 
            luego prepara el nuevo objeto de interacción.
