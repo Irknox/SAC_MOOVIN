@@ -145,29 +145,8 @@ async def run_realtime_session(call_id: str):
             
             async for event in session:
                 print(f"Realtime event: {event.type}")
-                
-                if event.type == "realtime.transcription.completed":
-                    if current_interaction["agent"]:
-                        current_interaction = finalize_and_save_interaction(call_id, current_interaction)
-                    
-                    new_text = event.data.text
-                    
-                    if current_interaction["user"]:
-                        current_interaction["user"]["text"] += " " + new_text
-                    else:
-                        current_interaction["user"] = {
-                            "text": new_text,
-                            "date": datetime.now().isoformat(),
-                        }
-                        
-                elif event.type == "realtime.agent.response.completed":
-                    current_interaction["agent"] = {
-                        "text": event.data.text,
-                        "date": datetime.now().isoformat(),
-                    }
-                    current_interaction = finalize_and_save_interaction(call_id, current_interaction)
-                    
-                elif event.type == "function.call.created":
+          
+                if event.type == "function.call.created":
                     tool_call_id = event.data.tool_call_id
                     
                     tool_calls_pending[tool_call_id] = {
@@ -177,16 +156,15 @@ async def run_realtime_session(call_id: str):
                         "date_started": datetime.now().isoformat(),
                     }
                     current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
-                elif event.type == "history_added":
-                    print(f"[DEBUG-HISTORY-EVENT] Procesando nuevo item de historial: {event.item}") 
                     
+                elif event.type == "history_added":  
                     try:
-                        print(f"[DEBUG-HISTORY-EVENT]: {event} info es {event.info} item es {event.item}")
+                        print(f"[DEBUG-HISTORY-EVENT]:El evento es {event} item es {event.item}")
                         item = event.item
-                        item_type = item.item_type
+                        role = item.role
                         text = item.text
                         
-                        if item_type == "input_text":
+                        if role == "user":
                             if current_interaction["agent"]:
                                 current_interaction = finalize_and_save_interaction(call_id, current_interaction)
                             if current_interaction["user"]:
@@ -197,7 +175,7 @@ async def run_realtime_session(call_id: str):
                                     "date": datetime.now().isoformat(),
                                 }
                                 
-                        elif item_type == "agent":
+                        elif role == "agent":
                             current_interaction["agent"] = {
                                 "text": text,
                                 "date": datetime.now().isoformat(),
@@ -205,7 +183,7 @@ async def run_realtime_session(call_id: str):
                             current_interaction = finalize_and_save_interaction(call_id, current_interaction)
                             
                     except AttributeError as e:
-                        print(f"[ERROR-HISTORY] Fallo al acceder a item.item_type o item.text. Revisa la estructura: {e}. Item: {event.data.item}")
+                        print(f"[ERROR-HISTORY] Fallo al acceder a item.item_type o item.text. Revisa la estructura: {e}. Item: {event.item}")
                         
                 elif event.type == "function.call.completed":
 
