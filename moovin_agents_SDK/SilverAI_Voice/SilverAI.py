@@ -158,68 +158,70 @@ async def run_realtime_session(call_id: str):
             async for event in session:
                 if event.type == "raw_model_event":
                     pass
-                else:
-                    print(f"Realtime event: {event.type}")
+                elif event.type == "agent_start" or event.type == "agent_end":
+                    print(f"[DEBUG] Evento recibido: {event}")
+                elif event.type == "audio_start" or event.type == "audio_end":
+                    print(f"[DEBUG] Evento recibido: {event}")
                     
-                    if event.type == "function.call.created":
-                        tool_call_id = event.data.tool_call_id
-                        
-                        tool_calls_pending[tool_call_id] = {
-                            "type": "tool_call",
-                            "tool_name": event.data.tool_name,
-                            "arguments": event.data.arguments,
-                            "date_started": datetime.now().isoformat(),
-                        }
-                        current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
-                    elif event.type == "history_added":
-                        item = getattr(event, 'item', None)
-                        if item:
-                            print(f"[DEBUG-HISTORY-ADDED] Item nuevo: ID={item.item_id}, Role={item.role}, Status={item.status}")
+                elif event.type == "function.call.created":
+                    tool_call_id = event.data.tool_call_id
+                    
+                    tool_calls_pending[tool_call_id] = {
+                        "type": "tool_call",
+                        "tool_name": event.data.tool_name,
+                        "arguments": event.data.arguments,
+                        "date_started": datetime.now().isoformat(),
+                    }
+                    current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
+                    
+                elif event.type == "history_added":
+                    item = getattr(event, 'item', None)
+                    if item:
+                        print(f"[DEBUG-HISTORY-ADDED] Item nuevo: {item}")
+                    continue
+                
+                elif event.type == "history_updated":
+                    if not hasattr(event, 'history') or not event.history:
+                        print(f"[DEBUG-HISTORY-UPDATED] Evento {event.type} recibido con history=[] o sin history.")
                         continue
-                    
-                    elif event.type == "history_updated":
-                        if not hasattr(event, 'history') or not event.history:
-                            print(f"[DEBUG-HISTORY-UPDATED] Evento {event.type} recibido con history=[] o sin history.")
+                    print(f"[DEBUG-HISTORY-UPDATED] Evento: {event} recibido con history: {event.history}")
+                    for item in event.history:
+                        if item.item_id in processed_item_ids:
                             continue
-                        for item in event.history:
-                            print(f"[DEBUG-HISTORY-ITEM-UPDATED] Item en history: ID={item.item_id}, Role={item.role}, Status={item.status}")
-                            if item.item_id in processed_item_ids:
-                                continue
-                            if item.status != "completed":
-                                continue
-                            text = extract_text_from_item(item)
-                            
-                            if text:
-                                role = item.role
-                                print(f"[DEBUG-EXTRACT-FINAL] Texto extraído FINAL. Rol: {role}, Status: {item.status}, Texto: '{text}'")
-                                if role == "user":
-                                    if current_interaction["agent"]:
-                                        current_interaction = finalize_and_save_interaction(call_id, current_interaction)
-                                    current_interaction["user"] = {
-                                        "text": text,
-                                        "date": datetime.now().isoformat(),
-                                    }
-                                    
-                                elif role == "assistant":
-                                    current_interaction["agent"] = {
-                                        "text": text,
-                                        "date": datetime.now().isoformat(),
-                                    }
+                        if item.status != "completed":
+                            continue
+                        text = extract_text_from_item(item)
+
+                        if text:
+                            role = item.role
+                            print(f"[DEBUG-EXTRACT-FINAL] Texto extraído FINAL. Rol: {role}, Status: {item.status}, Texto: '{text}'")
+                            if role == "user":
+                                if current_interaction["agent"]:
                                     current_interaction = finalize_and_save_interaction(call_id, current_interaction)
-                                processed_item_ids.add(item.item_id)
-                                print(f"[DEBUG-TURN-SAVED] Turno finalizado y guardado. Item ID: {item.item_id}, Rol: {role}")                               
-                            elif item.status == "completed":
-                                processed_item_ids.add(item.item_id)
-                                print(f"[DEBUG-COMPLETED-NO-TEXT] Item completado sin texto relevante (probablemente InputText o tool call). Item ID: {item.item_id}")
-                                           
-                    elif event.type == "function.call.completed":
-                        tool_call_id = event.data.tool_call_id
-                        if tool_call_id in tool_calls_pending:
-                            tool_entry = tool_calls_pending[tool_call_id]
-                            tool_entry["date_completed"] = datetime.now().isoformat()
-                            tool_entry["output"] = event.data.output
-                            tool_entry["status"] = "completed"
-                            del tool_calls_pending[tool_call_id]
+                                current_interaction["user"] = {
+                                    "text": text,
+                                    "date": datetime.now().isoformat(),
+                                }
+                                
+                            elif role == "assistant":
+                                current_interaction["agent"] = {
+                                    "text": text,
+                                    "date": datetime.now().isoformat(),
+                                }
+                                current_interaction = finalize_and_save_interaction(call_id, current_interaction)
+                            processed_item_ids.add(item.item_id)
+                            print(f"[DEBUG-TURN-SAVED] Turno finalizado y guardado. Item ID: {item.item_id}, Rol: {role}")                               
+                        elif item.status == "completed":
+                            processed_item_ids.add(item.item_id)
+                            print(f"[DEBUG-COMPLETED-NO-TEXT] Item completado sin texto relevante (probablemente InputText o tool call). Item ID: {item.item_id}")
+                elif event.type == "function.call.completed":
+                    tool_call_id = event.data.tool_call_id
+                    if tool_call_id in tool_calls_pending:
+                        tool_entry = tool_calls_pending[tool_call_id]
+                        tool_entry["date_completed"] = datetime.now().isoformat()
+                        tool_entry["output"] = event.data.output
+                        tool_entry["status"] = "completed"
+                        del tool_calls_pending[tool_call_id]
     except ConnectionClosedError as e:
         print(f"[ERROR-NETWORK] Sesión Realtime cerrada abruptamente (WebSocket/RTP) para call_id={call_id}: {type(e).__name__}: {str(e)}")
     except Exception as e:
