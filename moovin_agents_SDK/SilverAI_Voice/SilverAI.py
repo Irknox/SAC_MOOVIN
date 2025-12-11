@@ -62,8 +62,7 @@ call_accept = {
 async def run_realtime_session(call_id: str):
     """Engancha un RealtimeAgent (SDK) a la llamada SIP usando el call_id
     que llega por el webhook realtime.call.incoming.
-    """
-    
+    """ 
     voice_agent = RealtimeAgent(
         name="Silver",
         instructions=(
@@ -76,19 +75,17 @@ async def run_realtime_session(call_id: str):
         ),
         tools=[escalate_call]
     )
-
     runner = RealtimeRunner(
         starting_agent=voice_agent,
         model=OpenAIRealtimeSIPModel(),
     )
-    
     current_interaction = {
         "user": None, 
         "steps_taken": [], 
         "agent": None,
         "date": datetime.now().isoformat(), 
         }
-    
+    processed_item_ids = set()
     tool_calls_pending = {}
     def finalize_and_save_interaction(call_id: str, current_interaction: dict) -> dict:
         """Consolida el current_interaction y lo añade a la lista de Redis, 
@@ -120,8 +117,7 @@ async def run_realtime_session(call_id: str):
                 if content_type == "input_audio":
                     return getattr(content_item, 'transcript', None)
                 elif content_type == "input_text":
-                    return None
-            
+                    return None    
         return None
     
     model_config = {
@@ -149,7 +145,6 @@ async def run_realtime_session(call_id: str):
         ctx = {
         "call_id": call_id,
         }
-    
         async with await runner.run(context=ctx,model_config=model_config) as session:
             initial_message = "Hola, soy Silver, asistente virtual de Moovin (pronunciado Muvin), ¿cómo puedo asistirte hoy?"
             await session.send_message(
@@ -160,10 +155,8 @@ async def run_realtime_session(call_id: str):
                 "date": datetime.now().isoformat(),
             }
             current_interaction = finalize_and_save_interaction(call_id, current_interaction)
-            
             async for event in session:
                 print(f"Realtime event: {event.type}")
-          
                 if event.type == "function.call.created":
                     tool_call_id = event.data.tool_call_id
                     
@@ -174,61 +167,50 @@ async def run_realtime_session(call_id: str):
                         "date_started": datetime.now().isoformat(),
                     }
                     current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
-                    
-                elif event.type == "history_added":  
-                    print(f"[DEBUG-HISTORY] Evento History Added recibido: {event}")
-                    item = event.item
-                    role = getattr(item, 'role', 'unknown')
+                elif event.type == "history_added" or event.type == "history_updated":  
+                    item = getattr(event, 'item', None)
+                    if item is None:
+                        print(f"[DEBUG-HISTORY-NO-ITEM] Evento {event.type} sin item asociado (posiblemente señal general), ignorando.")
+                        continue
+                    print(f"[DEBUG-HISTORY] Evento {event.type} recibido: Item ID={item.item_id}, Role={item.role}, Status={item.status}")
+                    if item.item_id in processed_item_ids:
+                        print(f"[DEBUG-HISTORY] Item ID {item.item_id} ya procesado. Ignorando.")
+                        continue
                     text = extract_text_from_item(item)
-                    print(f"[DEBUG-EXTRACT] Texto extraído del item. Rol: {role}, Texto: '{text}'")
-                    status = getattr(item, 'status', 'N/A')
-                    
-                    if text:
-                        print(f"[DEBUG-EXTRACT] Texto extraído. Rol: {role}, Status: {status}, Texto: '{text}'")
-                    
+                    print(f"[DEBUG-EXTRACT] Texto extraído del item. Rol: {item.role}, Status: {item.status}, Texto: '{text}'")
+                    if item.status == "completed" and text:
+                        role = item.role
                         if role == "user":
                             if current_interaction["agent"]:
                                 current_interaction = finalize_and_save_interaction(call_id, current_interaction)
-                            if current_interaction["user"]:
-                                current_interaction["user"]["text"] += " " + text
-                            else:
-                                current_interaction["user"] = {
-                                    "text": text,
-                                    "date": datetime.now().isoformat(),
-                                }
-                                
-                        elif role == "assistant" and status == "completed":
+                            current_interaction["user"] = {
+                                "text": text,
+                                "date": datetime.now().isoformat(),
+                            }
+                        elif role == "assistant":
                             current_interaction["agent"] = {
                                 "text": text,
                                 "date": datetime.now().isoformat(),
                             }
                             current_interaction = finalize_and_save_interaction(call_id, current_interaction)
-                            
-                    elif text is None:
-                        pass
-                    
-                    else:
-                        print(f"[DEBUG-HISTORY-NO-TEXT] Item procesado sin texto relevante. Rol: {role}, Status: {status}")
-                        
+                        processed_item_ids.add(item.item_id)
+                        print(f"[DEBUG-TURN-SAVED] Turno finalizado y guardado. Item ID: {item.item_id}, Rol: {role}")
+                    elif item.status == "completed" and not text:
+                        print(f"[DEBUG-COMPLETED-NO-TEXT] Item completado sin texto relevante (probablemente InputText o tool call). Item ID: {item.item_id}")
+                        processed_item_ids.add(item.item_id)
                 elif event.type == "function.call.completed":
-
                     tool_call_id = event.data.tool_call_id
-                    
                     if tool_call_id in tool_calls_pending:
                         tool_entry = tool_calls_pending[tool_call_id]
                         tool_entry["date_completed"] = datetime.now().isoformat()
                         tool_entry["output"] = event.data.output
                         tool_entry["status"] = "completed"
-                        
                         del tool_calls_pending[tool_call_id]
-    
     except ConnectionClosedError as e:
         print(f"[ERROR-NETWORK] Sesión Realtime cerrada abruptamente (WebSocket/RTP) para call_id={call_id}: {type(e).__name__}: {str(e)}")
-        
     except Exception as e:
         print(f"[ERROR-SESSION] Sesión Realtime fallida para call_id={call_id}: {type(e).__name__}: {str(e)}")
         raise e 
-
     finally:
         current_interaction = finalize_and_save_interaction(call_id, current_interaction) 
         meta_json, interactions_list = get_session_data(call_id)
@@ -255,9 +237,7 @@ async def run_realtime_session(call_id: str):
             print(f"[DEBUG] No se encontró metadata en Redis para call_id={call_id} antes de limpiar.")
         delete_session_data(call_id)
         print(f"[DEBUG] Redis cleanup OK para call_id={call_id}")
-        
-        
-        
+          
 def start_session_in_thread(call_id: str):
     """Wrapper para lanzar la sesión async del SDK en un thread."""
     asyncio.run(run_realtime_session(call_id))
