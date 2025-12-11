@@ -28,7 +28,7 @@ MONGO_COLLECTION = os.environ.get("MONGO_COLLECTION")
 
 GENERAL_PROMPT = 'General_prompt.txt'
 base_dir = os.path.dirname(os.path.abspath(__file__))
-PROMPT_FILE_PATH = os.path.join(base_dir, 'prompts', PROMPT_FILE_NAME)
+PROMPT_FILE_PATH = os.path.join(base_dir, 'prompts', GENERAL_PROMPT)
 
 try:
     with open(PROMPT_FILE_PATH, 'r', encoding='utf-8') as f:
