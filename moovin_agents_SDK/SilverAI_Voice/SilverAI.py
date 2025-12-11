@@ -67,7 +67,7 @@ async def run_realtime_session(call_id: str):
     voice_agent = RealtimeAgent(
         name="Silver",
         instructions=(
-            open("prompts/General_prompt.txt", "r", encoding="utf-8").read()
+            open("/prompts/General_prompt.txt", "r", encoding="utf-8").read()
         ),
         tools=[escalate_call]
     )
