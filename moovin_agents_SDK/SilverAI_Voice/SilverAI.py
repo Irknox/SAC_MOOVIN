@@ -178,14 +178,15 @@ async def run_realtime_session(call_id: str):
                     }
                     current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
                 elif event.type == "history_added":
-                    print(f"[DEBUG-HISTORY-ITEM] Procesando nuevo item de historial: {event.data.item}") 
+                    print(f"[DEBUG-HISTORY-EVENT] Procesando nuevo item de historial: {event.info.item}") 
                     
                     try:
-                        item = event.data.item
-                        role = item.role
+                        print(f"[DEBUG-HISTORY-EVENT]: {event} info es {event.info} item es {event.info.item}")
+                        item = event.info.item
+                        item_type = item.item_type
                         text = item.text
                         
-                        if role == "user":
+                        if item_type == "input_text":
                             if current_interaction["agent"]:
                                 current_interaction = finalize_and_save_interaction(call_id, current_interaction)
                             if current_interaction["user"]:
@@ -196,7 +197,7 @@ async def run_realtime_session(call_id: str):
                                     "date": datetime.now().isoformat(),
                                 }
                                 
-                        elif role == "agent":
+                        elif item_type == "agent":
                             current_interaction["agent"] = {
                                 "text": text,
                                 "date": datetime.now().isoformat(),
@@ -204,7 +205,7 @@ async def run_realtime_session(call_id: str):
                             current_interaction = finalize_and_save_interaction(call_id, current_interaction)
                             
                     except AttributeError as e:
-                        print(f"[ERROR-HISTORY] Fallo al acceder a item.role o item.text. Revisa la estructura: {e}. Item: {event.data.item}")
+                        print(f"[ERROR-HISTORY] Fallo al acceder a item.item_type o item.text. Revisa la estructura: {e}. Item: {event.data.item}")
                         
                 elif event.type == "function.call.completed":
 
