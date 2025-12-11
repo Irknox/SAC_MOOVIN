@@ -178,11 +178,11 @@ async def run_realtime_session(call_id: str):
                     }
                     current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
                 elif event.type == "history_added":
-                    print(f"[DEBUG-HISTORY-EVENT] Procesando nuevo item de historial: {event.info.item}") 
+                    print(f"[DEBUG-HISTORY-EVENT] Procesando nuevo item de historial: {event.item}") 
                     
                     try:
-                        print(f"[DEBUG-HISTORY-EVENT]: {event} info es {event.info} item es {event.info.item}")
-                        item = event.info.item
+                        print(f"[DEBUG-HISTORY-EVENT]: {event} info es {event.info} item es {event.item}")
+                        item = event.item
                         item_type = item.item_type
                         text = item.text
                         
