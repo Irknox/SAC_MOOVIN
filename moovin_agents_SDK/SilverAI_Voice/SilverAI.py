@@ -109,15 +109,15 @@ async def run_realtime_session(call_id: str):
         if getattr(item, 'role', 'system') == "system" or not hasattr(item, 'content') or not item.content:
             return None 
         for content_item in item.content:
-            content_type = getattr(content_item, 'type', None)
-            
-            if item.role == "assistant" and content_type == "text":
-                return getattr(content_item, 'text', None)
+            if item.role == "assistant":
+                transcript = getattr(content_item, 'transcript', None)
+                if transcript:
+                    return transcript
             elif item.role == "user":
-                if content_type == "input_audio":
-                    return getattr(content_item, 'transcript', None)
-                elif content_type == "input_text":
-                    return None    
+                transcript = getattr(content_item, 'transcript', None)
+                if transcript:
+                    return transcript
+                
         return None
     
     model_config = {
@@ -188,7 +188,7 @@ async def run_realtime_session(call_id: str):
                     for item in event.history:
                         if item.item_id in processed_item_ids:
                             continue
-                        if item.status != "completed":
+                        if item.role == "user" and item.status != "completed":
                             continue
                         text = extract_text_from_item(item)
 

@@ -21,7 +21,7 @@ def save_to_mongodb(sessions_collection: pymongo.collection.Collection, data: di
         data["init_date"] = convert_to_datetime(data.get("init_date"))
         data["finish_date"] = convert_to_datetime(data.get("finish_date"))
         result = sessions_collection.insert_one(data) 
-        print(f"[INFO] Sesión guardada en Mongo: ID={result.inserted_id}, Resumen: {data.get('summary')}, Interacciones: {data.get('interactions',[])}")
+        print(f"[INFO] Sesión guardada en Mongo: ID={result.inserted_id}, Resumen: {data.get('summary')}, Total Interacciones: {len(data.get('interactions',[]))}")
         return True
     except Exception as e:
         print(f"[ERROR] Falló la inserción en MongoDB para call_id={data.get('_id', 'Unknown')}: {e}")
