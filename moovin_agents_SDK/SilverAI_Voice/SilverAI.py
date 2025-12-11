@@ -106,6 +106,23 @@ async def run_realtime_session(call_id: str):
         }
         return new_interaction
     
+    def extract_text_from_item(item) -> str | None:
+        """Extrae el texto relevante (transcript o text) de un RealtimeItem."""
+        if getattr(item, 'role', 'system') == "system" or not hasattr(item, 'content') or not item.content:
+            return None 
+        for content_item in item.content:
+            content_type = getattr(content_item, 'type', None)
+            
+            if item.role == "assistant" and content_type == "text":
+                return getattr(content_item, 'text', None)
+            elif item.role == "user":
+                if content_type == "input_audio":
+                    return getattr(content_item, 'transcript', None)
+                elif content_type == "input_text":
+                    return None
+            
+        return None
+    
     model_config = {
         "call_id": call_id,
         "initial_model_settings": {
@@ -158,12 +175,15 @@ async def run_realtime_session(call_id: str):
                     current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
                     
                 elif event.type == "history_added":  
-                    try:
-                        print(f"[DEBUG-HISTORY-EVENT]:El evento es {event} item es {event.item}")
-                        item = event.item
-                        role = item.role
-                        text = item.text
-                        
+                    
+                    item = event.item
+                    role = getattr(item, 'role', 'unknown')
+                    text = extract_text_from_item(item)
+                    status = getattr(item, 'status', 'N/A')
+                    
+                    if text:
+                        print(f"[DEBUG-EXTRACT] Texto extraído. Rol: {role}, Status: {status}, Texto: '{text}'")
+                    
                         if role == "user":
                             if current_interaction["agent"]:
                                 current_interaction = finalize_and_save_interaction(call_id, current_interaction)
@@ -175,15 +195,18 @@ async def run_realtime_session(call_id: str):
                                     "date": datetime.now().isoformat(),
                                 }
                                 
-                        elif role == "agent":
+                        elif role == "assistant" and status == "completed":
                             current_interaction["agent"] = {
                                 "text": text,
                                 "date": datetime.now().isoformat(),
                             }
                             current_interaction = finalize_and_save_interaction(call_id, current_interaction)
                             
-                    except AttributeError as e:
-                        print(f"[ERROR-HISTORY] Fallo al acceder a item.item_type o item.text. Revisa la estructura: {e}. Item: {event.item}")
+                    elif text is None:
+                        pass
+                    
+                    else:
+                        print(f"[DEBUG-HISTORY-NO-TEXT] Item procesado sin texto relevante. Rol: {role}, Status: {status}")
                         
                 elif event.type == "function.call.completed":
 
