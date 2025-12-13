@@ -12,6 +12,5 @@ websockets==15.0.1
 # Extras
 redis==6.4.0
 pymongo==4.15.5
-pydantic==2.11.5
-pydantic-settings==2.10.0
-pydantic_core==2.33.2
+pydantic>=2.12.3,<3
+pydantic-settings>=2.10.0,<3
