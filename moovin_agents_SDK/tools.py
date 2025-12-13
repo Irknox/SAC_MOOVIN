@@ -5,7 +5,7 @@ import psycopg2
 from openai import OpenAI
 from psycopg2.extras import Json
 from dotenv import load_dotenv
-
+from typing import Dict, Any, List
 client = OpenAI()
 
 load_dotenv()
@@ -334,7 +334,6 @@ def Make_send_current_delivery_address_tool(tools_pool):
 
 # Factory function para funcion que recuerda
 def Make_remember_tool(pool):
-    from typing import Dict, Any, List
     @function_tool(
         name_override="remember_more",
         description_override="Recupera un resumen de lo hablado en las últimas 3 sesiones (más reciente → más antigua)."

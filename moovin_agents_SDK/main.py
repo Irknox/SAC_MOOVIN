@@ -22,8 +22,6 @@ from dotenv import load_dotenv
 from mcp_tools import Make_escalate_to_human, Make_request_to_pickup_tool,Make_request_electronic_receipt_tool,Make_package_damaged_tool, Make_send_delivery_address_requested_tool,Make_change_delivery_address_tool
 from typing import Optional, Dict, Any, List
 load_dotenv()
-from agents.realtime import RealtimeAgent, RealtimeRunner
-from agents.model_settings import ModelSettings
 
 
 # =========================

@@ -8,7 +8,8 @@ from agents.realtime import RealtimeAgent, RealtimeRunner
 from agents.realtime.openai_realtime import OpenAIRealtimeSIPModel
 from websockets.exceptions import ConnectionClosedError
 import requests
-from tools import escalate_call
+from requests import HTTPError
+from tools import escalate_call,Make_think_tool
 from datetime import datetime
 from handlers.aux_handlers import resume_interaction
 from handlers.db_handlers import (
@@ -21,6 +22,7 @@ from handlers.db_handlers import (
     delete_session_data
 )
 import pymongo
+from SilverAI_Brain.brain import BrainRunner
 
 MONGO_URI = os.environ.get("MONGO_URI") 
 MONGO_DATABASE = os.environ.get("MONGO_DATABASE") 
@@ -34,12 +36,12 @@ try:
     with open(PROMPT_FILE_PATH, 'r', encoding='utf-8') as f:
         prompt_text = f.read()
         print(f"[INFO] Instrucciones cargadas exitosamente desde: {PROMPT_FILE_PATH}")
+        
 except FileNotFoundError:
     # Esto usa un prompt por defecto si no se encuentra el archivo
     prompt_text = "Eres un Agente de Servicio al Cliente para la compañía de logística y envíos Moovin (pronunciado 'Muvin'). Respondes con voz natural, en español latino, de forma clara y concisa." 
     print(f"[ERROR] No se pudo encontrar el archivo de instrucciones en: {PROMPT_FILE_PATH}. Usando instrucciones por defecto.")
     
-
 try:
     mongo_client = pymongo.MongoClient(MONGO_URI)
     mongo_client.admin.command('ping') 
@@ -73,16 +75,18 @@ call_accept = {
 }
 
 
-async def run_realtime_session(call_id: str):
+async def run_realtime_session(call_id: str, brain_runner: BrainRunner):
     """Engancha un RealtimeAgent (SDK) a la llamada SIP usando el call_id
     que llega por el webhook realtime.call.incoming.
-    """ 
+    """  
+    print(f"[{call_id}] 👂 Iniciando sesión de Realtime...")
     
     voice_agent = RealtimeAgent(
         name="Silver",
         instructions=prompt_text,
-        tools=[escalate_call]
+        tools=[escalate_call,Make_think_tool(call_id, brain_runner)],
     )
+    
     runner = RealtimeRunner(
         starting_agent=voice_agent,
         model=OpenAIRealtimeSIPModel(),
@@ -265,19 +269,26 @@ async def run_realtime_session(call_id: str):
         print(f"[DEBUG] Redis cleanup OK para call_id={call_id}")
           
 def start_session_in_thread(call_id: str):
-    """Wrapper para lanzar la sesión async del SDK en un thread."""
-    asyncio.run(run_realtime_session(call_id))
+    """
+    Wrapper para lanzar la sesión async del SDK en un thread.
+    Instancia BrainRunner y lo pasa a la sesión asíncrona.
+    """
+    print(f"[{call_id}] 🧠 Inicializando BrainRunner...")
+    brain_runner = BrainRunner()
+    asyncio.run(run_realtime_session(call_id, brain_runner))
 
 @app.route("/", methods=["POST"])
 def webhook():
     try:
         event = client.webhooks.unwrap(request.data, request.headers)
+        
         if event.type == "realtime.call.incoming":
             call_id = event.data.call_id
             sip_headers = {}
             for h in (event.data.sip_headers or []):
                 sip_headers[h.name] = h.value
             print(f"Incoming call: {call_id}, SIP headers: {sip_headers}")
+            
             session_meta = {
                 "session_id": call_id,
                 "summary": None,
@@ -296,7 +307,6 @@ def webhook():
             }
             
             save_call_meta(call_id, session_meta) 
-            
             
             requests.post(
                 f"https://api.openai.com/v1/realtime/calls/{call_id}/accept",
