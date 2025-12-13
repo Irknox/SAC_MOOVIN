@@ -15,7 +15,7 @@ class BrainContext(BaseModel):
     session_id: str
     call_id: str
     
-class BrainRunner(Runner[BrainContext]):
+class BrainRunner(Runner):
     routing_node: Agent[BrainContext] = Agent[BrainContext](
         name="routing_node",
         description="Determina la naturaleza de la consulta y enruta a nodos especializados.",
