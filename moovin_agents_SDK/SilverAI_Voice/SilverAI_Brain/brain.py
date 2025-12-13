@@ -18,7 +18,6 @@ class BrainContext(BaseModel):
 class BrainRunner(Runner):
     routing_node: Agent[BrainContext] = Agent[BrainContext](
         name="routing_node",
-        description="Determina la naturaleza de la consulta y enruta a nodos especializados.",
         instructions=(
             "Eres el Agente de Enrutamiento del sistema especializado Moovin. "
             "Tu única tarea es analizar la última consulta y decidir el nodo al que hacer handoff. "
@@ -29,7 +28,6 @@ class BrainRunner(Runner):
 
     packages_node: Agent[BrainContext] = Agent[BrainContext](
         name="packages_node",
-        description="Maneja consultas relacionadas con el rastreo de paquetes.",
         instructions="Eres el Agente Especializado en Logística Moovin. Usa tus herramientas de API para rastrear. Cuando tengas una respuesta concisa, haz handoff de vuelta al routing_node para terminar la sesión del cerebro.",
         tools=[
         ],
