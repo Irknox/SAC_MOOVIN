@@ -1,5 +1,3 @@
-# SilverAI_Brain/brain.py
-
 from agents import (
     Agent,
     handoff,
@@ -9,7 +7,7 @@ from agents import (
 )
 from agents.agent import ToolsToFinalOutputResult
 from pydantic import BaseModel
-from typing import List
+from typing import List, Any
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 
 class BrainContext(BaseModel):
@@ -18,6 +16,7 @@ class BrainContext(BaseModel):
     
 class BrainRunner(Runner):
     def __init__(self, packages_tools: List[Any]):
+        
         packages_brain: Agent[BrainContext] = Agent[BrainContext](
             name="packages_brain",
             instructions=(
@@ -59,7 +58,8 @@ class BrainRunner(Runner):
 
         )
 
-
+        self.agent: Agent[BrainContext] = routing_brain
+        
     async def execute_query(self, input_items: List[TResponseInputItem], context: BrainContext) -> ToolsToFinalOutputResult:
         """
         Ejecuta el flujo multi-agente Standard (los 'cerebros') 
