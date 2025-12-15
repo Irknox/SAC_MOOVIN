@@ -127,7 +127,7 @@ async def run_realtime_session(call_id: str):
     
     def extract_text_from_item(item) -> str | None:
         """Extrae el texto relevante (transcript o text) de un RealtimeItem."""
-        print (f"[DEBUG-EXTRACT] Item recibido en Extractor: {item}")
+        #print (f"[DEBUG-EXTRACT] Item recibido en Extractor: {item}")
         if getattr(item, 'role', 'system') == "system" or not hasattr(item, 'content') or not item.content:
             return None 
         for content_item in item.content:
@@ -181,9 +181,11 @@ async def run_realtime_session(call_id: str):
                 if event.type == "raw_model_event":
                     pass
                 elif event.type == "agent_start" or event.type == "agent_end":
-                    print(f"[DEBUG] Evento recibido: {event}")
+                    #print(f"[DEBUG] Evento recibido: {event}")
+                    continue
                 elif event.type == "audio_start" or event.type == "audio_end":
-                    print(f"[DEBUG] Evento recibido: {event}")
+                    #print(f"[DEBUG] Evento recibido: {event}")
+                    continue
                     
                 elif event.type == "function.call.created":
                     tool_call_id = event.data.tool_call_id
@@ -198,12 +200,13 @@ async def run_realtime_session(call_id: str):
                 elif event.type == "history_added":
                     item = getattr(event, 'item', None)
                     if item:
-                        print(f"[DEBUG-HISTORY-ADDED] Item nuevo: {item}")
+                        #print(f"[DEBUG-HISTORY-ADDED] Item nuevo: {item}")
+                        continue
                     continue
                 
                 elif event.type == "history_updated":
                     if not hasattr(event, 'history') or not event.history:
-                        print(f"[DEBUG-HISTORY-UPDATED] Evento {event.type} recibido con history=[] o sin history.")
+                        #print(f"[DEBUG-HISTORY-UPDATED] Evento {event.type} recibido con history=[] o sin history.")
                         continue
                     #print(f"[DEBUG-HISTORY-UPDATED] Evento: {event} recibido con history: {event.history}")
                     for item in event.history:
@@ -230,10 +233,10 @@ async def run_realtime_session(call_id: str):
                                 }
                                 current_interaction = finalize_and_save_interaction(call_id, current_interaction)
                             processed_item_ids.add(item.item_id)
-                            print(f"[DEBUG-TURN-SAVED] Turno finalizado y guardado. Item ID: {item.item_id}, Rol: {role}")                               
+                            #print(f"[DEBUG-TURN-SAVED] Turno finalizado y guardado. Item ID: {item.item_id}, Rol: {role}")                               
                         elif item.status == "completed":
                             processed_item_ids.add(item.item_id)
-                            print(f"[DEBUG-COMPLETED-NO-TEXT] Item completado sin texto relevante (probablemente InputText o tool call). Item ID: {item.item_id}")
+                           # print(f"[DEBUG-COMPLETED-NO-TEXT] Item completado sin texto relevante (probablemente InputText o tool call). Item ID: {item.item_id}")
                 elif event.type == "function.call.completed":
                     tool_call_id = event.data.tool_call_id
                     if tool_call_id in tool_calls_pending:
