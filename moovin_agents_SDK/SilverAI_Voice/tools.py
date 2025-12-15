@@ -78,14 +78,18 @@ def Make_think_tool(call_id: str, brain_runner: BrainRunner, Mysql_pool, Tools_p
         Usa el sistema de agentes especializados de Moovin para responder a consultas complejas de rastreo, 
         tarifas, ubicaciones, etc. Devuelve la respuesta final para que SilverAI la diga.
         """
+        print(f"Pensando 🧠...")
         try:
             if not brain_runner:
+                print("[DEBUG-ERROR] Brain Runner no está inicializado")
                 return "Error interno: El sistema especializado (Brain) no está inicializado."
             input_item = TResponseInputItem(user={"text": query})
             brain_context = BrainContext(session_id=call_id, call_id=call_id) 
             result: ToolsToFinalOutputResult = await brain_runner.execute_query([input_item], brain_context)
+            print(f"Resultado del sistema especializado: {result}")
             if result.final_output and result.final_output.get("text"):
                 return result.final_output["text"]
+            print("[DEBUG-ERROR] El sistema especializado completó la tarea, pero no pudo generar una respuesta de texto.")
             return "El sistema especializado completó la tarea, pero no pudo generar una respuesta de texto."
         except Exception as e:
             print(f"[ERROR] Error al ejecutar la herramienta 'think' de SilverAI: {e}")
