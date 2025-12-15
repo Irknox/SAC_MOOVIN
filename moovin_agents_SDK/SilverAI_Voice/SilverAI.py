@@ -205,7 +205,7 @@ async def run_realtime_session(call_id: str):
                     if not hasattr(event, 'history') or not event.history:
                         print(f"[DEBUG-HISTORY-UPDATED] Evento {event.type} recibido con history=[] o sin history.")
                         continue
-                    print(f"[DEBUG-HISTORY-UPDATED] Evento: {event} recibido con history: {event.history}")
+                    #print(f"[DEBUG-HISTORY-UPDATED] Evento: {event} recibido con history: {event.history}")
                     for item in event.history:
                         if item.item_id in processed_item_ids:
                             continue
@@ -215,7 +215,7 @@ async def run_realtime_session(call_id: str):
 
                         if text:
                             role = item.role
-                            print(f"[DEBUG-EXTRACT-FINAL] Texto extraído FINAL. Rol: {role}, Status: {item.status}, Texto: '{text}'")
+                            #print(f"[DEBUG-EXTRACT-FINAL] Texto extraído FINAL. Rol: {role}, Status: {item.status}, Texto: '{text}'")
                             if role == "user":
                                 if current_interaction["agent"]:
                                     current_interaction = finalize_and_save_interaction(call_id, current_interaction)

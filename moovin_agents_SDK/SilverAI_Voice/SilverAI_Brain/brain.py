@@ -14,7 +14,7 @@ class BrainContext(BaseModel):
     session_id: str
     call_id: str
     
-class BrainRunner(Runner):
+class BrainRunner(Runner[BrainContext]):
     def __init__(self, packages_tools: List[Any]):
         
         packages_brain: Agent[BrainContext] = Agent[BrainContext](
