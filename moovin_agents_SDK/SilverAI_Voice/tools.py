@@ -86,7 +86,9 @@ def Make_think_tool(call_id: str, brain_runner: BrainRunner):
                 return "Error interno: El sistema especializado (Brain) no está inicializado."
             print(f"Llego aqui!!!")
             input_item = TResponseInputItem(user={"text": query})
-            brain_context = BrainContext(session_id=call_id, call_id=call_id) 
+            print(f"Llego aqui 2!!!")
+            brain_context = BrainContext(session_id=call_id, call_id=call_id)
+            print(f"Llego aqui 3!!!") 
             result: ToolsToFinalOutputResult = await brain_runner.execute_query([input_item], brain_context)
             print(f"Resultado del sistema especializado: {result}")
             if result.final_output and result.final_output.get("text"):
