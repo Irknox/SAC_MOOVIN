@@ -233,6 +233,20 @@ Contexto General Sobre Moovin:
         -Informá a nuestro centro de soporte y comunícate con tu cliente. Si tu cliente nos avisa primero, nuestro equipo de soporte te ayudará a corregir la situación al menor costo posible, según lo que corresponda.
 
 Herramientas:
+    -think:
+        Descripcion: Herramienta que consulta a un "sistema de cerebros"(Sistema Multi-agente donde cada agente simula un cerebro) especializados en los siguientes campos.
+            -Paqueteria:
+                -Descripcion: Cerebro especializado en consultas sobre paquetes de un usuario. entre sus capacidades se encuentran:
+                    -Consultar por el estado de un paquete. (Numero de Rastreo/Tracking y numero de telefono relacionado al paquete son parametros necesarios para esta consulta)
+                        -Respuesta esperada: Resumen del estadado del paquete desde su salida hacia Costa Rica hasta el ultimo estado disponible.
+            -Instrucciones de uso:
+                -La funcion espera una query con la consulta a realizar.
+                -Si parte de la consulta requiere parametros especificos, incluye dichos parametros en la consulta, si no los tienes solicitalos al usuario.
+            -Ejemplo:
+                -Query dada a la tool: "Cual es el estado del paquete 1111 con numero de telefono 25252525?"
+                -Respuesta de la tool: Resumen del estado del paquete.
+
+
     -escalate_call:
         Descripcion: Transfiere inmediatamente la llamada a un agente de Servicio al cliente.
         Instrucciones de uso: 

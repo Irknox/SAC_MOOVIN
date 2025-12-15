@@ -19,10 +19,13 @@ from handlers.db_handlers import (
     append_interaction, 
     redis_key, 
     get_session_data, 
-    delete_session_data
+    delete_session_data,
+    create_mysql_pool,
+    create_tools_pool,
 )
 import pymongo
 from SilverAI_Brain.brain import BrainRunner
+from SilverAI_Brain.tools import make_get_package_timeline_tool
 
 MONGO_URI = os.environ.get("MONGO_URI") 
 MONGO_DATABASE = os.environ.get("MONGO_DATABASE") 
@@ -38,7 +41,6 @@ try:
         print(f"[INFO] Instrucciones cargadas exitosamente desde: {PROMPT_FILE_PATH}")
         
 except FileNotFoundError:
-    # Esto usa un prompt por defecto si no se encuentra el archivo
     prompt_text = "Eres un Agente de Servicio al Cliente para la compañía de logística y envíos Moovin (pronunciado 'Muvin'). Respondes con voz natural, en español latino, de forma clara y concisa." 
     print(f"[ERROR] No se pudo encontrar el archivo de instrucciones en: {PROMPT_FILE_PATH}. Usando instrucciones por defecto.")
     
@@ -75,16 +77,22 @@ call_accept = {
 }
 
 
-async def run_realtime_session(call_id: str, brain_runner: BrainRunner):
+async def run_realtime_session(call_id: str):
     """Engancha un RealtimeAgent (SDK) a la llamada SIP usando el call_id
     que llega por el webhook realtime.call.incoming.
     """  
     print(f"[{call_id}] 👂 Iniciando sesión de Realtime...")
+    MySQL_pool = await create_mysql_pool() 
+    Tools_pool = await create_tools_pool()
     
+    get_package_tool = make_get_package_timeline_tool(MySQL_pool) 
+    packages_tools = [get_package_tool]
+    brain_runner = BrainRunner(packages_tools)
+    think_tool = Make_think_tool(call_id, brain_runner, MySQL_pool, Tools_pool)
     voice_agent = RealtimeAgent(
         name="Silver",
         instructions=prompt_text,
-        tools=[escalate_call,Make_think_tool(call_id, brain_runner)],
+        tools=[escalate_call, think_tool],
     )
     
     runner = RealtimeRunner(
@@ -187,7 +195,6 @@ async def run_realtime_session(call_id: str, brain_runner: BrainRunner):
                         "date_started": datetime.now().isoformat(),
                     }
                     current_interaction["steps_taken"].append(tool_calls_pending[tool_call_id])
-                    
                 elif event.type == "history_added":
                     item = getattr(event, 'item', None)
                     if item:
@@ -216,7 +223,6 @@ async def run_realtime_session(call_id: str, brain_runner: BrainRunner):
                                     "text": text,
                                     "date": datetime.now().isoformat(),
                                 }
-                                
                             elif role == "assistant":
                                 current_interaction["agent"] = {
                                     "text": text,
@@ -273,9 +279,7 @@ def start_session_in_thread(call_id: str):
     Wrapper para lanzar la sesión async del SDK en un thread.
     Instancia BrainRunner y lo pasa a la sesión asíncrona.
     """
-    print(f"[{call_id}] 🧠 Inicializando BrainRunner...")
-    brain_runner = BrainRunner()
-    asyncio.run(run_realtime_session(call_id, brain_runner))
+    asyncio.run(run_realtime_session(call_id))
 
 @app.route("/", methods=["POST"])
 def webhook():

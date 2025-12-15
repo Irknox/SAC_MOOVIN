@@ -1,7 +1,6 @@
 from agents import function_tool, RunContextWrapper
 import os, asyncio, json
 import requests
-from agents import function_tool, RunContextWrapper
 from SilverAI_Brain.brain import BrainRunner, BrainContext
 from agents import TResponseInputItem
 from agents.agent import ToolsToFinalOutputResult
@@ -65,7 +64,7 @@ class ThinkInput(BaseModel):
     query: str = Field(description="La pregunta o solicitud completa del usuario que SilverAI no puede responder sin la lógica especializada.")
 
 
-def Make_think_tool(call_id: str, brain_runner: BrainRunner):
+def Make_think_tool(call_id: str, brain_runner: BrainRunner, Mysql_pool, Tools_pool):
     """
     Función fábrica que crea y devuelve una instancia de la herramienta 'think' 
     con las variables call_id y brain_runner encapsuladas (closure).
