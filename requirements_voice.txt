@@ -9,8 +9,12 @@ openai-agents>=0.6.1,<1
 websocket-client==1.8.0
 websockets==15.0.1
 
-# Extras
+# Bases de datos u conexiones
 redis==6.4.0
 pymongo==4.15.5
+aiomysql==0.2.0
+
+
+# Extras
 pydantic>=2.12.3,<3
 pydantic-settings>=2.10.0,<3
