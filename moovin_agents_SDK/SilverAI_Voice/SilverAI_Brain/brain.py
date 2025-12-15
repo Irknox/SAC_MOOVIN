@@ -60,7 +60,7 @@ class BrainRunner(Runner):
 
         self.agent: Agent[BrainContext] = routing_brain
         
-    async def execute_query(self, input_items: List[TResponseInputItem], context: BrainContext) -> ToolsToFinalOutputResult:
+    async def execute_query(self, input_items: List[Any], context: BrainContext) -> Any:
         """
         Ejecuta el flujo multi-agente Standard (los 'cerebros') 
         a partir del nodo inicial definido (routing_brain).

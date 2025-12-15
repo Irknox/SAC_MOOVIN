@@ -211,6 +211,10 @@ async def run_realtime_session(call_id: str):
                     #print(f"[DEBUG-HISTORY-UPDATED] Evento: {event} recibido con history: {event.history}")
                     for item in event.history:
                         if item.item_id in processed_item_ids:
+                            continue    
+                        if not hasattr(item, 'role'):
+                            if item.status == "completed":
+                                processed_item_ids.add(item.item_id)
                             continue
                         if item.role == "user" and item.status != "completed":
                             continue
