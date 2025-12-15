@@ -78,7 +78,7 @@ def Make_think_tool(call_id: str, brain_runner: BrainRunner):
         Usa el sistema de agentes especializados de Moovin para responder a consultas complejas de rastreo, 
         tarifas, ubicaciones, etc. Devuelve la respuesta final para que SilverAI la diga.
         """
-        print(f"Pensando 🧠...")
+        print(f"Pensando 🧠...{query}")
         try:
             if not brain_runner:
                 print("[DEBUG-ERROR] Brain Runner no está inicializado")
