@@ -2,8 +2,6 @@ from agents import function_tool, RunContextWrapper
 import os, asyncio, json
 import requests
 from SilverAI_Brain.brain import BrainRunner, BrainContext
-from agents import TResponseInputItem
-from agents.agent import ToolsToFinalOutputResult
 from pydantic import BaseModel, Field
 
 
@@ -69,6 +67,8 @@ def Make_think_tool(call_id: str, brain_runner: BrainRunner):
     Función fábrica que crea y devuelve una instancia de la herramienta 'think' 
     con las variables call_id y brain_runner encapsuladas (closure).
     """
+    from agents import TResponseInputItem
+    from agents.agent import ToolsToFinalOutputResult
     @function_tool(
         name_override="think",
         description_override="Has una consulta especializada a un sistema de agentes multi-nodo para responder preguntas complejas sobre rastreo, tarifas, ubicaciones, etc."
@@ -78,11 +78,13 @@ def Make_think_tool(call_id: str, brain_runner: BrainRunner):
         Usa el sistema de agentes especializados de Moovin para responder a consultas complejas de rastreo, 
         tarifas, ubicaciones, etc. Devuelve la respuesta final para que SilverAI la diga.
         """
+
         print(f"Pensando 🧠...{query}")
         try:
             if not brain_runner:
                 print("[DEBUG-ERROR] Brain Runner no está inicializado")
                 return "Error interno: El sistema especializado (Brain) no está inicializado."
+            print(f"Llego aqui!!!")
             input_item = TResponseInputItem(user={"text": query})
             brain_context = BrainContext(session_id=call_id, call_id=call_id) 
             result: ToolsToFinalOutputResult = await brain_runner.execute_query([input_item], brain_context)
