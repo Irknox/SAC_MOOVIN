@@ -85,10 +85,10 @@ async def run_realtime_session(call_id: str):
     MySQL_pool = await create_mysql_pool() 
     Tools_pool = await create_tools_pool()
     
-    get_package_tool = make_get_package_timeline_tool(MySQL_pool) 
+    get_package_tool = make_get_package_timeline_tool(Tools_pool) 
     packages_tools = [get_package_tool]
     brain_runner = BrainRunner(packages_tools)
-    think_tool = Make_think_tool(call_id, brain_runner, MySQL_pool, Tools_pool)
+    think_tool = Make_think_tool(call_id, brain_runner)
     voice_agent = RealtimeAgent(
         name="Silver",
         instructions=prompt_text,
