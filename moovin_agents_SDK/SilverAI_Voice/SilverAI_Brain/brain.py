@@ -74,15 +74,15 @@ class BrainRunner(Runner):
 
         self.agent: Agent[BrainContext] = routing_brain
         
-    async def execute_query(self, input_items: BrainInputList, context: BrainContext) -> ToolOutputResult:
+    async def execute_query(self, input_items: List[Dict[str, Any]], context: BrainContext) -> ToolOutputResult:
         """
-        Ejecuta el flujo multi-agente llamando al Runner del SDK de forma correcta.
+        Ejecuta el flujo usando Runner.run de forma estática, 
+        igual que en tu arquitectura de api.py.
         """
         sdk_result = await Runner.run(self.agent, input_items, context=context)
         final_output = getattr(sdk_result, 'final_output', None)
-        is_final = bool(final_output)
         
         return ToolOutputResult(
-            is_final_output=is_final,
+            is_final_output=bool(final_output),
             final_output=final_output
         )

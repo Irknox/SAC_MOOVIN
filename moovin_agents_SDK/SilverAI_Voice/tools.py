@@ -71,19 +71,18 @@ def Make_think_tool(call_id: str, brain_runner: BrainRunner):
         description_override="Has una consulta especializada a un sistema de agentes multi-nodo para responder preguntas complejas sobre rastreo, tarifas, ubicaciones, etc."
     )
     async def think(query: str) -> str:
-        """
-        Usa el sistema de agentes especializados de Moovin para responder a consultas complejas de rastreo, 
-        tarifas, ubicaciones, etc. Devuelve la respuesta final para que SilverAI la diga.
-        """
-
         print(f"Pensando 🧠...{query}")
         try:
-            input_item = AgentInputItem(role="user", content=query)
+            if not brain_runner:
+                return "Error: Brain no inicializado."
+            input_item = {"role": "user", "content": query}
             brain_context = BrainContext(session_id=call_id, call_id=call_id)
             result: ToolOutputResult = await brain_runner.execute_query([input_item], brain_context)
-            if isinstance(result.final_output, dict) and result.final_output.get("text"):
-                return result.final_output["text"]
-            return str(result.final_output) if result.final_output else "No se obtuvo respuesta."
+            if result.final_output:
+                if isinstance(result.final_output, dict):
+                    return result.final_output.get("text", str(result.final_output))
+                return str(result.final_output)
+            return "El sistema no pudo generar una respuesta."
         except Exception as e:
             print(f"[ERROR] think tool: {e}")
             return "Error en la consulta especializada."
