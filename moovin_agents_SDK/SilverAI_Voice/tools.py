@@ -78,23 +78,13 @@ def Make_think_tool(call_id: str, brain_runner: BrainRunner):
 
         print(f"Pensando 🧠...{query}")
         try:
-            if not brain_runner:
-                print("[DEBUG-ERROR] Brain Runner no está inicializado")
-                return "Error interno: El sistema especializado (Brain) no está inicializado."
-            input_item = AgentInputItem(role="user", content=query) 
+            input_item = AgentInputItem(role="user", content=query)
             brain_context = BrainContext(session_id=call_id, call_id=call_id)
             result: ToolOutputResult = await brain_runner.execute_query([input_item], brain_context)
-            print(f"Resultado del sistema especializado: {result}")
             if isinstance(result.final_output, dict) and result.final_output.get("text"):
                 return result.final_output["text"]
-            if isinstance(result.final_output, str):
-                return result.final_output
-                
-            print("[DEBUG-ERROR] El sistema especializado completó la tarea, pero no pudo generar una respuesta de texto.")
-            return "El sistema especializado completó la tarea, pero no pudo generar una respuesta de texto."
-            
+            return str(result.final_output) if result.final_output else "No se obtuvo respuesta."
         except Exception as e:
-            print(f"[ERROR] Error al ejecutar la herramienta 'think' de SilverAI: {e}")
-            return "Disculpe, la base de conocimiento especializada experimentó un fallo. Por favor, intente reformular la pregunta."
-        
+            print(f"[ERROR] think tool: {e}")
+            return "Error en la consulta especializada."
     return think
