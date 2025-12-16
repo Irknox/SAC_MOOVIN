@@ -6,10 +6,26 @@ from agents import (
     TResponseInputItem,
 )
 from agents.agent import ToolsToFinalOutputResult
-from pydantic import BaseModel
-from typing import List, Any
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
+from pydantic import BaseModel, Field
+from typing import List, Any, Literal, Dict
 
+
+class AgentInputItem(BaseModel):
+    """Representa un ítem en la lista de entradas del agente (historial de chat, tool output, etc.)."""
+    role: Literal["user", "assistant", "system", "function"]
+    content: str | List[Dict[str, Any]] = Field(default="")
+    name: str | None = None
+    
+BrainInputList = List[AgentInputItem]
+
+
+class ToolOutputResult(BaseModel):
+    """Representa el resultado de la lógica de tool_use_behavior o la salida del BrainRunner."""
+    is_final_output: bool
+    final_output: str | Dict[str, Any] | None
+    
+    
 class BrainContext(BaseModel):
     session_id: str
     call_id: str
@@ -60,11 +76,16 @@ class BrainRunner(Runner):
 
         self.agent: Agent[BrainContext] = routing_brain
         
-    async def execute_query(self, input_items: List[Any], context: BrainContext) -> Any:
-        """
-        Ejecuta el flujo multi-agente Standard (los 'cerebros') 
-        a partir del nodo inicial definido (routing_brain).
-        """
-        wrapper = RunContextWrapper(self.agent, context)
-
-        return await wrapper.run(input_items)
+    async def execute_query(self, input_items: BrainInputList, context: BrainContext) -> ToolOutputResult:
+            """
+            Ejecuta el flujo multi-agente Standard (los 'cerebros') 
+            a partir del nodo inicial definido (routing_brain).
+            """
+            wrapper = RunContextWrapper(self.agent, context)
+            sdk_result = await wrapper.run(input_items)
+            final_output = getattr(sdk_result, 'final_output', None)
+            is_final = bool(final_output)
+            return ToolOutputResult(
+                is_final_output=is_final,
+                final_output=final_output
+            )

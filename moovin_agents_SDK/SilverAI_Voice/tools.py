@@ -1,9 +1,11 @@
 from agents import function_tool, RunContextWrapper
 import os, asyncio, json
 import requests
-from SilverAI_Brain.brain import BrainRunner, BrainContext
+from SilverAI_Brain.brain import BrainRunner, BrainContext, AgentInputItem, ToolOutputResult
 from pydantic import BaseModel, Field
 
+class ThinkInput(BaseModel):
+    query: str = Field(description="La pregunta o solicitud completa del usuario que SilverAI no puede responder sin la lógica especializada.")
 
 ARI_CONTROL_URL = os.getenv("ARI_CONTROL_URL")
 AMI_CONTROL_TOKEN = os.getenv("AMI_CONTROL_TOKEN")
@@ -58,17 +60,12 @@ async def escalate_call(ctx: RunContextWrapper, target_ext: int = 90000, mode: s
         print(f"Error al usar el tool, Detalles: {e}")
         return {"status": "error", "reason": "request_failed", "detail": repr(e)}
 
-class ThinkInput(BaseModel):
-    query: str = Field(description="La pregunta o solicitud completa del usuario que SilverAI no puede responder sin la lógica especializada.")
-
-
 def Make_think_tool(call_id: str, brain_runner: BrainRunner):
     """
     Función fábrica que crea y devuelve una instancia de la herramienta 'think' 
     con las variables call_id y brain_runner encapsuladas (closure).
     """
-    from agents import TResponseInputItem
-    from agents.agent import ToolsToFinalOutputResult
+    
     @function_tool(
         name_override="think",
         description_override="Has una consulta especializada a un sistema de agentes multi-nodo para responder preguntas complejas sobre rastreo, tarifas, ubicaciones, etc."
@@ -84,17 +81,18 @@ def Make_think_tool(call_id: str, brain_runner: BrainRunner):
             if not brain_runner:
                 print("[DEBUG-ERROR] Brain Runner no está inicializado")
                 return "Error interno: El sistema especializado (Brain) no está inicializado."
-            print(f"Llego aqui!!!")
-            input_item = TResponseInputItem(user={"text": query})
-            print(f"Llego aqui 2!!!")
+            input_item = AgentInputItem(role="user", content=query) 
             brain_context = BrainContext(session_id=call_id, call_id=call_id)
-            print(f"Llego aqui 3!!!") 
-            result: ToolsToFinalOutputResult = await brain_runner.execute_query([input_item], brain_context)
+            result: ToolOutputResult = await brain_runner.execute_query([input_item], brain_context)
             print(f"Resultado del sistema especializado: {result}")
-            if result.final_output and result.final_output.get("text"):
+            if isinstance(result.final_output, dict) and result.final_output.get("text"):
                 return result.final_output["text"]
+            if isinstance(result.final_output, str):
+                return result.final_output
+                
             print("[DEBUG-ERROR] El sistema especializado completó la tarea, pero no pudo generar una respuesta de texto.")
             return "El sistema especializado completó la tarea, pero no pudo generar una respuesta de texto."
+            
         except Exception as e:
             print(f"[ERROR] Error al ejecutar la herramienta 'think' de SilverAI: {e}")
             return "Disculpe, la base de conocimiento especializada experimentó un fallo. Por favor, intente reformular la pregunta."
