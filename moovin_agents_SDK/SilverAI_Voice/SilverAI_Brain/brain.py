@@ -3,9 +3,7 @@ from agents import (
     handoff,
     RunContextWrapper,
     Runner,
-    TResponseInputItem,
 )
-from agents.agent import ToolsToFinalOutputResult
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 from pydantic import BaseModel, Field
 from typing import List, Any, Literal, Dict
@@ -77,15 +75,14 @@ class BrainRunner(Runner):
         self.agent: Agent[BrainContext] = routing_brain
         
     async def execute_query(self, input_items: BrainInputList, context: BrainContext) -> ToolOutputResult:
-            """
-            Ejecuta el flujo multi-agente Standard (los 'cerebros') 
-            a partir del nodo inicial definido (routing_brain).
-            """
-            wrapper = RunContextWrapper(self.agent, context)
-            sdk_result = await wrapper.run(input_items)
-            final_output = getattr(sdk_result, 'final_output', None)
-            is_final = bool(final_output)
-            return ToolOutputResult(
-                is_final_output=is_final,
-                final_output=final_output
-            )
+        """
+        Ejecuta el flujo multi-agente llamando al Runner del SDK de forma correcta.
+        """
+        sdk_result = await Runner.run(self.agent, input_items, context=context)
+        final_output = getattr(sdk_result, 'final_output', None)
+        is_final = bool(final_output)
+        
+        return ToolOutputResult(
+            is_final_output=is_final,
+            final_output=final_output
+        )
