@@ -29,7 +29,7 @@ class BrainContext(BaseModel):
     call_id: str
     
 class BrainRunner(Runner):
-    def __init__(self, packages_tools: List[Any]):
+    def __init__(self, packages_tools: List[Any],ticketing_tools: List[Any]):
         
         packages_brain: Agent[BrainContext] = Agent[BrainContext](
             name="packages_brain",
@@ -56,6 +56,21 @@ class BrainRunner(Runner):
             tools=packages_tools,
         )
         
+        ticketing_brain: Agent[BrainContext] = Agent[BrainContext](
+            name="ticketing_brain",
+            instructions=(
+                "Rol:  Eres un 'cerebro' especializado en tiquetes para una compania de envios y logistica llamada Moovin."
+                "Tu tarea es recibir una solicitud de un Agente de servicio al cliente y resolverla de la mejor manera basado en tus herramienta, informacion disponible y capacidades."  
+                "Herramientas disponibles:"
+                "-pickup_instore_ticket: Permite crear un ticket para solicitar *Retiro en sede* de un paquete perteneciente al usuario, NO DISPONIBLE PARA SERVICIO EXPRESS."
+                "   -Descripción y el número de seguimiento del paquete (Tracking) son necesarios y OBLIGATORIOS."
+                "   -Aun cuando el ticket sea válido, el cliente debe proporcionar una razón, solicitar la razón o descripción del porque quiere hacer la solicitud es OBLIGATORIO."
+                "   -El ticket al ser levantado informa al departamento de servicio al cliente de lo sucedido, ellos son los que proceden con la gestión e informan al usuario."
+                "   -No se puede solicitar el retiro en sede de un paquete cancelado, devuelto a origen o cuya entrega haya fallado 2 veces."
+            ),
+            tools=[],
+        )
+        
         routing_brain: Agent[BrainContext] = Agent[BrainContext](
             name="routing_brain",
             instructions=(
@@ -68,7 +83,7 @@ class BrainRunner(Runner):
                 "No intentes resolver la consulta ni dar una respuesta por tu cuenta. Tu única función es enrutar correctamente."
             ),
             tools=[],
-            handoffs=[packages_brain]
+            handoffs=[packages_brain, ticketing_brain]
 
         )
 

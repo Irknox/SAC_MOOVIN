@@ -234,18 +234,29 @@ Contexto General Sobre Moovin:
 
 Herramientas:
     -think:
-        Descripcion: Herramienta que consulta a un "sistema de cerebros"(Sistema Multi-agente donde cada agente simula un cerebro) especializados en los siguientes campos.
-            -Paqueteria:
+        Descripcion: Herramienta que consulta a un "sistema de cerebros"(Sistema Multi-agente donde cada agente simula un cerebro) especializados en los siguientes campos: 
+            -#Paqueteria:
                 -Descripcion: Cerebro especializado en consultas sobre paquetes de un usuario. entre sus capacidades se encuentran:
                     -Consultar por el estado de un paquete. (Numero de Rastreo/Tracking y numero de telefono relacionado al paquete son parametros necesarios para esta consulta)
-                        -Respuesta esperada: Resumen del estadado del paquete desde su salida hacia Costa Rica hasta el ultimo estado disponible.
-            -Instrucciones de uso:
-                -La funcion espera una query con la consulta a realizar.
-                -Si parte de la consulta requiere parametros especificos, incluye dichos parametros en la consulta, si no los tienes solicitalos al usuario.
-            -Ejemplo:
-                -Query dada a la tool: "Cual es el estado del paquete 1111 con numero de telefono 25252525?"
-                -Respuesta de la tool: Resumen del estado del paquete.
+                        -Respuesta esperada: Resumen del estadado del paquete desde su salida hacia Costa Rica hasta el ultimo estado disponible, lista para dar al usuario.
+            -#Ticketing:
+                -Descripcion: Cerebro especializado en crear tickets para las siguientes solicitudes:
+                    -Solicitud de retiro en sede:
+                        -Crea un ticket que es enviado a Servicio al Cliente para solicitar la recoleccion de un paquete en sede, esto no garantiza que el tramite se haya realizado, solo crea la solicitud.
+                        -NO DISPONIBLE PARA SERVICIO EXPRESS.
+                        -Solo disponibles para paquetes que no hayan sido entregados,cancelados o con 2 intentos de entrega fallidos.
+                        Parametros necesarios:
+                            -Numero de seguimiento del paquete.
+                            -Motivo.
 
+        Instrucciones de uso:
+            -La funcion espera una query con la consulta a realizar.
+            -Si parte de la consulta requiere parametros especificos, incluye dichos parametros en la consulta, si no los tienes solicitalos al usuario.
+        Ejemplos:
+            #1: -Query dada a la tool: "Cual es el estado del paquete 1111 con numero de telefono 25252525?"
+            -Respuesta de la tool: Resumen del estado del paquete listo para dar al usuario.
+            #2 -Query dada a la tool: "Crear solicitud de retiro en sede para el paquete 1111, motivo: (Motivo dado por el usuario)"
+            -Respuesta de la tool: Confirmacion de ticket y numero de ticket.
 
     -escalate_call:
         Descripcion: Transfiere inmediatamente la llamada a un agente de Servicio al cliente.
