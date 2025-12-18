@@ -25,7 +25,7 @@ from handlers.db_handlers import (
 )
 import pymongo
 from SilverAI_Brain.brain import BrainRunner
-from SilverAI_Brain.tools import make_get_package_timeline_tool,Make_request_to_pickup_tool
+from SilverAI_Brain.tools import Make_get_package_timeline_tool,Make_request_to_pickup_tool,Make_request_electronic_receipt_tool,Make_package_damaged_tool
 
 MONGO_URI = os.environ.get("MONGO_URI") 
 MONGO_DATABASE = os.environ.get("MONGO_DATABASE") 
@@ -82,25 +82,27 @@ async def run_realtime_session(call_id: str):
     que llega por el webhook realtime.call.incoming.
     """  
     print(f"[{call_id}] 👂 Iniciando sesión de Realtime...")
-    MySQL_pool = await create_mysql_pool() 
     Tools_pool = await create_tools_pool()
     
     #Iniciacion de tools con pools para el brain runner
     
     #Tools para paqueteria
-    get_package_tool = make_get_package_timeline_tool(Tools_pool)
-    packages_tools = [get_package_tool]
+    packages_tools = [ Make_get_package_timeline_tool(Tools_pool)]
+    
     #Tools para ticketing
-    create_pickup_ticket_tool = Make_request_to_pickup_tool(Tools_pool)
-    ticketing_tools=[create_pickup_ticket_tool]
+    ticketing_tools = [
+    Make_request_to_pickup_tool(Tools_pool),
+    Make_request_electronic_receipt_tool(Tools_pool),
+    Make_package_damaged_tool(Tools_pool),
+    ]
     brain_runner = BrainRunner(packages_tools,ticketing_tools)
     
-    ## Inicializacion d agente de voz
+    ## Inicializacion de agente de voz
     think_tool = Make_think_tool(call_id, brain_runner)
     voice_agent = RealtimeAgent(
         name="Silver",
         instructions=prompt_text,
-        tools=[escalate_call, think_tool],
+        tools=[escalate_call, think_tool],    
     )
     
     runner = RealtimeRunner(

@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 load_dotenv()
 
-CR_TZ = ZoneInfo("America/Costa_Rica")
+
 
 zoho_refresh_token=os.environ.get("Zoho_Refresh_Token", "")
 zoho_org_id = "716348510"
@@ -264,3 +264,196 @@ def create_pickup_ticket(email: str, phone: str,
             "details": str(e)
         }   
  
+ 
+def request_electronic_receipt(owner: dict, package_id: str,legal_name:str, legal_id: str,            
+                            full_address: str, reason: str = "") -> dict:
+    """
+    Crea un ticket en Zoho Desk usando los datos provistos.
+
+    Parámetros:
+      - email: correo del contacto.
+      - phone: teléfono del contacto.
+      - name: nombre del contacto.
+      - package_id: identificador del paquete.
+      - description: descripción opcional del ticket.
+
+    Retorna:
+      - Diccionario JSON con lo retornado por Zoho (el ticket creado).
+    """
+    email = owner.get("email", None)
+    phone = owner.get("phone", None)
+    name = owner.get("name",None)
+    
+    try:
+        token = get_cached_token()
+        contact = get_zoho_contact(email=email, phone=phone, token=token)
+        
+        if "id" not in contact:
+            print("⚠️ No se encontró contacto, creando uno nuevo...")
+            contact = create_zoho_contact(email=email,phone=phone, name=name, token=token)
+            if "id" not in contact:
+                return {
+                    "error": "No se pudo crear el contacto",
+                    "details": contact
+                }
+                
+                
+        url = "https://desk.zoho.com/api/v1/tickets"
+
+        headers = {
+            "Authorization": f"Zoho-oauthtoken {token}",
+            "orgId": zoho_org_id,
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "subject": "Solicitud Factura Electronica (Prueba de Integración)",
+            "email": email,
+            "phone": phone,
+            "description":
+                f"ESTO ES UNA PRUEBA, por favor hacer caso omiso.\n\n Descripcion: {reason}\n"
+                f"Nombre Juridico: {legal_name} \n"
+                f"Cedula Juridica: {legal_id} \n"
+                f"Direccion Completa: {full_address} \n",          
+            "departmentId": "504200000001777045",
+            "channel": "WhatsApp",
+            "teamId": "504200000035799001",
+            "cf": {
+                "cf_id_de_envio": package_id
+            },
+            "status" : "Closed",
+            "contactId": contact["id"]
+        }
+        
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        ticket_data = response.json()
+        ticket_number = ticket_data.get("ticketNumber", "DESCONOCIDO")
+        TicketURL=ticket_data.get("webUrl","No disponible")
+        
+        print(f"🎫 Ticket creado: {ticket_number} URL del Ticket {TicketURL}")
+        
+        return {
+            "TicketNumber": ticket_number,
+            "message": "Ticket creado exitosamente",
+            "DevURL":TicketURL
+        }
+        
+    except Exception as e:
+        return {
+            "error": "Error general al crear ticket",
+            "details": str(e)
+        }    
+ 
+def _parse_date_cr(dt_str: str) -> datetime | None:
+    """
+    Convierte varias variantes de fecha a datetime con tz de CR.
+    Acepta:
+      - "YYYY-MM-DD HH:MM:SS"
+      - "YYYY-MM-DD HH:MM:SS.%f"
+      - ISO con o sin 'T' y con/ sin offset, p.ej. "YYYY-MM-DDTHH:MM:SS.ssssss-06:00"
+    """
+    if not dt_str or not isinstance(dt_str, str):
+        return None
+    s = dt_str.strip()
+
+    try:
+        iso = s.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(iso)
+        return dt if dt.tzinfo else dt.replace(tzinfo=CR_TZ)
+    except Exception:
+        pass
+
+    try:
+        return datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(tzinfo=CR_TZ)
+    except Exception:
+        pass
+
+    try:
+        return datetime.strptime(s, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=CR_TZ)
+    except Exception:
+        pass
+
+    return None
+
+def report_package_damaged(owner: dict, package_id: str, description: str) -> dict:
+    """
+    Crea un ticket en Zoho Desk para reportar un paquete dañado.
+
+    Parámetros:
+      - owner: diccionario con datos del propietario del paquete.
+      - package_id: identificador del paquete.
+      - description: descripción del daño.
+      - img_data: lista de IDs de imágenes relacionadas al daño.
+
+    Retorna:
+      - Diccionario JSON con lo retornado por Zoho (el ticket creado).
+    """
+    email = owner.get("email", None)
+    phone = owner.get("phone", None)
+    name = owner.get("name", None)
+
+    try:
+        token = get_cached_token()
+        contact = get_zoho_contact(email=email, phone=phone, token=token)
+        
+        if "id" not in contact:
+            print("⚠️ No se encontró contacto, creando uno nuevo...")
+            try:
+                contact = create_zoho_contact(email=email, phone=phone, name=name, token=token)
+            except Exception as e:
+                print (f"Error al crear el contacto")
+                
+            if "id" not in contact:
+                return {
+                    "error": "No se pudo crear el contacto",
+                    "details": contact
+                }
+                
+        url = "https://desk.zoho.com/api/v1/tickets"
+
+        headers = {
+            "Authorization": f"Zoho-oauthtoken {token}",
+            "orgId": zoho_org_id,
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "subject": f"Reporte de Paquete Dañado - {package_id}  (Prueba de Integración)",
+            "email": email,
+            "phone": phone,
+            "description": f"ESTO ES UNA PRUEBA, por favor hacer caso omiso.\n\n Descripción del daño: {description}",
+            "departmentId": "504200000001777045",
+            "channel": "WhatsApp",
+            "teamId": "504200000035799001",
+            "cf": {
+                "cf_id_de_envio": package_id
+            },
+            "status" : "Closed",
+            "contactId": contact["id"]
+        }
+
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if not response.ok:
+            return {
+                "status": "error",
+                "message": f"Error al crear el ticket: {response}"
+            }
+        
+        ticket_data = response.json()
+        ticket_id= ticket_data.get("id", "DESCONOCIDO")
+        ticketNumber=ticket_data.get("ticketNumber","DESCONOCIDO")
+        TicketURL=ticket_data.get("webUrl","No disponible")
+
+        return {
+            "status": "ok",
+            "message": f"Ticket de daño creado para el paquete {package_id}",
+            "Numero de Ticket": ticketNumber,
+        } 
+        
+    except Exception as e: 
+        return {
+            "status": "error",
+            "message": f"Error general al crear ticket: {str(e)}"
+        }

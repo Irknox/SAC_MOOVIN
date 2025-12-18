@@ -238,7 +238,8 @@ Herramientas:
             -#Paqueteria:
                 -Descripcion: Cerebro especializado en consultas sobre paquetes de un usuario. entre sus capacidades se encuentran:
                     -Consultar por el estado de un paquete. (Numero de Rastreo/Tracking y numero de telefono relacionado al paquete son parametros necesarios para esta consulta)
-                        -Respuesta esperada: Resumen del estadado del paquete desde su salida hacia Costa Rica hasta el ultimo estado disponible, lista para dar al usuario.
+                -Respuesta esperada: Resumen del estadado del paquete desde su salida hacia Costa Rica hasta el ultimo estado disponible, lista para dar al usuario.
+
             -#Ticketing:
                 -Descripcion: Cerebro especializado en crear tickets para las siguientes solicitudes:
                     -Solicitud de retiro en sede:
@@ -248,6 +249,25 @@ Herramientas:
                         Parametros necesarios:
                             -Numero de seguimiento del paquete.
                             -Motivo.
+                    -Solicitud de factura/recibo electrónico:
+                        -Crea un ticket solicitando la creacion y emision de una factura electronica al cliente por impuestos pagados.
+                        -Un correo es emitido una vez la solicitud haya sido revisada por agentes de Atencion al cliente.
+                        Parametros necesarios:
+                            -Cédula Jurídica
+                            -Nombre Juridico
+                            -Dirección Completa
+                            -Número de seguimiento del paquete
+                            -Descripción de la solicitud
+                    -Informe de paquete dañado:
+                        -Crea un ticket reportando el daño en un paquete entregado.
+                        -El reporte debe ser hecho como máximo 2 días después de haber sido entregado.
+                        -Este ticket sólo informa del daño, las remuneraciones producto del daño deben ser manejadas con la tienda donde el usuario compró el artículo. *SIEMPRE* que se cree un ticket por esta razon, es OBLIGATORIO informar al usuario sobre esto.
+                -Notas de la herramienta:
+                    -Tickets deben ser creados UNICAMENTE si la solicitud del usuario es explicitamente relacionada a estos casos.
+                    -No se deben reportar tickets por otras razones que no sean las listadas anteriormente.
+                -Respuesta esperada: Confirmacion y numero de ticket.
+
+
 
         Instrucciones de uso:
             -La funcion espera una query con la consulta a realizar.
