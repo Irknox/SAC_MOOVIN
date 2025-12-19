@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 import threading
-from agents import (Agent,input_guardrail, RunContextWrapper, Runner,GuardrailFunctionOutput)
+from agents import (Agent, input_guardrail, RunContextWrapper, Runner,GuardrailFunctionOutput)
 from agents.realtime import RealtimeAgent, RealtimeRunner
 from agents.realtime.openai_realtime import OpenAIRealtimeSIPModel
 from websockets.exceptions import ConnectionClosedError
@@ -131,7 +131,7 @@ async def run_realtime_session(call_id: str):
     )
     
     @input_guardrail(name="Input Guardrail Function")
-    async def input_guardrail(
+    async def silver_input_guardrail(
         context: RunContextWrapper[GuardrailContext], 
         agent: Agent, 
         input: list[dict[str, Any]]
@@ -179,7 +179,7 @@ async def run_realtime_session(call_id: str):
         name="Silver",
         instructions=prompt_text,
         tools=[escalate_call, think_tool],  
-        input_guardrails=[input_guardrail] 
+        input_guardrails=[silver_input_guardrail] 
     )
 
     def create_railing_agent(reason: str, input_received: str) -> RealtimeAgent:      
