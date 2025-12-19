@@ -266,9 +266,7 @@ Herramientas:
                     -Tickets deben ser creados UNICAMENTE si la solicitud del usuario es explicitamente relacionada a estos casos.
                     -No se deben reportar tickets por otras razones que no sean las listadas anteriormente.
                 -Respuesta esperada: Confirmacion y numero de ticket.
-
-
-
+                
         Instrucciones de uso:
             -La funcion espera una query con la consulta a realizar.
             -Si parte de la consulta requiere parametros especificos, incluye dichos parametros en la consulta, si no los tienes solicitalos al usuario.

@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import threading
+from agents import (Agent,    RunContextWrapper, Runner,GuardrailFunctionOutput)
 from agents.realtime import RealtimeAgent, RealtimeRunner
 from agents.realtime.openai_realtime import OpenAIRealtimeSIPModel
 from websockets.exceptions import ConnectionClosedError
@@ -23,9 +24,11 @@ from handlers.db_handlers import (
     create_mysql_pool,
     create_tools_pool,
 )
+from pydantic import BaseModel
 import pymongo
 from SilverAI_Brain.brain import BrainRunner
 from SilverAI_Brain.tools import Make_get_package_timeline_tool,Make_request_to_pickup_tool,Make_request_electronic_receipt_tool,Make_package_damaged_tool
+from typing import Optional, Dict, Any, List
 
 MONGO_URI = os.environ.get("MONGO_URI") 
 MONGO_DATABASE = os.environ.get("MONGO_DATABASE") 
@@ -84,6 +87,78 @@ async def run_realtime_session(call_id: str):
     print(f"[{call_id}] 👂 Iniciando sesión de Realtime...")
     Tools_pool = await create_tools_pool()
     
+    
+    #Guardarailes
+    class GuardrailContext(BaseModel):
+        passed: bool | None = None
+        reason: str | None = None
+        input_received: str | None = None
+        
+    class GuardrailOutput(BaseModel):
+        reasoning: str
+        passed: bool
+        
+    input_guardrail_agent=Agent[GuardrailContext](
+        name="Input Guardrail Agent",
+        model="gpt-4o-mini",
+        instructions=(
+            "Funcionas como un guardrail para detectar si el input del usuario esta fuera del contexto de servicio al cliente para la compañia de envios y logistica Moovin.(pronunciada Muvin)."
+            "Tarea: Analiza el input del usuario y determina si esta fuera del contexto permitido para la atencion. Para poder determinar esto recibes contexto sobre Moovin y las capacidades del asistente virtual."
+            
+            "Ejemplo de contexto invalido para consultas:"
+                "   -Teorias de conspiracion."
+                "   -Politica."
+                "   -Religión."
+                "   -Otras compañias."
+                "   -Consultas relacionadas al funcionamiento del asistente virtual."
+                "   -Cualquer otro tema que NO este directamente relacionados a Moovin o su servicio de envios y logistica."
+                
+            "Ejemplo de contexto sobre Moovin(Valido para consultas):"
+            "   - Moovin es una empresa de logística costarricense, también presente en Honduras y Chile, especializada en entregas rápidas y seguras. Si recibes una notificación nuestra, es porque estamos encargados de llevarte un pedido que hiciste en otra tienda (nacional o internacional). "
+            "   - Servicios principales:"
+            "   - Recolección y entrega de paquetes en ruta."
+            "   - Entrega local de paquetes internacionales."
+            "   - Entregas al mismo día (Envíos Exprés)."
+            "   - Almacenaje de productos (Fulfillment)."
+            "   - Venta de bolsas y empaques. (Ticket MCP Agent)"
+            "   - Cobro contra entrega de productos (Cash on delivery)."
+
+            "Respondes con unn json que contiene los siguientes campos:"
+            "   - reasoning: Explica brevemente por qué el input es válido o inválido."
+            "   - passed: Booleano que indica si el input es válido (true) o inválido (false)."
+        ),
+        output_type=GuardrailOutput, 
+    )
+    
+    @input_guardrail(name="Input Guardrail Function")
+    async def input_guardrail(
+        context: RunContextWrapper[GuardrailContext], 
+        agent: Agent, 
+        input: list[dict[str, Any]]
+    ) -> GuardrailFunctionOutput:
+        user_text = ""
+        for item in input:
+            if item.get("type") == "message" and item.get("role") == "user":
+                content = item.get("content", [])
+                for part in content:
+                    if part.get("type") == "text":
+                        user_text += part.get("text", "")
+
+        result = await Runner.run(input_guardrail_agent, user_text, context=context.context)
+        final = result.final_output_as(GuardrailOutput)
+        if not final.passed:
+            print(f"[GUARDRAIL] 🚩 Activado: {final.reasoning}")
+            session = context.context.get("realtime_session")
+            if session:
+                rescue_agent = create_railing_agent(final.reasoning, user_text)
+                await session.update_agent(rescue_agent)
+            return GuardrailFunctionOutput(
+                output_info=final,
+                tripwire_triggered=True,
+            )
+
+        return GuardrailFunctionOutput(output_info=final, tripwire_triggered=False)
+    
     #Iniciacion de tools con pools para el brain runner
     
     #Tools para paqueteria
@@ -99,11 +174,53 @@ async def run_realtime_session(call_id: str):
     
     ## Inicializacion de agente de voz
     think_tool = Make_think_tool(call_id, brain_runner)
+
     voice_agent = RealtimeAgent(
         name="Silver",
         instructions=prompt_text,
-        tools=[escalate_call, think_tool],    
+        tools=[escalate_call, think_tool],  
+        input_guardrails=[input_guardrail] 
     )
+
+    def create_railing_agent(reason: str, input_received: str) -> RealtimeAgent:      
+        railing_agent = RealtimeAgent(
+                name="Railing Agent",
+                instructions=(
+                    "Eres un agente encargado en reorientar la conversacion cuando esta se salga del contexto de servicio al cliente para la compañia de envios y logistica Moovin.(pronunciada Muvin)"
+                    "Tarea: Recibes la razon por la que el guadarail fue activado y el input que provoco la activacion."
+                    f"   Razon de activacion del guardrail: {reason}"
+                    f"   Input que provoco la activacion: {input_received}"
+                    "   - A partir de esto reformulas la respuesta del agente a algo valido o reorientas al usuario hacia un tema relacionado con el servicio al cliente de Moovin."
+                    "   - Ten en cuenta que el guardarail puede ser activado por el mensaje del usuario o respuesta del agente."
+                    "Contexto invalido para consultas:"
+                    "   -Teorias de conspiracion."
+                    "   -Politica."
+                    "   -Religión."
+                    "   -Otras compañias."
+                    "   -Consultas relacionadas al funcionamiento del asistente virtual."
+                    "   -Cualquer otro tema que NO este directamente relacionados a Moovin o su servicio de envios y logistica."
+
+                    "Contexto sobre Moovin(Valido para consultas):"
+                    "   - Moovin es una empresa de logística costarricense, también presente en Honduras y Chile, especializada en entregas rápidas y seguras. Si recibes una notificación nuestra, es porque estamos encargados de llevarte un pedido que hiciste en otra tienda (nacional o internacional). "
+                    "   - Servicios principales:"
+                    "   - Recolección y entrega de paquetes en ruta."
+                    "   - Entrega local de paquetes internacionales."
+                    "   - Entregas al mismo día (Envíos Exprés)."
+                    "   - Almacenaje de productos (Fulfillment)."
+                    "   - Venta de bolsas y empaques. (Ticket MCP Agent)"
+                    "   - Cobro contra entrega de productos (Cash on delivery)."
+                    
+                    "Como funciona Moovin?"
+                    "   - Haces tu compra en linea en una tienda nacional o internacional, y estas tiendas nos contactan para entregarte el pedido. En la modalidad contratada."
+                    "   - Los repartidores se llaman Moovers."
+                    "   - Colaboramos con e-commerce nacionales e internacionales para facilitar entregas locales, entre las más comunes, Temu, Aliexpress, Amazon entre otras."
+                    "   - Moovin no envia paquetes al extranjero, se puede contratar la recolección y entrega de un paquete a nivel nacional, en caso de entregas de paquetes internacionales, hace referencia a usuarios que compraron artículos fuera del país y la compañía internacional contrata a Moovin para la distribución a nivel nacional o bajo la cobertura contratada."
+                    ""
+                ),
+                tools=[ ],
+                handoffs=[voice_agent]    
+            )
+        return railing_agent
     
     runner = RealtimeRunner(
         starting_agent=voice_agent,
@@ -180,6 +297,7 @@ async def run_realtime_session(call_id: str):
         }
         async with await runner.run(context=ctx,model_config=model_config) as session:
             initial_message = "Hola, soy Silver, asistente virtual de Moovin (pronunciado Muvin), ¿cómo puedo asistirte hoy?"
+            ctx["realtime_session"] = session
             await session.send_message(
                 f"Dile al usuario: '{initial_message}'"
             )
