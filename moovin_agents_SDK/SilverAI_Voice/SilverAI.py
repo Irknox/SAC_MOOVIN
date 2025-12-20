@@ -137,6 +137,7 @@ async def run_realtime_session(call_id: str):
         input: list[dict[str, Any]]
     ) -> GuardrailFunctionOutput:
         user_text = ""
+        
         for item in input:
             if item.get("type") == "message" and item.get("role") == "user":
                 content = item.get("content", [])
@@ -146,6 +147,7 @@ async def run_realtime_session(call_id: str):
 
         result = await Runner.run(input_guardrail_agent, user_text, context=context.context)
         final = result.final_output_as(GuardrailOutput)
+        print (f"[GUARDRAIL] Análisis de input del usuario: '{user_text}', resultado: {final}")
         if not final.passed:
             print(f"[GUARDRAIL] 🚩 Activado: {final.reasoning}")
             session = context.context.get("realtime_session")
