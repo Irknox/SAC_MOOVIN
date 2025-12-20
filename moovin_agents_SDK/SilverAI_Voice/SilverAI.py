@@ -134,16 +134,25 @@ async def run_realtime_session(call_id: str):
     async def silver_output_guardrail(
         context: RunContextWrapper[GuardrailContext], 
         agent: Agent, 
-        input: list[dict[str, Any]]
+        output: str
     ) -> GuardrailFunctionOutput:
-        user_text = ""
-        
-        for item in input:
-            if item.get("type") == "message" and item.get("role") == "user":
-                content = item.get("content", [])
-                for part in content:
-                    if part.get("type") == "text":
-                        user_text += part.get("text", "")
+        print(f"[DEBUG-GUARDRAIL] Evaluando respuesta del agente: '{output[:50]}...'")
+        result = await Runner.run(input_guardrail_agent, output, context=context.context)
+        final = result.final_output_as(GuardrailOutput)
+        print(f"[GUARDRAIL] Resultado para '{output[:30]}': {final.passed} - Razón: {final.reasoning}")
+        if not final.passed:
+            print(f"[GUARDRAIL] 🚩 BLOQUEADO: {final.reasoning}")
+            session = context.context.get("realtime_session")
+            if session:
+                rescue_agent = create_railing_agent(final.reasoning, output)
+                await session.update_agent(rescue_agent)
+            
+            return GuardrailFunctionOutput(
+                output_info=final,
+                tripwire_triggered=True, 
+            )
+
+        return GuardrailFunctionOutput(output_info=final, tripwire_triggered=False)
 
         result = await Runner.run(input_guardrail_agent, user_text, context=context.context)
         final = result.final_output_as(GuardrailOutput)
@@ -276,7 +285,7 @@ async def run_realtime_session(call_id: str):
         "call_id": call_id,
         "initial_model_settings": {
             "modalities": ["audio"],
-            "voice": "alloy",
+            "voice": "echo",
             "speed": 1.3,
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
