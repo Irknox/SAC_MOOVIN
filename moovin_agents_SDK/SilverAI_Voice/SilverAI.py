@@ -274,7 +274,7 @@ async def run_realtime_session(call_id: str):
         "call_id": call_id,
         "initial_model_settings": {
             "modalities": ["audio"],
-            "voice": "ash",
+            "voice": "ballad",
             "speed": 1.3,
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
