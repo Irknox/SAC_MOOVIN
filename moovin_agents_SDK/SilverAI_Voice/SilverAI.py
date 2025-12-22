@@ -98,14 +98,14 @@ async def run_realtime_session(call_id: str):
         reasoning: str
         passed: bool
         
-    input_guardrail_agent=Agent[GuardrailContext](
-        name="Input Guardrail Agent",
+    output_guardrail_agent=Agent[GuardrailContext](
+        name="Output Guardrail Agent",
         model="gpt-4o-mini",
         instructions=(
-            "Funcionas como un guardrail para detectar si el input del usuario esta fuera del contexto de servicio al cliente para la compañia de envios y logistica Moovin.(pronunciada Muvin)."
-            "Tarea: Analiza el input del usuario y determina si esta fuera del contexto permitido para la atencion. Para poder determinar esto recibes contexto sobre Moovin y las capacidades del asistente virtual."
+            "Funcionas como un guardrail que filtra las respuesta de un Agente de Servicio al cliente para la compañia Moovin(Pronunciada Muuvin)."
+            "Tarea: Analizala respuesta del agente y determina si esta fuera del contexto permitido para la atencion o es invalido. Para poder determinar esto recibes contexto sobre Moovin y las capacidades del asistente virtual."
             
-            "Ejemplo de contexto invalido para consultas:"
+            "Ejemplo de temas sobre los que el agente NO debe interactuar:"
                 "   -Teorias de conspiracion."
                 "   -Politica."
                 "   -Religión."
@@ -113,7 +113,7 @@ async def run_realtime_session(call_id: str):
                 "   -Consultas relacionadas al funcionamiento del asistente virtual."
                 "   -Cualquer otro tema que NO este directamente relacionados a Moovin o su servicio de envios y logistica."
                 
-            "Ejemplo de contexto sobre Moovin(Valido para consultas):"
+            "Ejemplo de contexto sobre Moovin:"
             "   - Moovin es una empresa de logística costarricense, también presente en Honduras y Chile, especializada en entregas rápidas y seguras. Si recibes una notificación nuestra, es porque estamos encargados de llevarte un pedido que hiciste en otra tienda (nacional o internacional). "
             "   - Servicios principales:"
             "   - Recolección y entrega de paquetes en ruta."
@@ -123,9 +123,13 @@ async def run_realtime_session(call_id: str):
             "   - Venta de bolsas y empaques. (Ticket MCP Agent)"
             "   - Cobro contra entrega de productos (Cash on delivery)."
 
+            "Notas:"
+            "  -Tu tarea es UNICAMENTE validar la respuesta del agente, no debes validar si realizo el proceso correcto o si la atencion fue correcta."
+            "  -Si la respuesta del agente contiene contenido fuera del contexto permitido, debes marcarla como inválida."
+            
             "Respondes con unn json que contiene los siguientes campos:"
-            "   - reasoning: Explica brevemente por qué el input es válido o inválido."
-            "   - passed: Booleano que indica si el input es válido (true) o inválido (false)."
+            "   - reasoning: Explica brevemente por qué la respuesta es válida o inválida."
+            "   - passed: Booleano que indica si la respuesta es válida (true) o inválida (false)."
         ),
         output_type=GuardrailOutput, 
     )
@@ -137,7 +141,7 @@ async def run_realtime_session(call_id: str):
         output: str
     ) -> GuardrailFunctionOutput:
         print(f"[DEBUG-GUARDRAIL] Evaluando respuesta del agente: '{output[:50]}...'")
-        result = await Runner.run(input_guardrail_agent, output, context=context.context)
+        result = await Runner.run(output_guardrail_agent, output, context=context.context)
         final = result.final_output_as(GuardrailOutput)
         print(f"[GUARDRAIL] Resultado para '{output[:30]}': {final.passed} - Razón: {final.reasoning}")
         if not final.passed:
@@ -153,23 +157,6 @@ async def run_realtime_session(call_id: str):
             )
 
         return GuardrailFunctionOutput(output_info=final, tripwire_triggered=False)
-
-        result = await Runner.run(input_guardrail_agent, user_text, context=context.context)
-        final = result.final_output_as(GuardrailOutput)
-        print (f"[GUARDRAIL] Análisis de input del usuario: '{user_text}', resultado: {final}")
-        if not final.passed:
-            print(f"[GUARDRAIL] 🚩 Activado: {final.reasoning}")
-            session = context.context.get("realtime_session")
-            if session:
-                rescue_agent = create_railing_agent(final.reasoning, user_text)
-                await session.update_agent(rescue_agent)
-            return GuardrailFunctionOutput(
-                output_info=final,
-                tripwire_triggered=True,
-            )
-
-        return GuardrailFunctionOutput(output_info=final, tripwire_triggered=False)
-    
     #Iniciacion de tools con pools para el brain runner
     
     #Tools para paqueteria
