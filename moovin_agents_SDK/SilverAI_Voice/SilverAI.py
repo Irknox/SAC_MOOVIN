@@ -10,7 +10,7 @@ from agents.realtime.openai_realtime import OpenAIRealtimeSIPModel
 from websockets.exceptions import ConnectionClosedError
 import requests
 from requests import HTTPError
-from tools import escalate_call,Make_think_tool
+from tools import escalate_call,Make_think_tool,remember_last_interactions
 from datetime import datetime
 from handlers.aux_handlers import resume_interaction
 from handlers.db_handlers import (
@@ -80,11 +80,11 @@ call_accept = {
 }
 
 
-async def run_realtime_session(call_id: str):
+async def run_realtime_session(call_id: str, userID: Optional[str] = None):
     """Engancha un RealtimeAgent (SDK) a la llamada SIP usando el call_id
     que llega por el webhook realtime.call.incoming.
     """  
-    print(f"[{call_id}] 👂 Iniciando sesión de Realtime...")
+    print(f"[{call_id}] 👂 Iniciando sesión de Realtime para user {userID}...")
     Tools_pool = await create_tools_pool()
     
     
@@ -176,7 +176,7 @@ async def run_realtime_session(call_id: str):
     voice_agent = RealtimeAgent(
         name="Silver",
         instructions=prompt_text,
-        tools=[escalate_call, think_tool],  
+        tools=[escalate_call, think_tool, remember_last_interactions],  
         output_guardrails=[silver_output_guardrail] 
     )
 
@@ -292,6 +292,7 @@ async def run_realtime_session(call_id: str):
     try:
         ctx = {
         "call_id": call_id,
+        "userID": userID,
         }
         async with await runner.run(context=ctx,model_config=model_config) as session:
             initial_message = "Hola, soy Silver, asistente virtual de Moovin (pronunciado Muvin), ¿cómo puedo asistirte hoy?"
@@ -408,7 +409,7 @@ async def run_realtime_session(call_id: str):
         delete_session_data(call_id)
         print(f"[DEBUG] Redis cleanup OK para call_id={call_id}")
           
-def start_session_in_thread(call_id: str):
+def start_session_in_thread(call_id: str, userID: Optional[str] = None):
     """
     Wrapper para lanzar la sesión async del SDK en un thread.
     Instancia BrainRunner y lo pasa a la sesión asíncrona.
@@ -422,11 +423,12 @@ def webhook():
         
         if event.type == "realtime.call.incoming":
             call_id = event.data.call_id
+           
             sip_headers = {}
             for h in (event.data.sip_headers or []):
                 sip_headers[h.name] = h.value
             print(f"Incoming call: {call_id}, SIP headers: {sip_headers}")
-            
+            userID=sip_headers.get("From", "Unknown"), 
             session_meta = {
                 "session_id": call_id,
                 "summary": None,
@@ -434,7 +436,7 @@ def webhook():
                 "finish_date": None,
                 "status": "incoming", 
                 "user_info": { 
-                    "phone_number": sip_headers.get("From", "Unknown"), 
+                    "phone_number": userID,
                 },
                 "meta_data": {         
                     "x_ast_uniqueid": sip_headers.get("X-Ast-UniqueID"),
@@ -454,7 +456,7 @@ def webhook():
 
             threading.Thread(
                 target=start_session_in_thread,
-                args=(call_id,),
+                args=(call_id, userID),
                 daemon=True,
             ).start()
 

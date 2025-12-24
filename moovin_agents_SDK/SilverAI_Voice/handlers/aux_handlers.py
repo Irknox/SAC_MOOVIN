@@ -15,8 +15,6 @@ from zoneinfo import ZoneInfo
 
 load_dotenv()
 
-
-
 zoho_refresh_token=os.environ.get("Zoho_Refresh_Token", "")
 zoho_org_id = "716348510"
 zoho_client_id = os.environ.get("Zoho_Client_ID", "")
@@ -138,7 +136,6 @@ def create_zoho_contact(email: str, phone: str, name: str, token:str) -> dict:
                 "status_code": response.status_code,
                 "message": response.text
             }
-
 
 async def resume_interaction(interactions: list) -> str:
     """
@@ -263,7 +260,6 @@ def create_pickup_ticket(email: str, phone: str,
             "error": "Error general al crear ticket",
             "details": str(e)
         }   
- 
  
 def request_electronic_receipt(owner: dict, package_id: str,legal_name:str, legal_id: str,            
                             full_address: str, reason: str = "") -> dict:

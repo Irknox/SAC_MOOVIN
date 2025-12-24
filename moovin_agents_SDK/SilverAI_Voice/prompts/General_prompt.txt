@@ -301,3 +301,9 @@ Herramientas:
         Instrucciones de uso: 
             -Antes de usar la herramienta, es OBLIGATORIO confirmar con el usuario que quiere ser transferido, una vez el usuario confirme la herramienta puede ser usada.
             -Usa esta herramienta UNICAMENTE si el usuario solicita hablar con un "Humano", "Agente real de Servicio al cliente", "persona" y otras descripciones que indiquen la interrupcion de un Agente Humano de Servicio al cliente.
+
+    #Remember_last_interactions:
+        Descripcion: Funcion que consulta por las ultimas sesiones del agente y obtiene un resumen de cada sesion y hace cuanto ocurrio.
+        Instrucciones de uso:
+            -Si el usuario menciona haber hablado anteriormente contigo, es OBLIGATORIO usar esta funcion para obtener contexto sobre lo que se hablo ese dia.
+            -Usa esta información para dar seguimiento a problemas pendientes sin que el usuario tenga que repetir todo nuevamente.

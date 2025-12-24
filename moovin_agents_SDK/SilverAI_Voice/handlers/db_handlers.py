@@ -4,15 +4,16 @@ from datetime import datetime
 import os
 import pymongo
 import aiomysql
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
-
+from zoneinfo import ZoneInfo
 REDIS_URL = os.environ["REDIS_URL"]
 rdb = redis.Redis.from_url(
     REDIS_URL,
     decode_responses=True,
 )
 
+CR_TZ = ZoneInfo("America/Costa_Rica")
 #Base de datos en MYSQL
 MYSQL_HOST = os.environ.get('Db_HOST')
 MYSQL_USER = os.environ.get('Db_USER')
@@ -177,3 +178,58 @@ async def get_package_historic(pool, package_id):
                 "email_dueño_paquete": userEmail,
                 "tienda_donde_se_compro": third_party_store
             }
+            
+def get_info_from_userID(user_id: str) -> list:
+    """
+    Se conecta a MongoDB de forma autónoma y consulta las últimas 3 interacciones 
+    buscando por el número de teléfono en user_info.phone_number.
+    """
+    mongo_uri = os.environ.get("MONGO_URI") 
+    mongo_db = os.environ.get("MONGO_DATABASE") 
+    mongo_collection = os.environ.get("MONGO_COLLECTION")
+    
+    try:
+        client = pymongo.MongoClient(mongo_uri)
+        db = client[mongo_db]
+        sessions_col = db[mongo_collection]
+        query = {"user_info.phone_number": user_id}
+        cursor = sessions_col.find(query).sort("init_date", -1).limit(3)
+        
+        resultados = list(cursor)
+        client.close()
+        return resultados
+    except Exception as e:
+        print(f"[ERROR] Falló la consulta en MongoDB para user_id={user_id}: {e}")
+        return []
+
+def get_last_interactions_summary(user_id: str) -> list:
+    """
+    Retorna una lista con el tiempo transcurrido y el resumen de las últimas 3 interacciones.
+    Formato: {"hace_cuanto": "X tiempo", "resumen": "..."}
+    """
+    sessions = get_info_from_userID(user_id)
+    summaries = []
+    ahora = datetime.now(timezone.utc)
+
+    for session in sessions:
+        init_date = session.get("init_date")
+        if init_date and init_date.tzinfo is None:
+            init_date = init_date.replace(tzinfo=timezone.utc)
+            
+        if init_date:
+            diff = ahora - init_date
+            if diff.days > 0:
+                hace_cuanto = f"Hace {diff.days} día(s)"
+            elif diff.seconds // 3600 > 0:
+                hace_cuanto = f"Hace {diff.seconds // 3600} hora(s)"
+            else:
+                hace_cuanto = f"Hace {diff.seconds // 60} minuto(s)"
+        else:
+            hace_cuanto = "Fecha desconocida"
+
+        summaries.append({
+            "hace_cuanto": hace_cuanto,
+            "resumen": session.get("summary", "Sin resumen disponible")
+        })
+
+    return summaries

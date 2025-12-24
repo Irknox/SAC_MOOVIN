@@ -3,6 +3,7 @@ import os, asyncio, json
 import requests
 from SilverAI_Brain.brain import BrainRunner, BrainContext, AgentInputItem, ToolOutputResult
 from pydantic import BaseModel, Field
+from handlers.db_handlers import get_last_interactions_summary
 
 class ThinkInput(BaseModel):
     query: str = Field(description="La pregunta o solicitud completa del usuario que SilverAI no puede responder sin la lógica especializada.")
@@ -87,3 +88,18 @@ def Make_think_tool(call_id: str, brain_runner: BrainRunner):
             print(f"[ERROR] think tool: {e}")
             return "Error en la consulta especializada."
     return think
+
+async def remember_last_interactions(ctx: RunContextWrapper):
+    """
+    Herramienta que guarda las últimas interacciones en Redis para contexto futuro.
+    """
+    try:
+        last_interactions= get_last_interactions_summary(ctx.context.userID)
+        if not last_interactions:
+            print("No se encontraron interacciones pasadas.")
+            return "No se encontraron interacciones pasadas."
+        else:
+            return last_interactions
+    except Exception as e:
+        print(f"[ERROR] remember_last_interactions: {e}")
+        return "Error al recuperar interacciones pasadas."
