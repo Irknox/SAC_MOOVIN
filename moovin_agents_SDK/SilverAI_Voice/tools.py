@@ -89,6 +89,10 @@ def Make_think_tool(call_id: str, brain_runner: BrainRunner):
             return "Error en la consulta especializada."
     return think
 
+@function_tool(
+        name_override="remember_last_interactions",
+        description_override="Herramienta que permite obtener un resumen de las ultimas 3 interacciones del usuario en caso de existir."
+    )
 async def remember_last_interactions(ctx: RunContextWrapper):
     """
     Herramienta que guarda las últimas interacciones en Redis para contexto futuro.
