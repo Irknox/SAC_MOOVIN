@@ -428,7 +428,7 @@ def webhook():
             for h in (event.data.sip_headers or []):
                 sip_headers[h.name] = h.value
             print(f"Incoming call: {call_id}, SIP headers: {sip_headers}")
-            userID=sip_headers.get("From", "Unknown"), 
+            userID=sip_headers.get("From", "Unknown")
             session_meta = {
                 "session_id": call_id,
                 "summary": None,

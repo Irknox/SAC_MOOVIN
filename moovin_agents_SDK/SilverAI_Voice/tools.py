@@ -98,7 +98,8 @@ async def remember_last_interactions(ctx: RunContextWrapper):
     Herramienta que guarda las últimas interacciones en Redis para contexto futuro.
     """
     try:
-        last_interactions= get_last_interactions_summary(ctx.context.userID)
+        user_id = ctx.context.get("userID")
+        last_interactions= get_last_interactions_summary(user_id)
         if not last_interactions:
             print("No se encontraron interacciones pasadas.")
             return "No se encontraron interacciones pasadas."
