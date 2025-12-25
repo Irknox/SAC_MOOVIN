@@ -414,7 +414,7 @@ def start_session_in_thread(call_id: str, userID: Optional[str] = None):
     Wrapper para lanzar la sesión async del SDK en un thread.
     Instancia BrainRunner y lo pasa a la sesión asíncrona.
     """
-    asyncio.run(run_realtime_session(call_id))
+    asyncio.run(run_realtime_session(call_id, userID))
 
 @app.route("/", methods=["POST"])
 def webhook():
