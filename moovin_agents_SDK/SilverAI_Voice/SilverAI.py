@@ -10,7 +10,7 @@ from agents.realtime.openai_realtime import OpenAIRealtimeSIPModel
 from websockets.exceptions import ConnectionClosedError
 import requests
 from requests import HTTPError
-from tools import escalate_call,Make_think_tool,remember_last_interactions
+from moovin_agents_SDK.SilverAI_Voice.tools.RealtimeSDK_tools import escalate_call,Make_think_tool,remember_last_interactions
 from datetime import datetime
 from handlers.aux_handlers import resume_interaction
 from handlers.db_handlers import (

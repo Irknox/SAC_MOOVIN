@@ -50,17 +50,15 @@ services:
     build:
       context: .
       args:
-        REQS_FILE: requirements_voice.txt
+        REQS_FILE: silverAPI_requirements.txt
     container_name: silverai_voice
     working_dir: /app
     volumes:
       - ./moovin_agents_SDK:/app
-    command: ["python","-u", "SilverAI_Voice/SilverAI.py"]
+    command: ["python","-u", "SilverAI_Voice/SilverAI_api.py"]
     env_file:
       - .env
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_WEBHOOK_SECRET=${OPENAI_WEBHOOK_KEY}
       - PYTHONUNBUFFERED=1
     expose:
       - "8585"

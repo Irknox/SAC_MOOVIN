@@ -13,7 +13,7 @@ from openai.types.realtime.realtime_audio_formats import AudioPCM
 import time
 import asyncio as _asyncio
 import time as _time
-from tools import escalate_call
+from moovin_agents_SDK.SilverAI_Voice.tools.RealtimeSDK_tools import escalate_call
 from pathlib import Path
 
 class _RunLenLogger:

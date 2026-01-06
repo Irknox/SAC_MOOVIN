@@ -1,8 +1,13 @@
-from agents import function_tool, RunContextWrapper
-from handlers.db_handlers import get_id_package,get_package_historic
+
+import requests
+import os, asyncio, json
+from handlers.db_handlers import get_last_interactions_summary,get_id_package,get_package_historic
 from handlers.aux_handlers import create_pickup_ticket,request_electronic_receipt,_parse_date_cr,report_package_damaged
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+
+ARI_CONTROL_URL = os.getenv("ARI_CONTROL_URL")
+AMI_CONTROL_TOKEN = os.getenv("AMI_CONTROL_TOKEN")
 
 DELIVERED_STATES= {"DELIVERED", "DELIVEREDCOMPLETE"}
 RETURN_STATES= {"RETURN"}
@@ -56,13 +61,8 @@ def Make_get_package_timeline_tool(pool):
         }
 
     return get_package_timeline
-
 ##-----------------------Ticketing Tools -----------------------##
 def Make_request_to_pickup_tool(pool):
-    @function_tool(
-        name_override="pickup_instore_ticket",
-        description_override="Crea un ticket de solicitud para retiro en sede de un paquete a partir de su Tracking o número de seguimiento. Si el paquete existe y no ha sido entregado ni presenta retornos/fallas la solicitud puede ser procesada, de lo contrario no. Numero de seguimiento y descripcion/motivo son los parametros obligatorios."
-    )
     async def pickup_instore_ticket(
         package: str,
         description: str
@@ -125,10 +125,6 @@ def Make_request_to_pickup_tool(pool):
     return pickup_instore_ticket
 
 def Make_request_electronic_receipt_tool(pool):
-    @function_tool(
-        name_override="request_electronic_receipt_ticket",
-        description_override="Crea un ticket de solicitud de factura electronica a partir de su Tracking o numero de seguimiento. Si el paquete existe y ha llegado a nuestras instalaciones, los parametros necesarios son: Numero de seguimiento, Cedula Juridica, Nombre Juridico, Direccion Completa y descripcion del motivo del ticket."
-    )
     async def request_electronic_receipt_ticket(
         package: str,
         reason: str,
@@ -210,23 +206,17 @@ def Make_request_electronic_receipt_tool(pool):
     return request_electronic_receipt_ticket
 
 def Make_package_damaged_tool(tools_pool):
-    @function_tool(
-        name_override="package_damaged_ticket",
-        description_override="Crea un ticket para reportar el daño de un paquete a partir de su Tracking o número de seguimiento. Solo procede si el último estado del paquete es DELIVERED y han pasado más de 48 horas desde esa entrega. Requiere número de seguimiento, descripción del daño y fotos."
-    )
     async def package_damaged_ticket(
         package: str,
         description: str
     ) -> dict:
         print(f"🔨 Intentando crear ticket para paquete dañado. Tracking: {package} | Desc: {description}")
-
         if not package or not description:
             return {
                 "status": "error",
                 "message": "Faltan datos para crear el ticket.Tracking y descripción del daño deben ser proporcionados.",
                 "next_step":" Informa al agente del error inmediatamente y aconseja confirmar la informacion con el usuario."                    
                 }
-
         package_id = await get_id_package(tools_pool, package)
         if not package_id:
             return {
@@ -234,7 +224,6 @@ def Make_package_damaged_tool(tools_pool):
                     "message": f"Paquete {package} no encontrado en la base de datos.",
                     "next_step":" Informa al agente del error inmediatamente y aconseja confirmar la informacion con el usuario." 
                     }
-
         package_historic = await get_package_historic(tools_pool, package_id)
         timeline = package_historic.get("timeline", []) or []
         if not timeline:
@@ -245,13 +234,11 @@ def Make_package_damaged_tool(tools_pool):
                 "message": "No hay historial de estados para este paquete.",
                 "next_step":" Informa al agente del error inmediatamente y aconseja confirmar la informacion con el usuario." 
             }
-
         last_event = timeline[0]
         last_status = str(last_event.get("status", "")).strip().upper()
         last_date_str = last_event.get("dateUser")
         last_dt = _parse_date_cr(last_date_str)
         now_cr = datetime.now(CR_TZ)
-
         if last_status not in DELIVERED_STATES:
             return {
                 "status":"error",
@@ -259,8 +246,7 @@ def Make_package_damaged_tool(tools_pool):
                 "package_found": True,
                 "message": "Este ticket solo puede en las primeras 48 horas después de la entrega.",
                 "next_step":" Informa al agente del error inmediatamente y aconseja confirmar la informacion con el usuario." 
-            }
-            
+            } 
         if not last_dt:
             return {
                 "status":"error",
@@ -269,7 +255,6 @@ def Make_package_damaged_tool(tools_pool):
                 "message": "No se pudo validar la fecha de entrega del paquete.",
                 "next_step":" Informa al agente del error inmediatamente y aconseja confirmar la informacion con el usuario." 
             }
-
         hours_since = (now_cr - last_dt).total_seconds() / 3600.0
         if hours_since >= 48:
             return {
@@ -282,30 +267,25 @@ def Make_package_damaged_tool(tools_pool):
                 ),
                 "next_step":" Informa al agente del error inmediatamente y aconseja confirmar la informacion con el usuario." 
             }
-
         owner_info = {
             "email": package_historic.get("email_dueño_paquete", "") or package_historic.get("email_duenho_paquete", ""),
             "phone": package_historic.get("telefono_dueño", "") or package_historic.get("telefono_dueño_paquete", ""),
             "name":  package_historic.get("nombre_dueño_paquete", "") or package_historic.get("nombre_duenho_paquete", "")
         }
-
         result = report_package_damaged(
             owner=owner_info,
             package_id=str(package_id),
             description=description,
         )
-
         if result.get("status") == "ok":
             print("✅ Ticket creado con éxito")
             ticketNumber=result.get("Numero de Ticket")
             DevURL=result.get("webUrl","Desconocido")
-            
             return {
                 "status": "success",
                 "TicketNumber": ticketNumber,
                 "message":"Ticket creado exitosamente",
             }
-            
         else:
             print(f"❌ Error al crear el ticket: {result}")
             return {
@@ -315,3 +295,51 @@ def Make_package_damaged_tool(tools_pool):
             }
 
     return package_damaged_ticket
+
+def Make_escalate_call_tool():
+    async def escalate_call(channel, id, target_ext: int = 90000, mode: str = "redirect"):
+        context_obj = getattr("context", None)
+        call_id = None
+        if isinstance(context_obj, dict):
+            print(f"Call Id es un Dict")
+            call_id = context_obj.get("call_id")
+        else:
+            print(f"Call Id NO es un Dict")
+            call_id = getattr(context_obj, "call_id", None)
+
+        if not call_id:
+            print("Missin Call ID in context")
+            return {"status": "error", "reason": "missing_call_id_in_context"}
+        
+        if not AMI_CONTROL_TOKEN:
+            print("falta Control ARI en ENV")
+            return {"status": "error", "reason": "missing AMI_CONTROL_TOKEN"}
+        
+        print(f"Usando Escalate Tool 🧗 con call_id {call_id} a la extension {target_ext} con mode {mode}")
+        url = ARI_CONTROL_URL.rstrip("/") + "/transfer"
+        payload = {"call_id": call_id, "target_ext": int(target_ext), "mode": mode}
+        headers = {
+            "x-ari-control-token": AMI_CONTROL_TOKEN,
+            "Content-Type": "application/json",
+        }
+
+        def _do_request():
+            return requests.post(url, headers=headers, json=payload, timeout=8)
+        try:
+            resp = await asyncio.to_thread(_do_request)
+            data = None
+            try:
+                data = resp.json()
+            except Exception:
+                data = {"raw": resp.text}
+            print(f"Este es el valor de data: {data}")
+            if resp.ok:
+                print(f"Solicitud enviada a ari, respuesta: {data}")
+                return data
+            else:
+                print(f"Error en respuesta, respuesta {data}")
+                return {"status": "error", "http_status": resp.status_code, "response": data}
+        except Exception as e:
+            print(f"Error al usar el tool, Detalles: {e}")
+            return {"status": "error", "reason": "request_failed", "detail": repr(e)}
+    return escalate_call

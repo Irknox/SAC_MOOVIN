@@ -3,13 +3,23 @@ import os, asyncio, json
 import requests
 from SilverAI_Brain.brain import BrainRunner, BrainContext, AgentInputItem, ToolOutputResult
 from pydantic import BaseModel, Field
-from handlers.db_handlers import get_last_interactions_summary
+from handlers.db_handlers import get_last_interactions_summary,get_id_package,get_package_historic
+from handlers.aux_handlers import create_pickup_ticket,request_electronic_receipt,_parse_date_cr,report_package_damaged
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 class ThinkInput(BaseModel):
     query: str = Field(description="La pregunta o solicitud completa del usuario que SilverAI no puede responder sin la lógica especializada.")
 
 ARI_CONTROL_URL = os.getenv("ARI_CONTROL_URL")
 AMI_CONTROL_TOKEN = os.getenv("AMI_CONTROL_TOKEN")
+
+
+DELIVERED_STATES= {"DELIVERED", "DELIVEREDCOMPLETE"}
+RETURN_STATES= {"RETURN"}
+FAILED_STATES= {"FAILED","DELETEPACKAGE","CANCELNOCHARGE","CANCEL"}
+
+CR_TZ = ZoneInfo("America/Costa_Rica")
 
 @function_tool(
     name_override="escalate_call",
@@ -108,3 +118,5 @@ async def remember_last_interactions(ctx: RunContextWrapper):
     except Exception as e:
         print(f"[ERROR] remember_last_interactions: {e}")
         return "Error al recuperar interacciones pasadas."
+    
+    

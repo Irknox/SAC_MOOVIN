@@ -7,6 +7,9 @@ import aiomysql
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
+
+load_dotenv()
+
 REDIS_URL = os.environ["REDIS_URL"]
 rdb = redis.Redis.from_url(
     REDIS_URL,

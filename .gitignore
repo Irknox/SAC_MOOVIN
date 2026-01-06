@@ -1,6 +1,8 @@
 **/__pycache__/
 **venv
 **.venv
+**voice-venv
+**.voice-venv
 **.env
 .gitignore
 **node_modules/
