@@ -52,10 +52,10 @@ services:
       args:
         REQS_FILE: silverAPI_requirements.txt
     container_name: silverai_voice
-    working_dir: /app
+    working_dir: /app/SilverAI_Voice
     volumes:
       - ./moovin_agents_SDK:/app
-    command: ["uvicorn", "SilverAI_Voice.SilverAI_api:app", "--host", "0.0.0.0", "--port", "8585"]
+    command: ["uvicorn", "SilverAI_api:app", "--host", "0.0.0.0", "--port", "8585"]
     env_file:
       - .env
     environment:
