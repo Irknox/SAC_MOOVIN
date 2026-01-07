@@ -55,7 +55,7 @@ services:
     working_dir: /app
     volumes:
       - ./moovin_agents_SDK:/app
-    command: ["python","-u", "SilverAI_Voice/SilverAI_api.py"]
+    command: ["uvicorn", "SilverAI_Voice.SilverAI_api:app", "--host", "0.0.0.0", "--port", "8585"]
     env_file:
       - .env
     environment:
