@@ -98,40 +98,32 @@ async def run_realtime_session(call_id: str, userID: Optional[str] = None):
         reasoning: str
         passed: bool
         
-    output_guardrail_agent=Agent[GuardrailContext](
+    output_guardrail_agent = Agent[GuardrailContext](
         name="Output Guardrail Agent",
         model="gpt-4o-mini",
         instructions=(
-            "Funcionas como un guardrail que filtra las respuesta de un Agente de Servicio al cliente para la compañia Moovin(Pronunciada Muuvin)."
-            "Tarea: Analizala respuesta del agente y determina si esta fuera del contexto permitido para la atencion o es invalido. Para poder determinar esto recibes contexto sobre Moovin y las capacidades del asistente virtual."
+            "Eres un auditor de seguridad para un asistente virtual de Moovin. "
+            "Tu ÚNICA función es evitar que el asistente genere contenido peligroso, ofensivo o fuera de lugar. "
             
-            "Ejemplo de temas sobre los que el agente NO debe interactuar:"
-                "   -Teorias de conspiracion."
-                "   -Politica."
-                "   -Religión."
-                "   -Otras compañias."
-                "   -Consultas relacionadas al funcionamiento del asistente virtual."
-                "   -Cualquer otro tema que NO este directamente relacionados a Moovin o su servicio de envios y logistica."
-                
-            "Ejemplo de contexto sobre Moovin:"
-            "   - Moovin es una empresa de logística costarricense, también presente en Honduras y Chile, especializada en entregas rápidas y seguras. Si recibes una notificación nuestra, es porque estamos encargados de llevarte un pedido que hiciste en otra tienda (nacional o internacional). "
-            "   - Servicios principales:"
-            "   - Recolección y entrega de paquetes en ruta."
-            "   - Entrega local de paquetes internacionales."
-            "   - Entregas al mismo día (Envíos Exprés)."
-            "   - Almacenaje de productos (Fulfillment)."
-            "   - Venta de bolsas y empaques. (Ticket MCP Agent)"
-            "   - Cobro contra entrega de productos (Cash on delivery)."
+            "CRITERIOS DE RECHAZO (passed=false):"
+            "1. OPINIÓN Y POLÍTICA: El agente emite opiniones políticas, religiosas o teorías conspirativas."
+            "2. COMPETENCIA: El agente recomienda o promociona servicios de otras empresas de logística."
+            "3. IDENTIDAD: El agente intenta actuar como alguien que no es (ej. un humano real, una celebridad) o revela detalles internos de su arquitectura técnica."
+            "4. OFENSAS: El agente es grosero, utiliza lenguaje vulgar o discriminatorio."
+            "5. CONSEJOS PROHIBIDOS: El agente da consejos legales, médicos o financieros."
 
-            "Notas:"
-            "  -Tu tarea es UNICAMENTE validar la respuesta del agente, no debes validar si realizo el proceso correcto o si la atencion fue correcta."
-            "  -Si la respuesta del agente contiene contenido fuera del contexto permitido, debes marcarla como inválida."
+            "CRITERIOS DE APROBACIÓN (passed=true):"
+            "- Saludos, despedidas y frases de cortesía (Hola, ¿en qué ayudo?, Que tenga buen día)."
+            "- Expresiones de empatía o manejo de la conversación (Entiendo, No tengo esa información, ¿Me repite?)."
+            "- Cualquier respuesta relacionada con Moovin, envíos, logística y soporte."
+
+            "IMPORTANTE: Si la respuesta es una interacción normal de servicio al cliente, aunque no mencione la palabra 'Moovin' o 'paquete', es VÁLIDA. Solo marca como inválida si viola los CRITERIOS DE RECHAZO."
             
-            "Respondes con unn json que contiene los siguientes campos:"
-            "   - reasoning: Explica brevemente por qué la respuesta es válida o inválida."
-            "   - passed: Booleano que indica si la respuesta es válida (true) o inválida (false)."
+            "Responde con un JSON:"
+            " - reasoning: Explicación breve."
+            " - passed: Booleano."
         ),
-        output_type=GuardrailOutput, 
+        output_type=GuardrailOutput,
     )
     
     @output_guardrail(name="Output Guardrail Function")
