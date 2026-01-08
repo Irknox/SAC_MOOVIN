@@ -67,8 +67,8 @@ async def silver_brain_endpoint(
                 )
             elif tool_requested == "escalate_call":
                 result = await selected_tool(
-                    channel=params.get("channel"),
-                    id=params.get("id")
+                    user_phone=params.get("user_phone"),
+                    channel=params.get("channel")
                 )
             return {"status": "success", "data": result}
 
