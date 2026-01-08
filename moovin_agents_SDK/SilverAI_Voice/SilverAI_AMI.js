@@ -48,39 +48,36 @@ app.use(express.json({ limit: "256kb" }));
   });
 
 app.post("/transfer", async (req, res) => {
-    try {
-      const token = req.header("x-ari-control-token") || "";
-      if (token !== AMI_CONTROL_TOKEN) return res.status(401).json({ error: "unauthorized" });
-      const { user_phone, ast_channel, target_ext } = req.body || {};
-      const channelFromRedis = await rdb.get(redisKey(user_phone));
-      console.log("--------------------------------------------------");
-      console.log(`[VALIDACIÓN] Teléfono: ${user_phone}`);
-      console.log(`[VALIDACIÓN] Canal en REDIS:     ${channelFromRedis}`);
-      console.log(`[VALIDACIÓN] Canal de 11LABS:    ${ast_channel}`);
-      if (channelFromRedis === ast_channel) {
-        console.log("[VALIDACIÓN] RESULTADO: ¡SON IDÉNTICOS! ✅");
-      } else {
-        console.log("[VALIDACIÓN] RESULTADO: HAY DIFERENCIAS ❌");
-      }
-      console.log("--------------------------------------------------");
-      const finalChannel = channelFromRedis || ast_channel;
-
-      if (!finalChannel) {
-        return res.status(404).json({ error: "no_channel_found" });
-      }
-      const redirectResult = await ami.action({
-        Action: "Redirect",
-        Channel: finalChannel,
-        Context: AMI_TRANSFER_CONTEXT,
-        Exten: String(target_ext),
-        Priority: 1,
-      });
-      return res.json({ ok: true, matched: (channelFromRedis === ast_channel) });
-    } catch (e) {
-      console.error("[AMI] Error:", e);
-      return res.status(500).json({ error: "internal_error" });
+  try {
+    const token = req.header("x-ari-control-token") || "";
+    if (token !== AMI_CONTROL_TOKEN) {
+      return res.status(401).json({ error: "unauthorized" });
     }
-  });
+    const { ast_channel, target_ext } = req.body || {};
+    if (!ast_channel) {
+      console.error("[AMI] Error: No se recibió ast_channel en el body");
+      return res.status(400).json({ error: "missing_ast_channel" });
+    }
+    const exten = String(target_ext || "90000");
+    console.log(`[AMI] Ejecutando Redirect: Canal=${ast_channel} -> Exten=${exten}`);
+    const redirectResult = await ami.action({
+      Action: "Redirect",
+      Channel: ast_channel,
+      Context: AMI_TRANSFER_CONTEXT,
+      Exten: exten,
+      Priority: 1,
+    });
+    console.log("[AMI] Resultado:", redirectResult.Response);
+    return res.json({ 
+      ok: true, 
+      channel: ast_channel, 
+      ami_message: redirectResult.Message 
+    });
+  } catch (e) {
+    console.error("[AMI] Error en transferencia:", e);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
 
   const bindHost = "0.0.0.0";
   const bindPort = 8787;
