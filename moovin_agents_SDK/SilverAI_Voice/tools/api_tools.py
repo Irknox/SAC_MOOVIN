@@ -297,32 +297,22 @@ def Make_package_damaged_tool(tools_pool):
     return package_damaged_ticket
 
 def Make_escalate_call_tool():
-    async def escalate_call(channel, id, target_ext: int = 90000, mode: str = "redirect"):
-        context_obj = getattr("context", None)
-        call_id = None
-        if isinstance(context_obj, dict):
-            print(f"Call Id es un Dict")
-            call_id = context_obj.get("call_id")
-        else:
-            print(f"Call Id NO es un Dict")
-            call_id = getattr(context_obj, "call_id", None)
-
-        if not call_id:
-            print("Missin Call ID in context")
-            return {"status": "error", "reason": "missing_call_id_in_context"}
+    async def escalate_call(user_phone: str, channel: str, target_ext: int = 90000, mode: str = "redirect"):
+        if not user_phone:
+            print("Missin User Phone")
+            return {"status": "error", "reason": "missing_user_phone_in_context"}
         
         if not AMI_CONTROL_TOKEN:
             print("falta Control ARI en ENV")
             return {"status": "error", "reason": "missing AMI_CONTROL_TOKEN"}
         
-        print(f"Usando Escalate Tool 🧗 con call_id {call_id} a la extension {target_ext} con mode {mode}")
+        print(f"Usando Escalate Tool 🧗 con user_phone {user_phone} y channel {channel} con mode {mode}")
         url = ARI_CONTROL_URL.rstrip("/") + "/transfer"
-        payload = {"call_id": call_id, "target_ext": int(target_ext), "mode": mode}
+        payload = {"user_phone": user_phone, "ast-channel": channel, "target_ext": int(target_ext), "mode": mode}
         headers = {
             "x-ari-control-token": AMI_CONTROL_TOKEN,
             "Content-Type": "application/json",
         }
-
         def _do_request():
             return requests.post(url, headers=headers, json=payload, timeout=8)
         try:

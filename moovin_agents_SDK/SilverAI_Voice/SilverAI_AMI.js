@@ -18,8 +18,8 @@ if (!REDIS_URL) throw new Error("Falta REDIS_URL");
 if (!AMI_CONTROL_TOKEN) throw new Error("Falta AMI_CONTROL_TOKEN");
 if (!AMI_USER || !AMI_PASS) throw new Error("Faltan AMI_USER/AMI_PASS");
 
-function redisKey(callId) {
-  return `calls:${callId}`;
+function redisKey(phoneNumber) {
+  return `phone:${phoneNumber}`;
 }
 
 const app = express();
@@ -47,87 +47,38 @@ app.use(express.json({ limit: "256kb" }));
     res.json({ ok: true });
   });
 
-  app.post("/transfer", async (req, res) => {
+app.post("/transfer", async (req, res) => {
     try {
       const token = req.header("x-ari-control-token") || "";
-      if (token !== AMI_CONTROL_TOKEN) {
-        return res.status(401).json({ error: "unauthorized" });
+      if (token !== AMI_CONTROL_TOKEN) return res.status(401).json({ error: "unauthorized" });
+      const { user_phone, channel_from_11labs, target_ext } = req.body || {};
+      const channelFromRedis = await rdb.get(redisKey(user_phone));
+      console.log("--------------------------------------------------");
+      console.log(`[VALIDACIÓN] Teléfono: ${user_phone}`);
+      console.log(`[VALIDACIÓN] Canal en REDIS:     ${channelFromRedis}`);
+      console.log(`[VALIDACIÓN] Canal de 11LABS:    ${channel_from_11labs}`);
+      if (channelFromRedis === channel_from_11labs) {
+        console.log("[VALIDACIÓN] RESULTADO: ¡SON IDÉNTICOS! ✅");
+      } else {
+        console.log("[VALIDACIÓN] RESULTADO: HAY DIFERENCIAS ❌");
       }
+      console.log("--------------------------------------------------");
+      const finalChannel = channelFromRedis || channel_from_11labs;
 
-      const { call_id, target_ext, mode } = req.body || {};
-      if (!call_id || !target_ext) {
-        return res
-          .status(400)
-          .json({ error: "call_id y target_ext son requeridos" });
+      if (!finalChannel) {
+        return res.status(404).json({ error: "no_channel_found" });
       }
-
-      const raw = await rdb.get(redisKey(call_id));
-      if (!raw) {
-        return res.status(404).json({ error: "no_meta_for_call_id", call_id });
-      }
-
-      let meta;
-      try {
-        meta = JSON.parse(raw);
-      } catch (e) {
-        return res.status(500).json({
-          error: "invalid_meta_json",
-          detail: String(e?.message || e),
-        });
-      }
-
-      const astChannel =
-        meta.ast_channel || meta.X_Ast_Channel || meta.x_ast_channel || null;
-
-      const astUniqueId =
-        meta.ast_uniqueid || meta.X_Ast_UniqueID || meta.x_ast_uniqueid || null;
-
-      if (!astChannel) {
-        return res.status(400).json({
-          error: "missing_ast_channel",
-          call_id,
-          astUniqueId,
-        });
-      }
-
-      const extStr = String(target_ext);
-
-      console.log(
-        `[AMI] Redirect request: call_id=${call_id}, channel=${astChannel}, ` +
-          `context=${AMI_TRANSFER_CONTEXT}, exten=${extStr}, mode=${
-            mode || "redirect"
-          }`
-      );
-
       const redirectResult = await ami.action({
         Action: "Redirect",
-        Channel: astChannel,
+        Channel: finalChannel,
         Context: AMI_TRANSFER_CONTEXT,
-        Exten: extStr,
+        Exten: String(target_ext),
         Priority: 1,
       });
-
-      const response = {
-        ok: true,
-        call_id,
-        target_ext: extStr,
-        ast_channel: astChannel,
-        ast_uniqueid: astUniqueId,
-        ami_response: redirectResult && {
-          Response: redirectResult.Response,
-          Message: redirectResult.Message,
-        },
-      };
-
-      console.log("[AMI] Redirect result:", response.ami_response);
-
-      return res.json(response);
+      return res.json({ ok: true, matched: (channelFromRedis === channel_from_11labs) });
     } catch (e) {
-      console.error("[TRANSFER/AMI] error:", e);
-      return res.status(500).json({
-        error: "internal_error",
-        detail: String(e?.message || e),
-      });
+      console.error("[AMI] Error:", e);
+      return res.status(500).json({ error: "internal_error" });
     }
   });
 
