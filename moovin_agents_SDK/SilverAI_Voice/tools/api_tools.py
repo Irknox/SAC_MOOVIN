@@ -308,7 +308,7 @@ def Make_escalate_call_tool():
         
         print(f"Usando Escalate Tool 🧗 con user_phone {user_phone} y channel {channel} con mode {mode}")
         url = ARI_CONTROL_URL.rstrip("/") + "/transfer"
-        payload = {"user_phone": user_phone, "ast-channel": channel, "target_ext": int(target_ext), "mode": mode}
+        payload = {"user_phone": user_phone, "ast_channel": channel, "target_ext": int(target_ext), "mode": mode}
         headers = {
             "x-ari-control-token": AMI_CONTROL_TOKEN,
             "Content-Type": "application/json",

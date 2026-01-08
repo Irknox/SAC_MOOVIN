@@ -51,19 +51,19 @@ app.post("/transfer", async (req, res) => {
     try {
       const token = req.header("x-ari-control-token") || "";
       if (token !== AMI_CONTROL_TOKEN) return res.status(401).json({ error: "unauthorized" });
-      const { user_phone, channel, target_ext } = req.body || {};
+      const { user_phone, ast_channel, target_ext } = req.body || {};
       const channelFromRedis = await rdb.get(redisKey(user_phone));
       console.log("--------------------------------------------------");
       console.log(`[VALIDACIÓN] Teléfono: ${user_phone}`);
       console.log(`[VALIDACIÓN] Canal en REDIS:     ${channelFromRedis}`);
-      console.log(`[VALIDACIÓN] Canal de 11LABS:    ${channel}`);
-      if (channelFromRedis === channel) {
+      console.log(`[VALIDACIÓN] Canal de 11LABS:    ${ast_channel}`);
+      if (channelFromRedis === ast_channel) {
         console.log("[VALIDACIÓN] RESULTADO: ¡SON IDÉNTICOS! ✅");
       } else {
         console.log("[VALIDACIÓN] RESULTADO: HAY DIFERENCIAS ❌");
       }
       console.log("--------------------------------------------------");
-      const finalChannel = channelFromRedis || channel;
+      const finalChannel = channelFromRedis || ast_channel;
 
       if (!finalChannel) {
         return res.status(404).json({ error: "no_channel_found" });
@@ -75,7 +75,7 @@ app.post("/transfer", async (req, res) => {
         Exten: String(target_ext),
         Priority: 1,
       });
-      return res.json({ ok: true, matched: (channelFromRedis === channel) });
+      return res.json({ ok: true, matched: (channelFromRedis === ast_channel) });
     } catch (e) {
       console.error("[AMI] Error:", e);
       return res.status(500).json({ error: "internal_error" });
