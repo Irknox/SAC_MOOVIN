@@ -2,7 +2,7 @@
 import requests
 import os, asyncio, json
 from handlers.db_handlers import get_last_interactions_summary,get_id_package,get_package_historic
-from handlers.aux_handlers import create_pickup_ticket,request_electronic_receipt,_parse_date_cr,report_package_damaged
+from handlers.aux_handlers import how_long_ago,create_pickup_ticket,request_electronic_receipt,_parse_date_cr,report_package_damaged
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -333,3 +333,40 @@ def Make_escalate_call_tool():
             print(f"Error al usar el tool, Detalles: {e}")
             return {"status": "error", "reason": "request_failed", "detail": repr(e)}
     return escalate_call
+
+def Make_remember_call_history_tool(mongo_collection):
+    async def remember_call_history(phone: str) -> dict:
+        """
+        Recupera el resumen de las últimas 3 conversaciones con este usuario basándose en su teléfono.
+        """
+        print(f"🧠 Buscando historial para el teléfono: {phone}")
+        if not phone:
+            return {"status": "error", "message": "No se proporcionó un número de teléfono."}
+        try:
+            cursor = mongo_collection.find({"phone": phone}).sort("date", -1).limit(3)
+            results = list(cursor)
+            if not results:
+                return {
+                    "status": "success", 
+                    "message": "No hay conversaciones previas registradas para este número."
+                }
+            memories = {}
+            for i, doc in enumerate(results, start=1):
+                fecha_dt = doc.get("date")
+                memories[f"conversacion_{i}"] = {
+                    "cuando": how_long_ago(fecha_dt),
+                    "fecha": fecha_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                    "resumen": doc.get("summary")
+                }
+            return {
+                "status": "success",
+                "phone": phone,
+                "history": memories
+            }
+        except Exception as e:
+            print(f"❌ Error al consultar historial en Mongo: {e}")
+            return {
+                "status": "error",
+                "message": "Hubo un fallo al intentar recordar conversaciones pasadas."
+            }
+    return remember_call_history

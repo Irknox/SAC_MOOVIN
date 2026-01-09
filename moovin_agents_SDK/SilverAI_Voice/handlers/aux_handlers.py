@@ -2,18 +2,17 @@ import os
 import json
 import asyncio
 from openai import AsyncOpenAI 
-
-client = AsyncOpenAI(
-    api_key=os.environ.get("OPENAI_API_KEY"),
-)
 from dotenv import load_dotenv
-import os
 import requests
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 load_dotenv()
+
+client = AsyncOpenAI(
+    api_key=os.environ.get("OPENAI_API_KEY"),
+)
 
 zoho_refresh_token=os.environ.get("Zoho_Refresh_Token", "")
 zoho_org_id = "716348510"
@@ -30,6 +29,8 @@ _token_info = {
     "expires_at": 0,
     "refresh_token": zoho_refresh_token,
 }
+
+
 def get_cached_token():
     if _token_info["access_token"] and time.time() < _token_info["expires_at"]:
         return _token_info["access_token"]
@@ -150,44 +151,81 @@ async def resume_interaction(interactions: list) -> str:
     """
     
     transcript_lines = []
-    
     for interaction in interactions:
         if interaction.get("user") and interaction["user"].get("text"):
             transcript_lines.append(f"USUARIO: {interaction['user']['text']}")
         
         if interaction.get("agent") and interaction["agent"].get("text"):
-            transcript_lines.append(f"AGENTE: {interaction['agent']['text']}")
-            
+            transcript_lines.append(f"AGENTE: {interaction['agent']['text']}")   
     full_transcript = "\n".join(transcript_lines)
-    
-    
     system_prompt = (
         "Eres un experto en resumir interacciones de un Agente de Soporte al Cliente y el usuario para una compañia de envios y logistica. "
         "Tu tarea es generar un resumen apartir de la transcripción completa de la conversación. "
         "Incluye el motivo de la llamada, las acciones tomadas y todo detalle de importancia en la interacción."
     )
-    
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"Por favor, resume la siguiente conversación:\n\n---\n\n{full_transcript}"}
     ]
-    
     try:
         completion = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
             temperature=0.0,
         )
-        
         summary = completion.choices[0].message.content.strip()
         print(f"[DEBUG] Resumen generado exitosamente")
         return summary
-        
     except Exception as e:
         error_message = f"Error al generar resumen con LLM: {str(e)}"
         print(f"[ERROR] {error_message}")
         return f"ERROR: Fallo la generación del resumen. Detalle: {str(e)}"
 
+async def translate_to_spanish(text_en: str) -> str:
+    """
+    Función que toma un texto en inglés y lo traduce al español usando un LLM.
+    
+    Args:
+        text_en (str): Texto en inglés a traducir.
+        
+    Returns:
+        str: Texto traducido al español, o un mensaje de error si falla.
+    """
+    
+    system_prompt = (
+        "Eres un traductor experto de inglés a español. "
+        "Tu tarea es traducir el siguiente texto manteniendo el significado y contexto original."
+    )
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Por favor, traduce el siguiente texto al español:\n\n{text_en}"}
+    ]
+    try:
+        completion = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.0,
+        )
+        translated_text = completion.choices[0].message.content.strip()
+        print(f"[DEBUG] Traducción generada exitosamente")
+        return translated_text   
+    except Exception as e:
+        error_message = f"Error al traducir con LLM: {str(e)}"
+        print(f"[ERROR] {error_message}")
+        return f"ERROR: Fallo la traducción. Detalle: {str(e)}"
+    
+def how_long_ago(dt: datetime) -> str:
+    """Calcula cuánto tiempo ha pasado desde la fecha dada."""
+    now = datetime.now()
+    diff = now - dt
+    if diff.days > 0:
+        return f"hace {diff.days} día(s)"
+    hours = diff.seconds // 3600
+    if hours > 0:
+        return f"hace {hours} hora(s)"
+    minutes = (diff.seconds // 60) % 60
+    return f"hace {minutes} minuto(s)"
 ##-----------------------Ticketing Helper Functions -----------------------##
 
 def create_pickup_ticket(email: str, phone: str,

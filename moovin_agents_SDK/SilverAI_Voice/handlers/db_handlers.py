@@ -55,23 +55,18 @@ async def create_tools_pool():
         autocommit=True
     )
 
-def save_to_mongodb(sessions_collection: pymongo.collection.Collection, data: dict) -> bool:
-    """Inserta el documento final de la sesión en la colección de MongoDB."""
+def save_to_mongodb(collection, phone: str, event_timestamp: int, summary_es: str):
     try:
-        data["_id"] = data.pop("session_id", data.get("session_id", f"error_{datetime.now().timestamp()}"))
-        def convert_to_datetime(iso_string):
-            if isinstance(iso_string, str):
-                return datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
-            return iso_string
-        data["init_date"] = convert_to_datetime(data.get("init_date"))
-        data["finish_date"] = convert_to_datetime(data.get("finish_date"))
-        result = sessions_collection.insert_one(data) 
-        print(f"[INFO] Sesión guardada en Mongo: ID={result.inserted_id}, Resumen: {data.get('summary')}, Total Interacciones: {len(data.get('interactions',[]))}")
-        return True
+        documento = {
+            "phone": phone,
+            "date": datetime.fromtimestamp(event_timestamp),
+            "summary": summary_es
+        }
+        collection.insert_one(documento)
+        print(f"✅ [MONGO] Guardado exitoso: {phone}, Resumen: {summary_es}")
     except Exception as e:
-        print(f"[ERROR] Falló la inserción en MongoDB para call_id={data.get('_id', 'Unknown')}: {e}")
-        return False
-
+        print(f"❌ [MONGO] Error: {e}")
+        
 def redis_key(call_id: str) -> str:
     """Clave para la metadata de la llamada (calls:{call_id})."""
     return f"calls:{call_id}"
@@ -197,7 +192,6 @@ def get_info_from_userID(user_id: str) -> list:
         sessions_col = db[mongo_collection]
         query = {"user_info.phone_number": user_id}
         cursor = sessions_col.find(query).sort("init_date", -1).limit(3)
-        
         resultados = list(cursor)
         client.close()
         return resultados

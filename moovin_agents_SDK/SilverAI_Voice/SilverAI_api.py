@@ -1,13 +1,23 @@
-from fastapi import FastAPI, Body, HTTPException, Header
+from fastapi import FastAPI, Body, HTTPException, Header, Request
 from typing import Dict, Any
-from handlers.db_handlers import create_mysql_pool, create_tools_pool
-from tools.api_tools import Make_get_package_timeline_tool,Make_request_to_pickup_tool,Make_request_electronic_receipt_tool, Make_package_damaged_tool,Make_escalate_call_tool
+from handlers.aux_handlers import translate_to_spanish
+from handlers.db_handlers import create_mysql_pool, create_tools_pool,save_to_mongodb
+from tools.api_tools import Make_get_package_timeline_tool,Make_request_to_pickup_tool,Make_request_electronic_receipt_tool, Make_package_damaged_tool,Make_escalate_call_tool,Make_remember_call_history_tool
 import os
 from typing import Dict, Any, Optional
 from contextlib import asynccontextmanager
+import hmac
+import hashlib
+import json
+from datetime import datetime
+import pymongo
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
+    app.state.mongo_client = pymongo.MongoClient(MONGO_URI)
+    app.state.calls_collection = app.state.mongo_client["moovin_calls"]["summaries"]  
     app.state.db_pool = await create_mysql_pool()
     app.state.tools_pool = await create_tools_pool()
     app.state.tools = {
@@ -15,11 +25,15 @@ async def lifespan(app: FastAPI):
         "pickup_in_store": Make_request_to_pickup_tool(app.state.tools_pool),
         "electronic_receipt": Make_request_electronic_receipt_tool(app.state.tools_pool),
         "report_package_damaged": Make_package_damaged_tool(app.state.tools_pool),
-        "escalate_call": Make_escalate_call_tool()
+        "escalate_call": Make_escalate_call_tool(),
+        "remember_last_interactions": Make_remember_call_history_tool(app.state.calls_collection),
     }
     yield
     app.state.db_pool.close()
     await app.state.db_pool.wait_closed()
+    app.state.mongo_client.close()
+    
+    
 app = FastAPI(lifespan=lifespan)
 
 Token_API=os.environ.get('SILVERAI_API_TOKEN')
@@ -70,6 +84,10 @@ async def silver_brain_endpoint(
                     user_phone=params.get("user_phone"),
                     channel=params.get("channel")
                 )
+            elif tool_requested == "remember_call_history":
+                result = await selected_tool(
+                    phone=params.get("phone")
+                )
             return {"status": "success", "data": result}
 
         return {"status": "error", "message": "Herramienta no encontrada"}
@@ -77,3 +95,52 @@ async def silver_brain_endpoint(
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+##==========================Endpoint para Webhook de Eleven Labs==========================##
+WEBHOOK_SECRET = os.environ.get("ELEVENLABS_WEBHOOK_SECRET_TESTING")
+@app.post("/webhooks/elevenlabs-post-call")
+async def elevenlabs_post_call_webhook(request: Request):
+    payload_raw = await request.body()
+    signature_header = request.headers.get("elevenlabs-signature") 
+    if not signature_header:
+        print("🔴 Webhook recibido sin firma")
+        raise HTTPException(status_code=401, detail="Missing signature")
+    try:
+        parts = dict(x.split('=') for x in signature_header.split(','))
+        timestamp = parts.get('t')
+        received_hash = parts.get('v0')
+        signed_payload = f"{timestamp}.{payload_raw.decode('utf-8')}"
+        
+        expected_hash = hmac.new(
+            WEBHOOK_SECRET.encode(),
+            signed_payload.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(received_hash, expected_hash):
+            print("❌ Firma de Webhook inválida")
+            raise HTTPException(status_code=401, detail="Invalid signature")
+    except Exception as e:
+        print(f"⚠️ Error al validar firma: {e}")
+        raise HTTPException(status_code=401, detail="Signature validation failed")
+    payload = json.loads(payload_raw)
+    event_type = payload.get("type")
+    data = payload.get("data", {})
+
+    if event_type == "post_call_transcription":
+        analysis = data.get("analysis", {})
+        summary_en = analysis.get("transcript_summary", "")
+        dynamic_vars = data.get("conversation_initiation_client_data", {}).get("dynamic_variables", {})
+        caller_id = dynamic_vars.get("system__caller_id", "Unknown")
+        event_time = payload.get("event_timestamp") 
+        summary_es = await translate_to_spanish(summary_en) if summary_en else "Sin resumen"
+        save_to_mongodb(
+            collection=app.state.calls_collection,
+            phone=caller_id,
+            event_timestamp=event_time,
+            summary_es=summary_es
+        )
+
+        print(f"📝 Proceso completado para {caller_id}")
+
+    return {"status": "received"}
