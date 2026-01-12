@@ -7,6 +7,8 @@ import aiomysql
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
+import phonenumbers
+import re
 
 load_dotenv()
 
@@ -95,8 +97,68 @@ def delete_session_data(call_id: str) -> None:
     """Limpia ambas claves de Redis al finalizar la sesión."""
     rdb.delete(redis_key(call_id))
     rdb.delete(interaction_key(call_id))
-    
-    
+ 
+def format_fecha(date_server):
+    fecha_dt = datetime.strptime(str(date_server), "%Y-%m-%d %H:%M:%S")
+    return fecha_dt.strftime("%A %d de %B %Y %H:%M")   
+
+async def get_user_env(pool, phone):
+    print(f"Obteniendo entorno para el teléfono: {phone}")
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("""
+                SELECT idPackage, enterpriseCode, fkIdUser, fullName, email
+                FROM package
+                WHERE phone_digits = %s
+                ORDER BY insertDate DESC
+                LIMIT 3
+            """, (phone,))
+            paquetes = await cur.fetchall()
+
+            if not paquetes:
+                return {
+                        "phone": phone, 
+                        "paquetes": "No se encontraron paquetes para este usuario."
+                        }
+            nombres = ["Último paquete", "Penúltimo paquete", "Antepenúltimo paquete"]
+            resultados = []
+            nombre_usuario = paquetes[0]['fullName'] if paquetes[0].get('fullName') else "Usuario"
+            email_usuario = paquetes[0]['email'] if paquetes[0].get('email') else "Sin correo registrado"
+            for idx, paquete in enumerate(paquetes):
+                id_package = paquete['idPackage']
+                enterprise_code = paquete.get('enterpriseCode', 'N/A')
+                await cur.execute("""
+                    SELECT psd.dateServer, ps.description
+                    FROM packageStatusDetailed psd
+                    JOIN packageStatus ps ON psd.fkIdPackageStatus = ps.idPackageStatus
+                    WHERE psd.idPackage = %s
+                    ORDER BY psd.dateServer DESC
+                    LIMIT 1
+                """, (id_package,))
+                estado = await cur.fetchone()
+                if estado:
+                    fecha_formateada = format_fecha(estado['dateServer'])
+                    resultados.append({
+                        "paquete": nombres[idx],
+                        "tracking": f"{id_package} / {enterprise_code}",
+                        "estado": estado['description'],
+                        "fecha": fecha_formateada
+                    })
+                else:
+                    resultados.append({
+                        "paquete": nombres[idx],
+                        "tracking": f"{id_package} / {enterprise_code}",
+                        "estado": "Sin estados registrados."
+                    })
+            print(f"Entorno obtenido para {phone}: {resultados}")
+            return {
+                "username": nombre_usuario,
+                "phone": phone,
+                "email": email_usuario,
+                "paquetes": resultados,
+            }
+            
+            
 async def get_id_package(pool, enterprise_code):
     """
     Intenta primero buscar idPackage usando el valor como un ID (int),

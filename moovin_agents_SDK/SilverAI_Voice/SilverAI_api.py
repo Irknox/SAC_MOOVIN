@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Body, HTTPException, Header, Request
 from typing import Dict, Any
 from handlers.aux_handlers import translate_to_spanish
-from handlers.db_handlers import create_mysql_pool, create_tools_pool,save_to_mongodb
+from handlers.db_handlers import create_mysql_pool, create_tools_pool,save_to_mongodb,get_user_env
 from tools.api_tools import Make_get_package_timeline_tool,Make_request_to_pickup_tool,Make_request_electronic_receipt_tool, Make_package_damaged_tool,Make_escalate_call_tool,Make_remember_call_history_tool
 import os
 from typing import Dict, Any, Optional
@@ -11,7 +11,7 @@ import hashlib
 import json
 from datetime import datetime
 import pymongo
-
+import re
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -144,3 +144,44 @@ async def elevenlabs_post_call_webhook(request: Request):
         print(f"📝 Proceso completado para {caller_id}")
 
     return {"status": "received"}
+
+@app.post("/webhooks/elevenlabs-pre-call")
+async def elevenlabs_pre_call_webhook(
+        request: Request,    
+        auth_token: Optional[str] = Header(None, alias="auth_token")
+    ):
+    if auth_token != Token_API:
+        print(f"Intento de acceso no autorizado con token: {auth_token}")
+        raise HTTPException(status_code=401, detail="No autorizado: Token inválido")
+    payload = await request.json()
+    print(f"📲 Webhook pre-llamada recibido: {payload}")
+    call_sid = payload.get("call_sid", "")
+    phone_calling = "Desconocido"
+    if call_sid:
+        try:
+            test_phone="61514645"
+            env_data = await get_user_env(app.state.tools_pool, test_phone)
+            print(f"🌐 Datos de entorno obtenidos: {env_data}")
+            username = env_data.get("username", "")
+            paquetes = env_data.get("paquetes", [])
+            if isinstance(paquetes, list) and len(paquetes) > 0:
+                lineas = [f"- {p['paquete']}: {p['estado']} ({p['fecha']})" for p in paquetes]
+                info_paquetes_str = "Tus paquetes actuales son:\n" + "\n".join(lineas)
+            elif isinstance(paquetes, str):
+                info_paquetes_str = paquetes 
+        except Exception as e:
+            print(f"❌ Error consultando DB: {e}")
+
+    return {
+        "type": "conversation_initiation_client_data",
+        "dynamic_variables": {
+            "user_name": username,
+            "phone_calling": phone_calling,
+            "last_packages_info": info_paquetes_str  
+        },
+        "conversation_config_override": {
+            "agent": {
+            "first_message": f"Hola {username}!, soy Silver, asistente de Moovin! ¿Cómo puedo ayudarte hoy?"
+            }
+        }
+    }
