@@ -126,7 +126,6 @@ async def elevenlabs_post_call_webhook(request: Request):
     payload = json.loads(payload_raw)
     event_type = payload.get("type")
     data = payload.get("data", {})
-
     if event_type == "post_call_transcription":
         analysis = data.get("analysis", {})
         summary_en = analysis.get("transcript_summary", "")

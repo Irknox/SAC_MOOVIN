@@ -219,6 +219,7 @@ def Make_package_damaged_tool(tools_pool):
                 }
         package_id = await get_id_package(tools_pool, package)
         if not package_id:
+            print(f"[ERROR] Paquete no encontrado en la base de datos")
             return {
                     "status": "error", 
                     "message": f"Paquete {package} no encontrado en la base de datos.",
@@ -227,6 +228,7 @@ def Make_package_damaged_tool(tools_pool):
         package_historic = await get_package_historic(tools_pool, package_id)
         timeline = package_historic.get("timeline", []) or []
         if not timeline:
+            print(f"[ERROR] Hisotrial no encontrado")
             return {
                 "status": "error", 
                 "tracking": str(package_id),
@@ -238,16 +240,19 @@ def Make_package_damaged_tool(tools_pool):
         last_status = str(last_event.get("status", "")).strip().upper()
         last_date_str = last_event.get("dateUser")
         last_dt = _parse_date_cr(last_date_str)
+        print (f"Las fechas son {last_date_str}, el estado es {last_status}, last dt es {last_dt}")
         now_cr = datetime.now(CR_TZ)
         if last_status not in DELIVERED_STATES:
+            print(f"[ERROR] Estado no ha sido entregado {last_status}")
             return {
                 "status":"error",
                 "tracking": str(package_id),
-                "package_found": True,
+                "package_found": True, 
                 "message": "Este ticket solo puede en las primeras 48 horas después de la entrega.",
                 "next_step":" Informa al agente del error inmediatamente y aconseja confirmar la informacion con el usuario." 
             } 
         if not last_dt:
+            print(f"[ERROR] fecha de entrega no validada, last date; {last_dt}")
             return {
                 "status":"error",
                 "tracking": str(package_id),
@@ -257,6 +262,7 @@ def Make_package_damaged_tool(tools_pool):
             }
         hours_since = (now_cr - last_dt).total_seconds() / 3600.0
         if hours_since >= 48:
+            print(f"[ERROR] Paquete entregado hace mas de 48 hnoras, entregado hace: {hours_since}")
             return {
                 "status":"error",                
                 "tracking": str(package_id),

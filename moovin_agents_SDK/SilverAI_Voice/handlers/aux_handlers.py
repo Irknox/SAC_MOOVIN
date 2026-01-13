@@ -13,7 +13,7 @@ load_dotenv()
 client = AsyncOpenAI(
     api_key=os.environ.get("OPENAI_API_KEY"),
 )
-
+CR_TZ = ZoneInfo("America/Costa_Rica")   
 zoho_refresh_token=os.environ.get("Zoho_Refresh_Token", "")
 zoho_org_id = "716348510"
 zoho_client_id = os.environ.get("Zoho_Client_ID", "")
@@ -358,21 +358,16 @@ def request_electronic_receipt(owner: dict, package_id: str,legal_name:str, lega
             "status" : "Closed",
             "contactId": contact["id"]
         }
-        
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
         ticket_data = response.json()
         ticket_number = ticket_data.get("ticketNumber", "DESCONOCIDO")
         TicketURL=ticket_data.get("webUrl","No disponible")
-        
-        print(f"🎫 Ticket creado: {ticket_number} URL del Ticket {TicketURL}")
-        
         return {
             "TicketNumber": ticket_number,
             "message": "Ticket creado exitosamente",
             "DevURL":TicketURL
         }
-        
     except Exception as e:
         return {
             "error": "Error general al crear ticket",

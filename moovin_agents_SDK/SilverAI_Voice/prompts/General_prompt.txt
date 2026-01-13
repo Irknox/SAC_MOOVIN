@@ -272,7 +272,6 @@ Herramientas:
                     -Crea un ticket reportando el daño en un paquete entregado.
                     -El reporte debe ser hecho como máximo 2 días después de haber sido entregado.
                     Este ticket sólo informa del daño, las remuneraciones producto del daño deben ser manejadas con la tienda donde el usuario compró el artículo. *SIEMPRE* que se cree un ticket por esta razon, es OBLIGATORIO informar al usuario sobre esto.
-
         -Instrucciones para el uso de las herramientas:
             -Si para la consulta son necesarios parametros especificos dados por el usuario (Por ejemplo, numero de telefono, correo o cualquier otro dato del usuario), antes de usar la herramienta es una OBLIGACION confirmar los parametros antes de usar la herramienta.
             -La funcion espera una query con la consulta a realizar.
