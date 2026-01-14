@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Body, HTTPException, Header, Request
 from typing import Dict, Any
-from handlers.aux_handlers import translate_to_spanish
+from handlers.aux_handlers import translate_to_spanish,get_time
 from handlers.db_handlers import create_mysql_pool, create_tools_pool,save_to_mongodb,get_user_env
 from tools.api_tools import Make_get_package_timeline_tool,Make_request_to_pickup_tool,Make_request_electronic_receipt_tool, Make_package_damaged_tool,Make_escalate_call_tool,Make_remember_call_history_tool
 import os
@@ -13,6 +13,11 @@ from datetime import datetime
 import pymongo
 import re
 
+admins_phones= {
+    "9999": os.environ.get("PHONE_EXT_9999",""),
+    "5555": os.environ.get("PHONE_EXT_5555",""),
+    "9090": os.environ.get("PHONE_EXT_9090","")
+}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
@@ -31,9 +36,7 @@ async def lifespan(app: FastAPI):
     yield
     app.state.db_pool.close()
     await app.state.db_pool.wait_closed()
-    app.state.mongo_client.close()
-    
-    
+    app.state.mongo_client.close() 
 app = FastAPI(lifespan=lifespan)
 
 Token_API=os.environ.get('SILVERAI_API_TOKEN')
@@ -141,7 +144,6 @@ async def elevenlabs_post_call_webhook(request: Request):
         )
 
         print(f"📝 Proceso completado para {caller_id}")
-
     return {"status": "received"}
 
 @app.post("/webhooks/elevenlabs-pre-call")
@@ -154,14 +156,18 @@ async def elevenlabs_pre_call_webhook(
         raise HTTPException(status_code=401, detail="No autorizado: Token inválido")
     payload = await request.json()
     print(f"📲 Webhook pre-llamada recibido: {payload}")
-    call_sid = payload.get("call_sid", "")
-    phone_calling = "Desconocido"
-    if call_sid:
+    current_time= await get_time()
+    caller_id = payload.get("caller_id", "")
+    phone_calling = admins_phones.get(caller_id, caller_id)
+    username = ""
+    info_paquetes_str = "No hay paquetes registrados recientemente."
+    if caller_id:
         try:
-            test_phone="61514645"
-            env_data = await get_user_env(app.state.tools_pool, test_phone)
-            print(f"🌐 Datos de entorno obtenidos: {env_data}")
-            username = env_data.get("username", "")
+            env_data = await get_user_env(app.state.tools_pool, phone_calling)
+            if env_data:
+                raw_name = env_data.get("username", "")
+                if raw_name:
+                    username = raw_name.strip().split()[0].title() + " "
             paquetes = env_data.get("paquetes", [])
             if isinstance(paquetes, list) and len(paquetes) > 0:
                 lineas = [f"- {p['paquete']}: {p['estado']} ({p['fecha']})" for p in paquetes]
@@ -170,17 +176,17 @@ async def elevenlabs_pre_call_webhook(
                 info_paquetes_str = paquetes 
         except Exception as e:
             print(f"❌ Error consultando DB: {e}")
-
     return {
         "type": "conversation_initiation_client_data",
         "dynamic_variables": {
             "user_name": username,
             "phone_calling": phone_calling,
-            "last_packages_info": info_paquetes_str  
+            "last_packages_info": info_paquetes_str,
+            "current_time": current_time 
         },
         "conversation_config_override": {
             "agent": {
-            "first_message": f"Hola {username}!, soy Silver, asistente de Moovin! ¿Cómo puedo ayudarte hoy?"
+                "first_message": f"Hola {username}, soy Silver de Moovin! ¿Cómo puedo ayudarte hoy?"
             }
         }
-    }
+    } 

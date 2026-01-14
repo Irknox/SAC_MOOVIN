@@ -5,7 +5,7 @@ from openai import AsyncOpenAI
 from dotenv import load_dotenv
 import requests
 import time
-from datetime import datetime
+from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 
 load_dotenv()
@@ -23,13 +23,30 @@ moovin_url=os.environ.get("Moovin_URL")
 ZOHOENDPOINT = "https://desk.zoho.com/api/v1/tickets"
 Z_DEPARTMENT_ID = os.environ.get("Zoho_Department_ID")
 Z_TEAM_ID = os.environ.get("Zoho_Team_ID")
+
+##----------------------------AUX--------------------------------##
+async def get_time():
+    try:
+        now = datetime.now(CR_TZ)
+        dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+        meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+                 "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        nombre_dia = dias[now.weekday()]
+        dia_numero = now.day
+        nombre_mes = meses[now.month - 1]
+        anio = now.year
+        hora_12h = now.strftime("%I:%M %p")
+        fecha_completa = f"{nombre_dia} {dia_numero} de {nombre_mes} del {anio} a las {hora_12h}"
+        return fecha_completa
+    except Exception as e:
+        print(f"Ha ocurrido un error al recuperar la fecha/hora en Costa Rica: {e}")
+        return "Hora no disponible"
 ##----------------------------Zoho--------------------------------##
 _token_info = {
     "access_token": None,
     "expires_at": 0,
     "refresh_token": zoho_refresh_token,
 }
-
 
 def get_cached_token():
     if _token_info["access_token"] and time.time() < _token_info["expires_at"]:
